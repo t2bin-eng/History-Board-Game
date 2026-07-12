@@ -4,6 +4,7 @@ export type Team = {
   id: string;
   name: string;
   color: string;
+  token: string;
   currentCell: number;
   previousConfirmedCell: number;
   turnStartCell: number;
@@ -12,6 +13,13 @@ export type Team = {
   wrongCount: number;
   comboCount: number;
   shieldCount: number;
+};
+
+export type TeamSetup = {
+  id: string;
+  name: string;
+  color: string;
+  token: string;
 };
 
 export type GameLog = { id: string; text: string; tone?: "good" | "bad" | "info" };

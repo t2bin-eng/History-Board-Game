@@ -1,15 +1,28 @@
 import { getCellKind, shortcuts, TOTAL_CELLS } from "./board";
-import type { GameState, Team } from "./types";
+import type { GameState, Team, TeamSetup } from "./types";
 
 const log = (text: string, tone: "good" | "bad" | "info" = "info") => ({ id: crypto.randomUUID(), text, tone });
 
-export function createGame(): GameState {
+export const defaultTeamSetups: TeamSetup[] = [
+  { id: "blue", name: "청룡 원정대", color: "#3b82f6", token: "🐉" },
+  { id: "amber", name: "황금 원정대", color: "#f59e0b", token: "🦁" },
+  { id: "violet", name: "자주 원정대", color: "#a855f7", token: "🦉" },
+];
+
+export function createGame(setups: TeamSetup[] = defaultTeamSetups): GameState {
+  const teams: Team[] = setups.map((setup, index) => ({
+    ...setup,
+    currentCell: 0,
+    previousConfirmedCell: 0,
+    turnStartCell: 0,
+    cards: index === 0 ? ["힌트"] : index === 1 ? ["보호막"] : [],
+    correctCount: 0,
+    wrongCount: 0,
+    comboCount: 0,
+    shieldCount: index === 1 ? 1 : 0,
+  }));
   return {
-    teams: [
-      { id: "blue", name: "청룡 원정대", color: "#3b82f6", currentCell: 0, previousConfirmedCell: 0, turnStartCell: 0, cards: ["힌트"], correctCount: 0, wrongCount: 0, comboCount: 0, shieldCount: 0 },
-      { id: "amber", name: "황금 원정대", color: "#f59e0b", currentCell: 0, previousConfirmedCell: 0, turnStartCell: 0, cards: ["보호막"], correctCount: 0, wrongCount: 0, comboCount: 0, shieldCount: 1 },
-      { id: "violet", name: "자주 원정대", color: "#a855f7", currentCell: 0, previousConfirmedCell: 0, turnStartCell: 0, cards: [], correctCount: 0, wrongCount: 0, comboCount: 0, shieldCount: 0 },
-    ],
+    teams,
     currentTurnIndex: 0, phase: "roll", diceValue: null, targetCell: null,
     message: "주사위를 굴려 역사 원정을 시작하세요.",
     logs: [log("게임이 시작되었습니다. 청룡 원정대의 차례입니다.")],
