@@ -13,16 +13,23 @@ const quizzes: Quiz[] = [
 ];
 
 const icon: Record<string, string> = { normal: "·", bonus: "✦", trap: "⚠", shortcut: "↗", gate: "⌁", artifact: "◈", comeback: "↺", final: "★" };
+const teamToken: Record<string, string> = { blue: "🐉", amber: "🦁", violet: "🦉" };
 
-function cellClass(cell: number) {
+function cellClass(cell: number, trail: { from: number; to: number } | null) {
   const kind = getCellKind(cell);
-  return `cell cell-${kind} era-${Math.min(4, Math.ceil(cell / 20))}`;
+  const isTrail = trail !== null && cell > trail.from && cell <= trail.to;
+  const isStart = trail?.from === cell;
+  const isDestination = trail?.to === cell;
+  return `cell cell-${kind} era-${Math.min(4, Math.ceil(cell / 20))}${isTrail ? " cell--trail" : ""}${isStart ? " cell--trail-start" : ""}${isDestination ? " cell--trail-destination" : ""}`;
 }
 
 export default function Home() {
   const [game, setGame] = useState<GameState>(createGame);
   const [questionIndex] = useState(0);
   const [seconds, setSeconds] = useState(30);
+  const [rolling, setRolling] = useState(false);
+  const [rollingFace, setRollingFace] = useState<number | null>(null);
+  const [trail, setTrail] = useState<{ from: number; to: number } | null>(null);
   const current = game.teams[game.currentTurnIndex];
   const rankedTeams = useMemo(() => [...game.teams].sort((a, b) => b.currentCell - a.currentCell), [game.teams]);
   const question = quizzes.find((quiz) => quiz.era === getEra(game.targetCell ?? 1)) ?? quizzes[questionIndex];
@@ -41,9 +48,24 @@ export default function Home() {
   }, [game.phase, seconds]);
 
   function rollDice() {
+    if (rolling) return;
     const value = Math.floor(Math.random() * 6) + 1;
+    const from = current.currentCell;
+    const to = Math.min(from + value, TOTAL_CELLS);
+    let turns = 0;
+    setRolling(true);
     setSeconds(30);
-    setGame((state) => roll(state, value));
+    setRollingFace(Math.floor(Math.random() * 6) + 1);
+    const diceInterval = window.setInterval(() => {
+      setRollingFace(Math.floor(Math.random() * 6) + 1);
+      turns += 1;
+      if (turns < 10) return;
+      window.clearInterval(diceInterval);
+      setRollingFace(value);
+      setRolling(false);
+      setTrail({ from, to });
+      setGame((state) => roll(state, value));
+    }, 85);
   }
 
   function submit(choice: number) { setGame((state) => answer(state, choice === question.answer)); }
@@ -66,16 +88,17 @@ export default function Home() {
           <div className="board">
             {Array.from({ length: TOTAL_CELLS }, (_, index) => TOTAL_CELLS - index).map((cell) => {
               const occupants = game.teams.filter((team) => team.currentCell === cell);
-              return <div className={cellClass(cell)} key={cell} data-cell={cell}><span className="cell-number">{cell}</span><span className="cell-icon">{icon[getCellKind(cell)]}</span><div className="pieces">{occupants.map((team) => <span className="piece" key={team.id} title={team.name} style={{ backgroundColor: team.color }} />)}</div></div>;
+              const trailStep = trail && cell > trail.from && cell <= trail.to ? cell - trail.from : null;
+              return <div className={cellClass(cell, trail)} key={cell} data-cell={cell}><span className="cell-number">{cell}</span><span className="cell-icon">{icon[getCellKind(cell)]}</span>{trailStep !== null && <span className="trail-step">{trailStep}</span>}<div className="pieces">{occupants.map((team) => <span className={`piece${team.id === current.id ? " piece--active" : ""}`} key={team.id} title={team.name} aria-label={`${team.name} 말`} style={{ "--team-color": team.color } as React.CSSProperties}>{teamToken[team.id]}</span>)}</div></div>;
             })}
           </div>
-          <div className="start-line"><span>START</span><b>고대 문명의 문을 열어라</b><span>FINISH</span></div>
+          <div className="start-line"><span className="start-zone">START <span className="start-pieces">{game.teams.filter((team) => team.currentCell === 0).map((team) => <i className="start-piece" key={team.id} title={team.name} style={{ "--team-color": team.color } as React.CSSProperties}>{teamToken[team.id]}</i>)}</span></span><b>{trail ? `${trail.from}번 → ${trail.to}번 이동 경로` : "고대 문명의 문을 열어라"}</b><span>FINISH</span></div>
         </section>
 
         <aside className="panel controls"><div className="panel-label">현재 턴</div><h2 style={{ color: current?.color }}>{current?.name}</h2>
           <p className="status-message">{game.message}</p>
-          <div className="dice" aria-label="주사위 결과">{game.diceValue ?? "?"}</div>
-          <button className="roll-button" onClick={rollDice} disabled={game.phase !== "roll"}>주사위 굴리기 <span>↻</span></button>
+          <div className={`dice${rolling ? " dice--rolling" : ""}`} aria-label={rolling ? "주사위 굴리는 중" : "주사위 결과"}><span>{rolling ? rollingFace : game.diceValue ?? "?"}</span></div>
+          <button className="roll-button" onClick={rollDice} disabled={game.phase !== "roll" || rolling}>{rolling ? "주사위 굴리는 중…" : "주사위 굴리기"} <span>↻</span></button>
           <div className="card-area"><span>보유 카드</span><div>{current?.cards.length ? current.cards.map((card, index) => <button key={`${card}-${index}`} className="card" type="button">{card}</button>) : <em>아직 카드가 없습니다</em>}</div></div>
           <div className="events"><span>최근 원정 기록</span>{game.logs.slice(-3).reverse().map((entry) => <p className={entry.tone} key={entry.id}>{entry.text}</p>)}</div>
           <button className="reset" onClick={() => setGame(createGame())}>새 게임</button>
