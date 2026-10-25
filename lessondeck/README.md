@@ -35,6 +35,37 @@ npm test
 npm run build && npm run preview
 ```
 
+## 안드로이드 앱 (APK)
+
+웹앱을 [Capacitor](https://capacitorjs.com)로 감싼 안드로이드 앱입니다. 앱 파일이 APK 안에 모두 들어 있어서 인터넷 없이 동작하고, 배포 주소도 필요 없습니다.
+
+- **화면**: 상태 표시줄·내비게이션 바를 숨긴 전체 화면으로 열립니다. 수업 중에는 화면이 꺼지지 않습니다.
+- **뒤로 가기**: 2초 안에 두 번 눌러야 앱이 닫힙니다. 수업 중 실수로 닫히는 것을 막기 위해서입니다.
+- **글꼴 크기**: 기기의 글꼴 크기 설정과 관계없이 화면 배치가 유지됩니다.
+
+### APK 받기 (GitHub Actions)
+
+`lessondeck/`이 바뀐 커밋을 푸시하면 GitHub Actions의 **LessonDeck APK** 워크플로가 APK를 빌드합니다.
+
+1. 저장소의 **Actions** 탭에서 **LessonDeck APK**를 고르고, 맨 위(최신) 실행을 엽니다.
+2. 아래쪽 **Artifacts**에서 `lessondeck-<번호>-<커밋>.apk`를 내려받습니다. zip 파일로 받아지니 압축을 풉니다.
+3. 태블릿에서 APK를 누릅니다. 처음 한 번은 "출처를 알 수 없는 앱 설치"를 허용해야 합니다.
+
+모든 빌드가 저장소에 들어 있는 같은 디버그 키(`android/app/lessondeck-debug.keystore`)로 서명됩니다. 그래서 새 APK를 지우지 않고 기존 앱 위에 덮어 설치할 수 있습니다. 이 키는 기기에 직접 설치하는 시험용입니다. Play 스토어에 올리려면 배포용 키를 따로 만들어 비밀로 보관해야 합니다.
+
+### 직접 빌드 (Windows PC)
+
+[Android Studio](https://developer.android.com/studio)를 설치한 뒤 PowerShell에서 실행합니다.
+
+```powershell
+cd lessondeck
+npm run android:sync          # 웹 빌드 후 android/ 프로젝트에 복사
+cd android
+.\gradlew.bat assembleDebug   # → app\build\outputs\apk\debug\app-debug.apk
+```
+
+Android Studio에서 열려면 `npx cap open android`를 실행합니다. USB로 연결한 태블릿에 바로 설치하며 시험할 수 있습니다.
+
 ## 배포 (Vercel)
 
 Vercel 프로젝트의 **Root Directory를 `lessondeck`**으로 지정합니다. 나머지 설정은 `vercel.json`에 있습니다.
@@ -46,8 +77,9 @@ src/
   ink/        필기 엔진 (획 데이터, perfect-freehand 렌더링, 지우개 판정, 실행 취소)
   pdf/        pdf.js 설정과 페이지 캔버스
   ui/         펜 팔레트, 도구 설정 팝오버, 디버그 패널
-  lib/        디버그 통계 저장소
+  lib/        디버그 통계, 실행 환경(APK/브라우저) 판별, 안드로이드 뒤로 가기 처리
+android/      Capacitor 안드로이드 프로젝트 (전체 화면·화면 켜짐 유지: MainActivity.java)
 scripts/
   copy-pdfjs-assets.mjs   빌드 전 pdf.js cmaps·글꼴·wasm을 public/pdfjs로 복사
-  make-static-assets.mjs  샘플 PDF·아이콘 생성 (Playwright 필요, 결과물은 커밋됨)
+  make-static-assets.mjs  샘플 PDF·PWA 아이콘·안드로이드 아이콘 생성 (Playwright 필요, 결과물은 커밋됨)
 ```

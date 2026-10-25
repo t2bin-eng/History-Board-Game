@@ -1,6 +1,7 @@
 import { Check, ClipboardCopy, RotateCcw, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { debugStats } from "../lib/debugStore";
+import { isNativeApp } from "../lib/platform";
 
 interface Props {
   lowLatency: boolean;
@@ -61,8 +62,8 @@ export function DebugPanel({ lowLatency, onLowLatency, pdfRenderMs, onClose }: P
   const last = s.last;
   const hasPressure = s.penPressureSamples > 0;
   const pressureOk = s.penPressureSamples > 20 && s.penPressureMax - s.penPressureMin > 0.2 && s.penPressureMax <= 1;
-  const mode = displayMode();
-  const fullscreenOk = mode === "fullscreen" || mode === "standalone";
+  const mode = isNativeApp ? "APK" : displayMode();
+  const fullscreenOk = isNativeApp || mode === "fullscreen" || mode === "standalone";
 
   const checklist: { label: string; ok: boolean; hint: string; manual?: ManualKey }[] = [
     {
@@ -88,9 +89,9 @@ export function DebugPanel({ lowLatency, onLowLatency, pdfRenderMs, onClose }: P
       hint: s.sideButtonSeen ? "buttons & 2 감지" : "버튼을 누른 채 화면에 대 보세요",
     },
     {
-      label: "홈 화면 PWA가 전체 화면으로 열리는가",
+      label: isNativeApp ? "APK 앱이 전체 화면으로 열리는가" : "홈 화면 PWA가 전체 화면으로 열리는가",
       ok: fullscreenOk,
-      hint: `display-mode: ${mode}`,
+      hint: isNativeApp ? "APK(안드로이드 WebView)로 실행 중" : `display-mode: ${mode}`,
     },
   ];
 
@@ -98,6 +99,7 @@ export function DebugPanel({ lowLatency, onLowLatency, pdfRenderMs, onClose }: P
     const date = new Date().toISOString().slice(0, 10);
     const lines = [
       `### ${date} Phase 0 태블릿 확인`,
+      `- 실행 환경: ${isNativeApp ? "APK (안드로이드 WebView)" : `브라우저 (display-mode: ${mode})`}`,
       `- 기기: ${navigator.userAgent}`,
       `- 화면: ${window.screen.width}×${window.screen.height}, devicePixelRatio ${window.devicePixelRatio}`,
       `- 저지연 캔버스: ${lowLatency ? "켬" : "끔"} · 입력 지연 ${s.inputDelayMs.toFixed(1)}ms · 획 렌더 ${s.renderMs.toFixed(2)}ms · move ${s.moveEventsPerSec}회/초 · 점 ${s.pointsPerSec}개/초`,

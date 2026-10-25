@@ -28,6 +28,7 @@ import { emptyHistory, inkReducer } from "./ink/history";
 import { InkCanvas } from "./ink/InkCanvas";
 import { DEFAULT_PRESETS, ERASER_LEVELS } from "./ink/palette";
 import type { InkTool, PenPreset, Stroke, Tool } from "./ink/types";
+import { isNativeApp, showToast } from "./lib/platform";
 import { fetchPdf, openPdf, type PDFDocumentProxy } from "./pdf/pdfjs";
 import { PdfPageCanvas } from "./pdf/PdfPageCanvas";
 import { DebugPanel } from "./ui/DebugPanel";
@@ -112,20 +113,21 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const onFs = () => setIsFullscreen(!!document.fullscreenElement);
-    const onOffline = () => showToast("오프라인 사용 준비 완료");
+    const onToast = (e: Event) => {
+      clearTimeout(timer);
+      setToast((e as CustomEvent<string>).detail);
+      timer = setTimeout(() => setToast(null), 2500);
+    };
     document.addEventListener("fullscreenchange", onFs);
-    window.addEventListener("lessondeck:offline-ready", onOffline);
+    window.addEventListener("lessondeck:toast", onToast);
     return () => {
+      clearTimeout(timer);
       document.removeEventListener("fullscreenchange", onFs);
-      window.removeEventListener("lessondeck:offline-ready", onOffline);
+      window.removeEventListener("lessondeck:toast", onToast);
     };
   }, []);
-
-  const showToast = (msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 2500);
-  };
 
   const toggleFullscreen = () => {
     if (document.fullscreenElement) document.exitFullscreen();
@@ -218,9 +220,12 @@ export default function App() {
           <IconButton label="입력 디버그" active={debugOpen} onClick={() => setDebugOpen((v) => !v)}>
             <Activity size={22} />
           </IconButton>
-          <IconButton label={isFullscreen ? "전체 화면 끝내기" : "전체 화면"} onClick={toggleFullscreen}>
-            {isFullscreen ? <Minimize size={22} /> : <Maximize size={22} />}
-          </IconButton>
+          {/* APK는 처음부터 상태 표시줄 없는 전체 화면으로 열린다 */}
+          {!isNativeApp && (
+            <IconButton label={isFullscreen ? "전체 화면 끝내기" : "전체 화면"} onClick={toggleFullscreen}>
+              {isFullscreen ? <Minimize size={22} /> : <Maximize size={22} />}
+            </IconButton>
+          )}
         </div>
         <input
           ref={fileRef}

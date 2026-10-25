@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 앱이 뜨는 동안 보이는 화면: 어두운 배경 가운데 레슨덱 아이콘 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/splash_background" />
+    <item
+        android:width="180dp"
+        android:height="180dp"
+        android:drawable="@mipmap/ic_launcher_foreground"
+        android:gravity="center" />
+</layer-list>
