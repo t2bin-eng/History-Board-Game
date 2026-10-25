@@ -1,11 +1,14 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
-import { recordPointer, recordRender, debugStats } from "../lib/debugStore";
+import { debugStats, recordPointer, recordRender } from "../lib/debugStore";
+import { activeTouchCount, hasSideButton, isSideButtonDown, onSideButtonChange, penRecentlyActive } from "../lib/inputState";
 import { strokeHitsCircle, strokeToSvgPath, unitsToPx, type PageSize } from "./geometry";
 import { HIGHLIGHTER_ALPHA } from "./palette";
 import type { InkPoint, Stroke, Tool } from "./types";
 
 interface Props {
   page: PageSize;
+  /** 손가락으로 확대한 배율. 확대가 끝나면 이 배율에 맞춰 캔버스를 선명하게 다시 그린다. */
+  zoom: number;
   strokes: Stroke[];
   tool: Tool;
   color: string;
@@ -28,8 +31,15 @@ interface Gesture {
   erased: boolean;
 }
 
-/** 펜 사용 직후 이 시간 동안은 터치를 손바닥으로 보고 무시한다 */
-const PALM_GUARD_MS = 800;
+interface Box {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/** 필기 캔버스 한 장의 픽셀 수 상한 (확대 시 메모리 보호) */
+const MAX_INK_PIXELS = 8_000_000;
 
 // 두 겹 캔버스: 아래는 확정된 획, 위는 지금 그리는 획.
 // 획이 진행되는 동안에는 위 캔버스만 다시 그리고, 펜을 떼면 아래 캔버스에 합성한다 (SPEC R1).
@@ -39,47 +49,57 @@ export function InkCanvas(props: Props) {
   const propsRef = useRef(props);
   propsRef.current = props;
   const renderedRef = useRef<Stroke[]>([]);
-  const sizeRef = useRef({ width: 0, height: 0, scale: 1 });
+  const sizeRef = useRef({ width: 0, height: 0, zoom: 0, scale: 1 });
 
   useLayoutEffect(() => {
     const base = baseRef.current!;
     const live = liveRef.current!;
-    const { page, strokes } = props;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    const { page, strokes, zoom } = props;
     const size = sizeRef.current;
-    const resized = size.width !== page.width || size.height !== page.height;
+    const resized = size.width !== page.width || size.height !== page.height || size.zoom !== zoom;
     if (resized) {
-      const w = Math.max(1, Math.round(page.width * dpr));
-      const h = Math.max(1, Math.round(page.height * dpr));
+      let scale = Math.min(window.devicePixelRatio || 1, 2.5) * zoom;
+      const pixels = page.width * page.height * scale * scale;
+      if (pixels > MAX_INK_PIXELS) scale *= Math.sqrt(MAX_INK_PIXELS / pixels);
+      const w = Math.max(1, Math.round(page.width * scale));
+      const h = Math.max(1, Math.round(page.height * scale));
       for (const c of [base, live]) {
         c.width = w;
         c.height = h;
         c.style.width = `${page.width}px`;
         c.style.height = `${page.height}px`;
       }
-      sizeRef.current = { width: page.width, height: page.height, scale: w / Math.max(1, page.width) };
+      sizeRef.current = { width: page.width, height: page.height, zoom, scale: w / Math.max(1, page.width) };
     }
     if (resized || !sameStrokes(strokes, renderedRef.current)) {
       renderedRef.current = strokes;
       redraw(base, strokes, page, sizeRef.current.scale);
     }
-  }, [props.page, props.strokes]);
+  }, [props.page, props.strokes, props.zoom]);
 
   useEffect(() => {
     const live = liveRef.current!;
     const base = baseRef.current!;
     const liveCtx = live.getContext("2d", { desynchronized: propsRef.current.lowLatency })!;
     let gesture: Gesture | null = null;
-    let lastPenTime = -Infinity;
-    let cursorShown = false;
+    let liveBox: Box | null = null;
+    let hover: { x: number; y: number } | null = null;
 
     const page = () => propsRef.current.page;
     const scale = () => sizeRef.current.scale;
 
-    const toPoint = (e: PointerEvent, rect: DOMRect, prev?: InkPoint): InkPoint => {
+    /** 화면 좌표 → 페이지 CSS 픽셀 좌표 (확대·이동된 상태도 rect로 보정) */
+    const toPagePx = (e: PointerEvent, rect: DOMRect) => {
       const p = page();
-      const x = (e.clientX - rect.left) / p.width;
-      const y = (e.clientY - rect.top) / p.height;
+      return {
+        x: ((e.clientX - rect.left) / rect.width) * p.width,
+        y: ((e.clientY - rect.top) / rect.height) * p.height,
+      };
+    };
+
+    const toPoint = (e: PointerEvent, rect: DOMRect, prev?: InkPoint): InkPoint => {
+      const x = (e.clientX - rect.left) / rect.width;
+      const y = (e.clientY - rect.top) / rect.height;
       let pressure = 0.5;
       if (e.pointerType === "pen") {
         // 일부 기기는 접촉 순간 필압 0을 보낸다 → 직전 값을 유지
@@ -88,32 +108,55 @@ export function InkCanvas(props: Props) {
       return [round(x), round(y), round(pressure)];
     };
 
+    /** 지난번에 그린 영역만 지운다 (큰 캔버스를 통째로 지우는 비용 절약) */
     const clearLive = () => {
       liveCtx.setTransform(1, 0, 0, 1, 0, 0);
-      liveCtx.clearRect(0, 0, live.width, live.height);
+      if (liveBox) {
+        const s = scale();
+        const x = Math.floor(liveBox.x0 * s) - 2;
+        const y = Math.floor(liveBox.y0 * s) - 2;
+        liveCtx.clearRect(x, y, Math.ceil((liveBox.x1 - liveBox.x0) * s) + 4, Math.ceil((liveBox.y1 - liveBox.y0) * s) + 4);
+      } else {
+        liveCtx.clearRect(0, 0, live.width, live.height);
+      }
+      liveBox = null;
     };
 
-    const drawEraserCursor = (e: PointerEvent, rect: DOMRect) => {
+    const drawEraserCursor = (x: number, y: number) => {
       clearLive();
-      cursorShown = true;
       const s = scale();
       const r = unitsToPx(propsRef.current.eraserSize, page());
       liveCtx.setTransform(s, 0, 0, s, 0, 0);
       liveCtx.beginPath();
-      liveCtx.arc(e.clientX - rect.left, e.clientY - rect.top, r, 0, Math.PI * 2);
-      liveCtx.lineWidth = 1.5;
+      liveCtx.arc(x, y, r, 0, Math.PI * 2);
+      liveCtx.lineWidth = 1.5 / propsRef.current.zoom;
       liveCtx.strokeStyle = "rgba(60,60,60,0.9)";
       liveCtx.fillStyle = "rgba(255,255,255,0.35)";
       liveCtx.fill();
       liveCtx.stroke();
+      liveBox = { x0: x - r - 2, y0: y - r - 2, x1: x + r + 2, y1: y + r + 2 };
     };
 
     const renderLive = (stroke: Stroke, predicted: InkPoint[]) => {
       const t0 = performance.now();
       clearLive();
+      const p = page();
       const s = scale();
       liveCtx.setTransform(s, 0, 0, s, 0, 0);
-      fillStroke(liveCtx, stroke, page(), false, predicted);
+      fillStroke(liveCtx, stroke, p, false, predicted);
+      const margin = unitsToPx(stroke.width, p) + 2;
+      const box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+      for (const pts of [stroke.points, predicted]) {
+        for (const [x, y] of pts) {
+          const px = x * p.width;
+          const py = y * p.height;
+          if (px < box.x0) box.x0 = px;
+          if (py < box.y0) box.y0 = py;
+          if (px > box.x1) box.x1 = px;
+          if (py > box.y1) box.y1 = py;
+        }
+      }
+      liveBox = { x0: box.x0 - margin, y0: box.y0 - margin, x1: box.x1 + margin, y1: box.y1 + margin };
       recordRender(performance.now() - t0);
     };
 
@@ -122,9 +165,8 @@ export function InkCanvas(props: Props) {
       const r = unitsToPx(propsRef.current.eraserSize, p);
       let changed = false;
       for (const ev of events) {
-        const cx = ev.clientX - g.rect.left;
-        const cy = ev.clientY - g.rect.top;
-        const next = g.working.filter((st) => !strokeHitsCircle(st, cx, cy, r, p));
+        const { x, y } = toPagePx(ev, g.rect);
+        const next = g.working.filter((st) => !strokeHitsCircle(st, x, y, r, p));
         if (next.length !== g.working.length) {
           g.working = next;
           changed = true;
@@ -137,33 +179,24 @@ export function InkCanvas(props: Props) {
       }
     };
 
-    const onDown = (e: PointerEvent) => {
-      recordPointer(e);
-      const { tool, fingerDraw } = propsRef.current;
-      if (e.pointerType === "pen") lastPenTime = performance.now();
+    /** 이 이벤트가 화면에 닿은 상태(펜 끝 접촉, 손가락, 마우스 버튼)인지 */
+    const isContact = (e: PointerEvent) => {
+      if (e.pointerType === "pen") return !!(e.buttons & 1) || e.pressure > 0;
+      if (e.pointerType === "mouse") return !!(e.buttons & 3);
+      return true;
+    };
 
-      if (gesture) {
-        // 손바닥이 먼저 닿고 펜이 나중에 오면 손바닥 획을 버리고 펜을 따른다
-        if (e.pointerType === "pen" && gesture.pointerType === "touch") {
-          cancelGesture();
-        } else {
-          return;
-        }
-      }
-      if (e.pointerType === "touch") {
-        if (!fingerDraw || performance.now() - lastPenTime < PALM_GUARD_MS) {
-          debugStats.rejectedTouches++;
-          return;
-        }
-      }
-      if (e.pointerType === "mouse" && e.button !== 0) return;
-
+    const begin = (e: PointerEvent) => {
+      const { tool, color, width } = propsRef.current;
       e.preventDefault();
-      live.setPointerCapture(e.pointerId);
+      try {
+        live.setPointerCapture(e.pointerId);
+      } catch {
+        // 이미 끝난 포인터면 캡처할 수 없다
+      }
       const rect = live.getBoundingClientRect();
-      // S펜 사이드 버튼(buttons & 2)이나 지우개 끝(buttons & 32)을 누른 채 쓰면 임시 지우개
-      const sideEraser = e.pointerType === "pen" && (e.buttons & 2 || e.buttons & 32 || e.button === 5);
-      const mode = tool === "eraser" || sideEraser ? "erase" : "draw";
+      // 사이드 버튼을 누르고 있으면 도구와 상관없이 지우개
+      const mode = tool === "eraser" || hasSideButton(e) || (e.pointerType !== "touch" && isSideButtonDown()) ? "erase" : "draw";
       gesture = {
         pointerId: e.pointerId,
         pointerType: e.pointerType,
@@ -175,10 +208,10 @@ export function InkCanvas(props: Props) {
       };
       if (mode === "erase") {
         eraseAt([e], gesture);
-        drawEraserCursor(e, rect);
+        const { x, y } = toPagePx(e, rect);
+        drawEraserCursor(x, y);
         return;
       }
-      const { color, width } = propsRef.current;
       gesture.stroke = {
         id: newId(),
         tool: tool === "highlighter" ? "highlighter" : "pen",
@@ -190,29 +223,67 @@ export function InkCanvas(props: Props) {
       renderLive(gesture.stroke, []);
     };
 
+    const onDown = (e: PointerEvent) => {
+      recordPointer(e);
+      if (gesture) {
+        // 두 번째 손가락은 onAnyDown이 이미 처리했다 (쓰던 획 취소 → 확대·이동)
+        if (e.pointerType === "touch") return;
+        if (e.pointerType === "pen" && gesture.pointerType === "touch") {
+          // 손바닥이 먼저 닿고 펜이 나중에 오면 손바닥 획을 버리고 펜을 따른다
+          cancelGesture();
+        } else {
+          return;
+        }
+      }
+      if (e.pointerType === "touch") {
+        // 펜을 쓰는 중에 닿은 터치는 손바닥 (손가락 필기를 꺼 두었으면 넘기기·확대용이라 여기서는 무시)
+        if (penRecentlyActive()) {
+          debugStats.rejectedTouches++;
+          return;
+        }
+        if (!propsRef.current.fingerDraw) return;
+        // 이미 다른 손가락이 닿아 있으면 확대·이동 중이다
+        if (activeTouchCount() > 1) return;
+      }
+      // 펜을 띄운 채 사이드 버튼만 누른 경우: 아직 닿지 않았으므로 획을 시작하지 않는다
+      if (!isContact(e)) return;
+      begin(e);
+    };
+
     const onMove = (e: PointerEvent) => {
-      if (e.pointerType === "pen") lastPenTime = performance.now();
       const coalesced = e.getCoalescedEvents?.() ?? [];
       const predicted = e.getPredictedEvents?.() ?? [];
       recordPointer(e, coalesced.length, predicted.length);
 
       if (!gesture) {
-        // 지우개 도구일 때 펜을 띄운 채 움직이면 지우개 크기를 미리 보여 준다
-        if (propsRef.current.tool === "eraser" && e.pointerType !== "touch") {
-          drawEraserCursor(e, live.getBoundingClientRect());
-        } else if (cursorShown) {
-          clearLive();
-          cursorShown = false;
+        if (e.pointerType === "touch") return;
+        // 사이드 버튼을 누른 채 펜이 닿는 경우(버튼 → 접촉 순서)는 pointermove로만 들어온다
+        if (isContact(e) && e.pointerType === "pen") {
+          begin(e);
+          return;
         }
+        // 지우개 상태에서 펜을 띄운 채 움직이면 지우개 크기를 미리 보여 준다
+        const erasing = propsRef.current.tool === "eraser" || isSideButtonDown();
+        const rect = live.getBoundingClientRect();
+        const { x, y } = toPagePx(e, rect);
+        hover = { x, y };
+        if (erasing) drawEraserCursor(x, y);
+        else if (liveBox) clearLive();
         return;
       }
       if (e.pointerId !== gesture.pointerId) return;
       e.preventDefault();
+      // 사이드 버튼을 누른 채 펜 끝만 뗀 경우
+      if (gesture.pointerType === "pen" && !isContact(e)) {
+        finish(e, false);
+        return;
+      }
       const events = coalesced.length ? coalesced : [e];
 
       if (gesture.mode === "erase") {
         eraseAt(events, gesture);
-        drawEraserCursor(e, gesture.rect);
+        const { x, y } = toPagePx(e, gesture.rect);
+        drawEraserCursor(x, y);
         return;
       }
       const stroke = gesture.stroke!;
@@ -261,13 +332,21 @@ export function InkCanvas(props: Props) {
       if (gesture && e.pointerId === gesture.pointerId) finish(e, true);
     };
     const onLeave = (e: PointerEvent) => {
-      if (!gesture && cursorShown) {
-        clearLive();
-        cursorShown = false;
-      }
+      if (!gesture && liveBox) clearLive();
+      hover = null;
       if (e.pointerType === "pen") recordPointer(e);
     };
     const onContextMenu = (e: Event) => e.preventDefault();
+    // 손가락으로 쓰는 중 화면 어디든 두 번째 손가락이 닿으면 확대·이동이므로 쓰던 획을 버린다
+    const onAnyDown = (e: PointerEvent) => {
+      if (gesture?.pointerType === "touch" && e.pointerType === "touch" && e.pointerId !== gesture.pointerId) cancelGesture();
+    };
+    // 사이드 버튼을 누르거나 떼는 순간 지우개 표시를 바로 바꾼다
+    const offSide = onSideButtonChange((down) => {
+      if (gesture) return;
+      if (down && hover) drawEraserCursor(hover.x, hover.y);
+      else if (!down && propsRef.current.tool !== "eraser" && liveBox) clearLive();
+    });
 
     live.addEventListener("pointerdown", onDown, { passive: false });
     live.addEventListener("pointermove", onMove, { passive: false });
@@ -277,7 +356,10 @@ export function InkCanvas(props: Props) {
     live.addEventListener("lostpointercapture", onLostCapture);
     live.addEventListener("pointerleave", onLeave);
     live.addEventListener("contextmenu", onContextMenu);
+    window.addEventListener("pointerdown", onAnyDown, true);
     return () => {
+      window.removeEventListener("pointerdown", onAnyDown, true);
+      offSide();
       live.removeEventListener("pointerdown", onDown);
       live.removeEventListener("pointermove", onMove);
       live.removeEventListener("pointerup", onUp);

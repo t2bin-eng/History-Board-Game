@@ -24,7 +24,7 @@ export interface DebugStats {
   sideButtonSeen: boolean;
   eraserTipSeen: boolean;
   penHoverSeen: boolean;
-  /** 손가락 필기가 꺼져 있을 때 무시한 터치 수 */
+  /** 펜을 쓰는 중(또는 직후) 손바닥으로 보고 무시한 터치 수 */
   rejectedTouches: number;
   strokesDrawn: number;
   /** 최근 1초간 pointermove 이벤트 수 / 좌표 점 수 */

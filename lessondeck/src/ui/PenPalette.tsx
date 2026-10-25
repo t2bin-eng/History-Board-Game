@@ -15,7 +15,7 @@ export function PenPalette({ presets, activeId, onSelect, onOpenSettings }: Prop
   const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <div className={`pen-palette${collapsed ? " collapsed" : ""}`}>
+    <div className={`pen-palette${collapsed ? " collapsed" : ""}`} data-no-gesture>
       <button
         className="pen-palette-handle"
         aria-label={collapsed ? "펜 목록 펼치기" : "펜 목록 접기"}

@@ -2,9 +2,12 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { registerSW } from "virtual:pwa-register";
 import App from "./App";
+import { installInputTracking } from "./lib/inputState";
 import { setupNativeShell } from "./lib/nativeShell";
 import { isNativeApp, showToast } from "./lib/platform";
 import "./styles.css";
+
+installInputTracking();
 
 if (isNativeApp) {
   // APK는 앱 파일을 기기 안에 들고 있으므로 서비스 워커가 필요 없다

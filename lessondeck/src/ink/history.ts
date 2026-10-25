@@ -46,3 +46,12 @@ export function inkReducer(state: InkHistory, action: InkAction): InkHistory {
       return emptyHistory;
   }
 }
+
+/** 페이지 id별 필기 기록. 실행 취소도 페이지마다 따로 동작한다. */
+export type InkBook = Record<string, InkHistory>;
+
+export function applyInk(book: InkBook, pageId: string, action: InkAction): InkBook {
+  const prev = book[pageId] ?? emptyHistory;
+  const next = inkReducer(prev, action);
+  return next === prev ? book : { ...book, [pageId]: next };
+}

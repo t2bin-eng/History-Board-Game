@@ -20,9 +20,3 @@ export function openPdf(data: ArrayBuffer | Uint8Array): Promise<PDFDocumentProx
     iccUrl: `${base}pdfjs/iccs/`,
   }).promise;
 }
-
-export async function fetchPdf(url: string): Promise<PDFDocumentProxy> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`PDF를 불러오지 못했습니다 (${res.status})`);
-  return openPdf(await res.arrayBuffer());
-}

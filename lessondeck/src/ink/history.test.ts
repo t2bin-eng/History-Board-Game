@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { emptyHistory, inkReducer, type InkHistory } from "./history";
+import { applyInk, emptyHistory, inkReducer, type InkHistory } from "./history";
 import type { Stroke } from "./types";
 
 const s = (id: string): Stroke => ({ id, tool: "pen", color: "#000", width: 2, points: [[0, 0, 0.5]] });
@@ -47,5 +47,16 @@ describe("inkReducer", () => {
     let st = emptyHistory;
     for (let i = 0; i < 150; i++) st = commit(st, [s(String(i))]);
     expect(st.past).toHaveLength(100);
+  });
+});
+
+describe("applyInk", () => {
+  it("페이지마다 기록을 따로 두고, 바뀐 게 없으면 같은 객체를 돌려준다", () => {
+    let book = applyInk({}, "p1", { type: "commit", strokes: [s("a")] });
+    book = applyInk(book, "p2", { type: "commit", strokes: [s("b")] });
+    book = applyInk(book, "p1", { type: "undo" });
+    expect(book.p1.present).toEqual([]);
+    expect(book.p2.present.map((x) => x.id)).toEqual(["b"]);
+    expect(applyInk(book, "p3", { type: "undo" })).toBe(book);
   });
 });

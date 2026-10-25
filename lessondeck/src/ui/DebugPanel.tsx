@@ -74,7 +74,7 @@ export function DebugPanel({ lowLatency, onLowLatency, pdfRenderMs, onClose }: P
     {
       label: "손바닥을 대고 써도 오인식 없는가",
       ok: manual.palm,
-      hint: `무시한 터치 ${s.rejectedTouches}회`,
+      hint: `펜 쓰는 중 무시한 터치 ${s.rejectedTouches}회`,
       manual: "palm",
     },
     {
@@ -129,7 +129,7 @@ export function DebugPanel({ lowLatency, onLowLatency, pdfRenderMs, onClose }: P
   };
 
   return (
-    <aside className="debug-panel" aria-label="디버그 패널">
+    <aside className="debug-panel" aria-label="디버그 패널" data-no-gesture>
       <header className="debug-head">
         <strong>입력 디버그</strong>
         <div className="debug-head-actions">
