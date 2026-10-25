@@ -16,6 +16,7 @@ import {
   Undo2,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { normalizeUrl } from "./doc/html";
 import { loadHtmlAsset, loadPdfAsset, pagesForAsset } from "./doc/load";
 import { insertPages, movePage, pageAfterRemoval, removePage, stepVisible } from "./doc/pages";
 import {
@@ -28,6 +29,7 @@ import {
   type DocState,
   type Page,
 } from "./doc/types";
+import { parseYouTube } from "./doc/youtube";
 import { applyInk, type InkAction, type InkBook } from "./ink/history";
 import { DEFAULT_PRESETS, ERASER_LEVELS } from "./ink/palette";
 import type { InkTool, PenPreset, Stroke, Tool } from "./ink/types";
@@ -35,7 +37,7 @@ import { onSideButtonChange } from "./lib/inputState";
 import { isNativeApp, showToast } from "./lib/platform";
 import { clearRenderCache } from "./pdf/renderCache";
 import { clearThumbnails } from "./pdf/thumbnails";
-import { AddPageMenu } from "./ui/AddPageMenu";
+import { AddPageMenu, type LinkKind } from "./ui/AddPageMenu";
 import { DebugPanel } from "./ui/DebugPanel";
 import { PagePanel } from "./ui/PagePanel";
 import { PenPalette } from "./ui/PenPalette";
@@ -236,9 +238,20 @@ export default function App() {
     htmlFileRef.current?.click();
   };
 
-  const addUrl = (index: number, url: string) => {
+  /** 링크로 페이지 추가. 유튜브 링크는 웹 주소 칸에 붙여넣어도 동영상 페이지로 만든다. 실패하면 안내 문구 */
+  const addLink = (index: number, text: string, kind: LinkKind): string | null => {
+    const yt = parseYouTube(text);
+    if (yt) {
+      insertWebPage(index, { id: newPageId(), kind: "youtube", ...yt, aspect: "16:9" });
+      openToast("유튜브 동영상을 넣었습니다. 조작 모드에서 재생하세요.");
+      return null;
+    }
+    if (kind === "youtube") return "유튜브 영상 링크를 확인해 주세요";
+    const url = normalizeUrl(text);
+    if (!url) return "주소를 확인해 주세요";
     insertWebPage(index, { id: newPageId(), kind: "url", url, aspect: "16:9" });
     openToast("웹 페이지를 넣었습니다. 인터넷이 연결되어 있어야 보입니다.");
+    return null;
   };
 
   const toggleHidden = (id: string) => {
@@ -568,9 +581,10 @@ export default function App() {
             pickHtml(addMenu.index);
             setAddMenu(null);
           }}
-          onUrl={(url) => {
-            addUrl(addMenu.index, url);
-            setAddMenu(null);
+          onLink={(text, kind) => {
+            const error = addLink(addMenu.index, text, kind);
+            if (!error) setAddMenu(null);
+            return error;
           }}
           onClose={closeAddMenu}
         />

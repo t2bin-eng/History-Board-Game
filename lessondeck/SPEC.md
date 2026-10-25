@@ -93,15 +93,17 @@ tldraw 같은 무한 캔버스 대신 **페이지 단위 구조**를 택한다. 
     { "id": "p3", "kind": "html", "asset": "html-quiz", "aspect": "16:9" },
     { "id": "p4", "kind": "pdf", "asset": "pdf-a", "pageIndex": 2 },
     { "id": "p5", "kind": "url", "url": "https://example.vercel.app", "aspect": "16:9" },
-    { "id": "p6", "kind": "blank", "background": "grid" }
+    { "id": "p6", "kind": "blank", "background": "grid" },
+    { "id": "p7", "kind": "youtube", "videoId": "aqz-KE-bpKQ", "start": 90, "aspect": "16:9" }
   ],
   "hidden": []
 }
 ```
 
-- **페이지 종류**: `pdf`(원본 PDF의 특정 쪽), `html`(내장 HTML 파일), `url`(외부 웹앱), `blank`(백지·모눈).
+- **페이지 종류**: `pdf`(원본 PDF의 특정 쪽), `html`(내장 HTML 파일), `url`(외부 웹앱), `youtube`(유튜브 동영상), `blank`(백지·모눈).
+  - `youtube` 페이지는 `videoId`(11자), 재생목록이면 `list`, 시작 시각이면 `start`(초)를 가진다. 일반·짧은(youtu.be)·Shorts·재생목록 링크를 모두 이 형태로 바꿔 `youtube-nocookie.com/embed`로 페이지 안에서 바로 재생한다(유튜브 시청 페이지는 다른 앱 안에 띄울 수 없음). 다른 페이지로 넘어가면 일시정지하고, 영상 주인이 삽입을 막았으면 "YouTube에서 열기"로 안내한다. 인터넷이 필요하다.
   - `blank` 페이지는 `background`(`"plain"` 백지 · `"grid"` 모눈)와 `aspect`(가로÷세로 숫자)를 가진다. 추가할 때 바로 앞 페이지와 같은 비율로 만든다. 예: `{ "id": "p6", "kind": "blank", "background": "grid", "aspect": 0.7071 }`
-  - `html`·`url` 페이지의 `aspect`는 `"16:9"`·`"4:3"`·`"A4"` 중 하나다(R8). 웹앱은 각각 1280×720 · 1024×768 · 794×1123 크기의 화면으로 그린 뒤 페이지 크기에 맞춰 축소·확대한다. 기본값은 `"16:9"`.
+  - `html`·`url`·`youtube` 페이지의 `aspect`는 `"16:9"`·`"4:3"`·`"A4"` 중 하나다(R8). 웹앱은 각각 1280×720 · 1024×768 · 794×1123 크기의 화면으로 그린 뒤 페이지 크기에 맞춰 축소·확대한다. 기본값은 `"16:9"`.
   - `hidden`: 숨긴 페이지 id 목록(F3). 숨긴 페이지는 넘길 때 건너뛰고, 페이지 바에서는 흐리게 보이며 다시 보이게 할 수 있다.
   - HTML 원본(`assets`의 `type: "html"`)은 파일 내용을 그대로 보관하고 `<iframe srcdoc sandbox="allow-scripts allow-forms allow-popups allow-modals">`로 실행한다(`allow-same-origin` 금지, R5). URL 페이지는 그 사이트 자신의 출처로 열리도록 `allow-same-origin`을 더한다(R6). 단, 레슨덱과 같은 출처의 주소면 빼서 격리를 유지한다.
 - **필기 데이터**: 페이지 id별로 저장한다. 획마다 `{tool, color, width, points:[x, y, pressure]}`. 좌표는 페이지 크기 대비 0\~1 비율로 저장해 화면 크기가 바뀌어도 위치가 유지되게 한다.
@@ -239,3 +241,10 @@ SPEC.md를 읽고 Phase 0만 진행해줘.
 - [x] 원본 쪽 숨기기(F3): 숨긴 쪽은 넘길 때 건너뜀
 - [x] Phase 1 완료 기준: 10쪽 PDF의 2쪽 뒤에 HTML 삽입 → 1쪽(PDF)·2쪽(PDF)·3쪽(HTML)·4~11쪽(PDF)까지 넘김 (데스크톱 Chromium)
 - [ ] 갤럭시탭 APK에서 실제 수업용 HTML(형성평가 멀티툴·발자국)과 URL 페이지 확인
+
+### 2026-10-25 유튜브 동영상 페이지 (v0.4.0)
+
+- 사용자 요청: 유튜브 링크를 넣으면 창을 바꾸지 않고 페이지 안에서 바로 재생
+- [x] 링크 인식(일반·youtu.be·Shorts·라이브·embed·재생목록·시작 시각), 웹 주소 칸에 넣어도 동영상 페이지로 (단위 테스트)
+- [x] iframe이 Referer를 보냄(`strict-origin-when-cross-origin`) → 유튜브 오류 153 예방, 연결 신호·일시정지 명령 전송, 삽입 금지 영상(오류 150) 안내 (가짜 플레이어로 확인 — 이 개발 환경은 유튜브 접속이 막혀 실제 재생은 못 봄)
+- [ ] 갤럭시탭 APK에서 실제 유튜브 영상 재생·전체 화면·일시정지 확인

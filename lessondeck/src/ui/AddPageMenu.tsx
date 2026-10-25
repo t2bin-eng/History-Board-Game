@@ -1,7 +1,8 @@
-import { File, FileCode2, FileText, Globe, Grid3x3 } from "lucide-react";
+import { File, FileCode2, FileText, Globe, Grid3x3, SquarePlay } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { normalizeUrl } from "../doc/html";
 import type { BlankBackground } from "../doc/types";
+
+export type LinkKind = "url" | "youtube";
 
 interface Props {
   left: number;
@@ -9,16 +10,22 @@ interface Props {
   onBlank: (background: BlankBackground) => void;
   onPdf: () => void;
   onHtml: () => void;
-  onUrl: (url: string) => void;
+  /** 링크로 페이지 추가. 잘못된 링크면 안내 문구를 돌려준다 */
+  onLink: (text: string, kind: LinkKind) => string | null;
   onClose: () => void;
 }
 
-// 페이지 추가 메뉴: 빈 페이지·모눈 페이지·PDF 파일·HTML 파일·웹 주소
-export function AddPageMenu({ left, top, onBlank, onPdf, onHtml, onUrl, onClose }: Props) {
+const PLACEHOLDER: Record<LinkKind, string> = {
+  url: "예: quiz.vercel.app",
+  youtube: "유튜브 링크 붙여넣기",
+};
+
+// 페이지 추가 메뉴: 빈 페이지·모눈 페이지·PDF 파일·HTML 파일·웹 주소·유튜브
+export function AddPageMenu({ left, top, onBlank, onPdf, onHtml, onLink, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null);
-  const [urlMode, setUrlMode] = useState(false);
+  const [linkKind, setLinkKind] = useState<LinkKind | null>(null);
   const [url, setUrl] = useState("");
-  const [urlError, setUrlError] = useState(false);
+  const [urlError, setUrlError] = useState<string | null>(null);
 
   useEffect(() => {
     const onDown = (e: PointerEvent) => {
@@ -37,16 +44,16 @@ export function AddPageMenu({ left, top, onBlank, onPdf, onHtml, onUrl, onClose 
 
   const submitUrl = (e: FormEvent) => {
     e.preventDefault();
-    const normalized = normalizeUrl(url);
-    if (!normalized) {
-      setUrlError(true);
-      return;
-    }
-    onUrl(normalized);
+    if (linkKind) setUrlError(onLink(url, linkKind));
+  };
+
+  const toggleLink = (kind: LinkKind) => {
+    setLinkKind((k) => (k === kind ? null : kind));
+    setUrlError(null);
   };
 
   // 화면 밖으로 넘치지 않게 (상단 오른쪽 버튼에서 열 때 등)
-  const maxTop = window.innerHeight - (urlMode ? 360 : 320);
+  const maxTop = window.innerHeight - (linkKind ? 420 : 370);
   const maxLeft = window.innerWidth - 276;
   return (
     <div
@@ -71,11 +78,15 @@ export function AddPageMenu({ left, top, onBlank, onPdf, onHtml, onUrl, onClose 
         <FileCode2 size={20} /> HTML 파일…
         <small>오프라인 실행</small>
       </button>
-      <button role="menuitem" aria-expanded={urlMode} onClick={() => setUrlMode((v) => !v)}>
+      <button role="menuitem" aria-expanded={linkKind === "url"} onClick={() => toggleLink("url")}>
         <Globe size={20} /> 웹 주소(URL)…
         <small>인터넷 필요</small>
       </button>
-      {urlMode && (
+      <button role="menuitem" aria-expanded={linkKind === "youtube"} onClick={() => toggleLink("youtube")}>
+        <SquarePlay size={20} /> 유튜브 동영상…
+        <small>페이지 안 재생</small>
+      </button>
+      {linkKind && (
         <form className="add-menu-url" onSubmit={submitUrl}>
           {/* type="url"은 https:// 없는 주소를 막으므로 text로 받고 normalizeUrl로 정리한다 */}
           <input
@@ -85,16 +96,17 @@ export function AddPageMenu({ left, top, onBlank, onPdf, onHtml, onUrl, onClose 
             autoCorrect="off"
             spellCheck={false}
             autoFocus
-            placeholder="예: quiz.vercel.app"
+            key={linkKind}
+            placeholder={PLACEHOLDER[linkKind]}
             value={url}
-            aria-invalid={urlError}
+            aria-invalid={!!urlError}
             onChange={(e) => {
               setUrl(e.target.value);
-              setUrlError(false);
+              setUrlError(null);
             }}
           />
           <button type="submit">추가</button>
-          {urlError && <span className="add-menu-error">주소를 확인해 주세요</span>}
+          {urlError && <span className="add-menu-error">{urlError}</span>}
         </form>
       )}
     </div>

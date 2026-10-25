@@ -1,9 +1,10 @@
-import { FileCode2, Globe } from "lucide-react";
+import { FileCode2, Globe, Play } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
 import { htmlAsset, pageAspect, pdfAsset, type DocState, type Page } from "../doc/types";
 import { strokeToSvgPath } from "../ink/geometry";
 import { HIGHLIGHTER_ALPHA } from "../ink/palette";
 import type { Stroke } from "../ink/types";
+import { youtubeThumbUrl } from "../doc/youtube";
 import { thumbnailFor } from "../pdf/thumbnails";
 
 interface Props {
@@ -73,6 +74,7 @@ export const PageThumb = memo(function PageThumb({ page, doc, strokes, width }: 
           <span>{htmlAsset(doc.assets, page.asset)?.name ?? "HTML"}</span>
         </span>
       )}
+      {page.kind === "youtube" && <YouTubeThumb page={page} />}
       {page.kind === "url" && (
         <span className="thumb-web">
           <Globe size={26} />
@@ -90,4 +92,19 @@ function hostOf(url: string): string {
   } catch {
     return url;
   }
+}
+
+/** 유튜브 썸네일(인터넷 필요). 못 불러오면 아이콘 카드 */
+function YouTubeThumb({ page }: { page: Extract<Page, { kind: "youtube" }> }) {
+  const [failed, setFailed] = useState(false);
+  const src = youtubeThumbUrl(page);
+  return (
+    <span className="thumb-web youtube">
+      {src && !failed && <img src={src} alt="" draggable={false} onError={() => setFailed(true)} />}
+      <span className="thumb-play">
+        <Play size={16} fill="currentColor" />
+      </span>
+      {(failed || !src) && <span>{page.videoId ? "유튜브 동영상" : "유튜브 재생목록"}</span>}
+    </span>
+  );
 }

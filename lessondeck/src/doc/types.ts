@@ -43,9 +43,11 @@ export type Page =
   | { id: string; kind: "pdf"; asset: string; pageIndex: number }
   | { id: string; kind: "blank"; background: BlankBackground; aspect: number }
   | { id: string; kind: "html"; asset: string; aspect: AspectPreset }
-  | { id: string; kind: "url"; url: string; aspect: AspectPreset };
+  | { id: string; kind: "url"; url: string; aspect: AspectPreset }
+  | { id: string; kind: "youtube"; videoId?: string; list?: string; start?: number; aspect: AspectPreset };
 
-export type WebPage = Extract<Page, { kind: "html" | "url" }>;
+/** iframe으로 띄우는 페이지 (판서/조작 모드가 있는 페이지) */
+export type WebPage = Extract<Page, { kind: "html" | "url" | "youtube" }>;
 
 export interface DocState {
   title: string;
@@ -58,7 +60,7 @@ export interface DocState {
 export const A4_PORTRAIT = 210 / 297;
 
 export function isWebPage(page: Page | undefined): page is WebPage {
-  return page?.kind === "html" || page?.kind === "url";
+  return page?.kind === "html" || page?.kind === "url" || page?.kind === "youtube";
 }
 
 export function pageAspect(page: Page, assets: Record<string, Asset>): number {
@@ -66,7 +68,8 @@ export function pageAspect(page: Page, assets: Record<string, Asset>): number {
     case "blank":
       return page.aspect;
     case "html":
-    case "url": {
+    case "url":
+    case "youtube": {
       const v = VIRTUAL_SCREEN[page.aspect];
       return v.width / v.height;
     }
