@@ -1,0 +1,8 @@
+node_modules
+dist
+dev-dist
+# pdf.js 런타임 파일(cmaps·글꼴·wasm)은 빌드 전에 node_modules에서 복사한다
+public/pdfjs
+*.log
+*.tsbuildinfo
+.vercel

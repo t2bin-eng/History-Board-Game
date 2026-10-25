@@ -28,3 +28,7 @@ npm run build
 - 교실 화면용 반응형 레이아웃
 
 Supabase 실시간 동기화, 교사 대시보드, 문제 CSV 업로드 및 외부 SVG 업로드는 다음 단계에서 연결합니다.
+
+## 레슨덱 (`lessondeck/`)
+
+PDF + HTML 웹앱 판서용 수업 리더는 `lessondeck/` 폴더의 독립 Vite 프로젝트입니다. 자세한 내용은 [lessondeck/README.md](./lessondeck/README.md)를 보세요. 루트의 타입 검사·린트·테스트 대상에서는 제외되어 있습니다.

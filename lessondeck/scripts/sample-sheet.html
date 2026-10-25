@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<style>
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "WenQuanYi Zen Hei", "Noto Sans CJK KR", "Malgun Gothic", sans-serif;
+    color: #222;
+    -webkit-print-color-adjust: exact;
+  }
+  .sheet { width: 210mm; height: 297mm; padding: 14mm 15mm 12mm; display: flex; flex-direction: column; gap: 6mm; }
+  header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2.2px solid #263238; padding-bottom: 3mm; }
+  header h1 { margin: 0; font-size: 22pt; letter-spacing: -0.5pt; }
+  header h1 small { font-size: 11pt; color: #3fa9c6; margin-left: 3mm; font-weight: 600; }
+  header .meta { font-size: 9pt; color: #666; text-align: right; line-height: 1.5; }
+  h2 { margin: 0 0 2.5mm; font-size: 12.5pt; display: flex; align-items: center; gap: 2.5mm; }
+  h2 .no { display: inline-grid; place-items: center; width: 6.5mm; height: 6.5mm; border-radius: 50%; background: #263238; color: #fff; font-size: 10pt; }
+  h2 .tip { font-size: 9pt; font-weight: 400; color: #777; }
+  .pressure { display: grid; gap: 3mm; }
+  .wedge { height: 9mm; border: 1px solid #c9d3d8; border-radius: 2mm; position: relative; background: #fafcfd; }
+  .wedge::before { content: ""; position: absolute; left: 4mm; right: 4mm; top: 50%; height: 0; border-top: 1px dashed #c3ccd1; }
+  .wedge span { position: absolute; top: 1mm; font-size: 7.5pt; color: #9aa6ac; }
+  .wedge .l { left: 2mm; } .wedge .r { right: 2mm; }
+  .trace { display: grid; gap: 1.5mm; }
+  .trace .line { height: 13mm; border-bottom: 1px solid #cfd8dc; display: flex; align-items: flex-end; padding: 0 1mm 1.5mm; font-size: 21pt; color: #d5dadd; letter-spacing: 1pt; }
+  .trace .line.blank { color: transparent; }
+  .palm { height: 30mm; border: 1.5px dashed #90a4ae; border-radius: 3mm; background: repeating-linear-gradient(0deg, transparent 0 9.5mm, #e3e9ec 9.5mm 10mm); position: relative; }
+  .palm em { position: absolute; right: 3mm; bottom: 2mm; font-style: normal; font-size: 8pt; color: #90a4ae; }
+  .source { display: grid; grid-template-columns: 1.15fr 1fr; gap: 4mm; }
+  .box { border: 1px solid #b0bec5; border-radius: 2mm; padding: 3mm 3.5mm; font-size: 10pt; line-height: 1.75; }
+  .box b { color: #263238; }
+  table { width: 100%; border-collapse: collapse; font-size: 9.5pt; }
+  th, td { border: 1px solid #b0bec5; padding: 1.6mm 2mm; text-align: left; }
+  th { background: #eceff1; font-weight: 600; width: 22mm; }
+  .grid { flex: 1; min-height: 38mm; border: 1px solid #b0bec5; border-radius: 2mm;
+    background-image: linear-gradient(#e6ecef 1px, transparent 1px), linear-gradient(90deg, #e6ecef 1px, transparent 1px);
+    background-size: 5mm 5mm; position: relative; }
+  .grid em { position: absolute; left: 3mm; top: 2mm; font-style: normal; font-size: 8pt; color: #90a4ae; background: #fff; padding: 0 1mm; }
+  footer { font-size: 8.5pt; color: #78909c; display: flex; justify-content: space-between; border-top: 1px solid #cfd8dc; padding-top: 2mm; }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <header>
+    <h1>필기감 시험지<small>LessonDeck Phase 0</small></h1>
+    <div class="meta">S펜 필기 지연·필압·손바닥 인식 확인용 샘플<br />갤럭시탭 Chrome / 홈 화면 앱에서 시험</div>
+  </header>
+
+  <section>
+    <h2><span class="no">1</span>필압 <span class="tip">왼쪽은 약하게, 오른쪽으로 갈수록 세게 눌러 한 번에 그어 보세요</span></h2>
+    <div class="pressure">
+      <div class="wedge"><span class="l">약하게</span><span class="r">세게</span></div>
+      <div class="wedge"><span class="l">약하게</span><span class="r">세게</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="no">2</span>한글 빠르게 쓰기 <span class="tip">회색 글씨를 따라 쓴 뒤 빈 줄에 평소 속도로 써 보세요</span></h2>
+    <div class="trace">
+      <div class="line">동아시아 국제 질서의 변화</div>
+      <div class="line">가나다라마바사아자차카타파하</div>
+      <div class="line blank">.</div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="no">3</span>손바닥 대고 쓰기 <span class="tip">손바닥을 화면에 붙인 채 문장을 써 보세요. 엉뚱한 선이 생기면 실패</span></h2>
+    <div class="palm"><em>손바닥 오인식 확인 칸</em></div>
+  </section>
+
+  <section>
+    <h2><span class="no">4</span>자료 위 판서 <span class="tip">밑줄·동그라미·화살표를 그려 보세요</span></h2>
+    <div class="source">
+      <div class="box">
+        <b>〈자료〉</b> 17세기 전반 동아시아에서는 <b>명</b>이 쇠퇴하고 여진이 세운 <b>후금</b>이 세력을 키웠다.
+        후금은 국호를 <b>청</b>으로 바꾸고 조선을 압박하였으며, 조선은 두 차례의 전쟁을 겪었다.
+        한편 일본에서는 <b>에도 막부</b>가 들어서 조선과 국교를 회복하고 통신사를 맞이하였다.
+      </div>
+      <table>
+        <tr><th>명</th><td>국력 쇠퇴, 농민 봉기</td></tr>
+        <tr><th>후금·청</th><td>여진 통합, 중원 진출</td></tr>
+        <tr><th>조선</th><td>정묘·병자호란</td></tr>
+        <tr><th>일본</th><td>에도 막부 성립</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <section style="flex:1; display:flex; flex-direction:column;">
+    <h2><span class="no">5</span>자유 판서 <span class="tip">도형·화살표·빠른 낙서로 지연을 느껴 보세요</span></h2>
+    <div class="grid"><em>모눈 5mm</em></div>
+  </section>
+
+  <footer>
+    <span>S펜 사이드 버튼을 누른 채 쓰면 지우개로 동작합니다</span>
+    <span>오른쪽 아래 디버그 패널의 체크리스트를 채워 주세요</span>
+  </footer>
+</div>
+</body>
+</html>
