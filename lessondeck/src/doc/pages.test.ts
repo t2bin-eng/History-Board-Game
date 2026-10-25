@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { insertPages, movePage, pageAfterRemoval, removePage, stepVisible, visiblePosition } from "./pages";
+import { insertPages, movePage, movePageTo, pageAfterRemoval, removePage, stepVisible, visiblePosition } from "./pages";
 import type { Page } from "./types";
 
 const blank = (id: string): Page => ({ id, kind: "blank", background: "plain", aspect: 1 });
@@ -43,5 +43,20 @@ describe("stepVisible / visiblePosition", () => {
     expect(visiblePosition(pages, ["b"], "c")).toEqual({ index: 1, count: 3 });
     // 숨긴 페이지를 보고 있으면 -1
     expect(visiblePosition(pages, ["b"], "b")).toEqual({ index: -1, count: 3 });
+  });
+});
+
+describe("movePageTo", () => {
+  const pages = [blank("a"), blank("b"), blank("c"), blank("d")];
+  it("놓은 자리(원래 목록의 사이 위치)로 옮긴다", () => {
+    expect(ids(movePageTo(pages, "a", 3))).toEqual(["b", "c", "a", "d"]);
+    expect(ids(movePageTo(pages, "a", 4))).toEqual(["b", "c", "d", "a"]);
+    expect(ids(movePageTo(pages, "d", 0))).toEqual(["d", "a", "b", "c"]);
+    expect(ids(movePageTo(pages, "c", 1))).toEqual(["a", "c", "b", "d"]);
+  });
+  it("제자리(자기 앞뒤 사이)에 놓으면 그대로", () => {
+    expect(movePageTo(pages, "b", 1)).toBe(pages);
+    expect(movePageTo(pages, "b", 2)).toBe(pages);
+    expect(movePageTo(pages, "x", 0)).toBe(pages);
   });
 });

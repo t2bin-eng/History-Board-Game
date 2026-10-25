@@ -1,12 +1,12 @@
 import { ExternalLink, Globe, TriangleAlert, WifiOff } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { htmlAsset, VIRTUAL_SCREEN, type Asset, type WebPage } from "../doc/types";
+import { htmlAsset, mediaAsset, VIRTUAL_SCREEN, type Asset, type InteractivePage } from "../doc/types";
 import { youtubeEmbedUrl, youtubeErrorMessage, youtubeWatchUrl } from "../doc/youtube";
 import type { PageSize } from "../ink/geometry";
 
 interface Props {
-  /** 열어 둔 웹 페이지들 (처음 연 순서). 넘겼다 돌아와도 웹앱 상태가 유지된다. */
-  pages: WebPage[];
+  /** 열어 둔 웹앱·동영상 페이지들 (처음 연 순서). 넘겼다 돌아와도 상태가 유지된다. */
+  pages: InteractivePage[];
   currentId: string;
   assets: Record<string, Asset>;
   size: PageSize;
@@ -38,6 +38,7 @@ export function WebStage({ pages, currentId, assets, size }: Props) {
   const online = useOnline();
   const current = pages.find((p) => p.id === currentId);
   const frames = useRef(new Map<string, HTMLIFrameElement>());
+  const videos = useRef(new Map<string, HTMLVideoElement>());
   const [ytErrors, setYtErrors] = useState<Record<string, number>>({});
 
   // 유튜브 플레이어가 보내는 알림(오류 등)을 받는다
@@ -62,11 +63,19 @@ export function WebStage({ pages, currentId, assets, size }: Props) {
   // 다른 페이지로 넘어가면 영상을 멈춘다 (숨겨 둔 채 소리만 나지 않도록)
   useEffect(() => {
     for (const page of pages) {
-      if (page.kind === "youtube" && page.id !== currentId) {
+      if (page.id === currentId) continue;
+      if (page.kind === "youtube") {
         postToYouTube(frames.current.get(page.id), page.id, { event: "command", func: "pauseVideo", args: [] });
+      } else if (page.kind === "video") {
+        videos.current.get(page.id)?.pause();
       }
     }
   }, [currentId, pages]);
+
+  const setVideo = (id: string) => (el: HTMLVideoElement | null) => {
+    if (el) videos.current.set(id, el);
+    else videos.current.delete(id);
+  };
 
   const setFrame = (id: string) => (el: HTMLIFrameElement | null) => {
     if (el) frames.current.set(id, el);
@@ -76,9 +85,33 @@ export function WebStage({ pages, currentId, assets, size }: Props) {
   return (
     <div className="web-stage">
       {pages.map((page) => {
+        const visible = page.id === currentId;
+        if (page.kind === "video") {
+          const asset = mediaAsset(assets, page.asset);
+          return (
+            <div key={page.id} className="web-frame video" style={{ display: visible ? "block" : "none" }}>
+              {asset ? (
+                <video
+                  ref={setVideo(page.id)}
+                  className="video-page"
+                  src={asset.url}
+                  poster={asset.poster}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  controlsList="nodownload"
+                />
+              ) : (
+                <div className="youtube-error">
+                  <TriangleAlert size={28} />
+                  <p>원본 동영상을 찾을 수 없습니다.</p>
+                </div>
+              )}
+            </div>
+          );
+        }
         const screen = VIRTUAL_SCREEN[page.aspect];
         const style = { width: screen.width, height: screen.height, transform: `scale(${size.width / screen.width})` };
-        const visible = page.id === currentId;
         return (
           <div key={page.id} className="web-frame" style={{ display: visible ? "block" : "none" }}>
             {page.kind === "html" && (

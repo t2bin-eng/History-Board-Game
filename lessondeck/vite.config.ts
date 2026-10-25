@@ -2,7 +2,9 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
-import pkg from "./package.json";
+import { readFileSync } from "node:fs";
+
+const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as { version: string };
 
 export default defineConfig({
   define: {
@@ -43,8 +45,9 @@ export default defineConfig({
   ],
   build: {
     target: "es2022",
-    // pdf.js 본체가 커서 기본 경고 기준(500kB)을 넘는다. 오프라인 앱이라 한 번 캐시되면 다시 받지 않는다.
-    chunkSizeWarningLimit: 1000,
+    // pdf.js 본체와 HEIC 변환기(HEIC 사진을 넣을 때만 불러옴)가 커서 기본 경고 기준을 넘는다.
+    // 오프라인 앱이라 한 번 캐시되면 다시 받지 않는다.
+    chunkSizeWarningLimit: 3500,
   },
   test: {
     environment: "node",

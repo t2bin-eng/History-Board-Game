@@ -45,3 +45,16 @@ export function visiblePosition(pages: Page[], hidden: string[], currentId: stri
   const visible = pages.filter((p) => !skip.has(p.id));
   return { index: visible.findIndex((p) => p.id === currentId), count: visible.length };
 }
+
+/** 끌어서 놓기: 원래 목록 기준 삽입 위치(0~길이)로 옮긴다 */
+export function movePageTo(pages: Page[], id: string, toIndex: number): Page[] {
+  const from = pages.findIndex((p) => p.id === id);
+  if (from < 0) return pages;
+  // 자기 뒤로 옮기면 자신이 빠진 만큼 한 칸 당겨진다
+  const target = Math.max(0, Math.min(pages.length - 1, toIndex > from ? toIndex - 1 : toIndex));
+  if (target === from) return pages;
+  const next = pages.slice();
+  const [item] = next.splice(from, 1);
+  next.splice(target, 0, item);
+  return next;
+}

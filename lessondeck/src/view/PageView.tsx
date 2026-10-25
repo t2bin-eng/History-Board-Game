@@ -1,7 +1,7 @@
 import { ChevronLeft, ChevronRight, MousePointer2, PenLine } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { stepVisible, visiblePosition } from "../doc/pages";
-import { isWebPage, pageAspect, pdfAsset, type DocState, type Page, type WebPage } from "../doc/types";
+import { isInteractivePage, mediaAsset, pageAspect, pdfAsset, type DocState, type InteractivePage, type Page } from "../doc/types";
 import { fitPage, type PageSize } from "../ink/geometry";
 import { InkCanvas } from "../ink/InkCanvas";
 import type { Stroke, Tool } from "../ink/types";
@@ -40,7 +40,8 @@ export function PageView(props: Props) {
   const [area, setArea] = useState({ width: 0, height: 0 });
   const [renderZoom, setRenderZoom] = useState(1);
   const zoomTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const web = isWebPage(page);
+  // 웹앱·동영상 페이지: 판서/조작 모드가 있고, 넘겼다 돌아와도 상태가 유지된다
+  const web = isInteractivePage(page);
   const inkActive = !web || props.webMode === "ink";
 
   useLayoutEffect(() => {
@@ -104,7 +105,7 @@ export function PageView(props: Props) {
   const aliveIds = alive.map((a) => a.id);
   if (web && !aliveIds.includes(page.id)) aliveIds.push(page.id);
   useEffect(() => {
-    if (!isWebPage(page)) return;
+    if (!isInteractivePage(page)) return;
     setAlive((prev) => {
       const now = performance.now();
       const next = prev.some((a) => a.id === page.id)
@@ -117,7 +118,7 @@ export function PageView(props: Props) {
   }, [page]);
   const alivePages = aliveIds
     .map((id) => doc.pages.find((p) => p.id === id))
-    .filter((p): p is WebPage => isWebPage(p));
+    .filter((p): p is InteractivePage => isInteractivePage(p));
 
   const pos = page ? visiblePosition(doc.pages, doc.hidden, page.id) : { index: -1, count: 0 };
   const hasPrev = !!page && stepVisible(doc.pages, doc.hidden, page.id, -1) !== null;
@@ -191,7 +192,15 @@ function PageBackground({
   if (page.kind === "blank") {
     return <BlankBackground background={page.background} size={size} />;
   }
-  // 웹 페이지는 WebStage가 그린다
+  if (page.kind === "image") {
+    const asset = mediaAsset(doc.assets, page.asset);
+    return asset ? (
+      <img className="image-page" src={asset.url} alt={asset.name} draggable={false} />
+    ) : (
+      <div className="page-placeholder">원본 이미지를 찾을 수 없습니다</div>
+    );
+  }
+  // 웹앱·동영상 페이지는 WebStage가 그린다
   if (page.kind !== "pdf") return null;
   const asset = pdfAsset(doc.assets, page.asset);
   if (!asset) return <div className="page-placeholder">원본 PDF를 찾을 수 없습니다</div>;

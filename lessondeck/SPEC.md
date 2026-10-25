@@ -84,8 +84,10 @@ tldraw 같은 무한 캔버스 대신 **페이지 단위 구조**를 택한다. 
   "version": 1,
   "title": "동아시아사 3단원 2차시",
   "assets": {
-    "pdf-a": { "type": "pdf", "file": "assets/pdf-a.pdf", "pageCount": 10 },
-    "html-quiz": { "type": "html", "file": "assets/html-quiz.html" }
+    "pdf-a": { "type": "pdf", "name": "3단원.pdf", "pageCount": 10, "aspects": [0.7071, "…"] },
+    "html-quiz": { "type": "html", "name": "퀴즈.html", "warnings": [] },
+    "img-map": { "type": "image", "name": "지도.heic", "mime": "image/jpeg", "width": 4032, "height": 3024 },
+    "vid-clip": { "type": "video", "name": "실험.mp4", "mime": "video/mp4", "width": 1920, "height": 1080, "duration": 42.5, "poster": "data:image/jpeg;base64,…" }
   },
   "pages": [
     { "id": "p1", "kind": "pdf", "asset": "pdf-a", "pageIndex": 0 },
@@ -94,13 +96,18 @@ tldraw 같은 무한 캔버스 대신 **페이지 단위 구조**를 택한다. 
     { "id": "p4", "kind": "pdf", "asset": "pdf-a", "pageIndex": 2 },
     { "id": "p5", "kind": "url", "url": "https://example.vercel.app", "aspect": "16:9" },
     { "id": "p6", "kind": "blank", "background": "grid" },
-    { "id": "p7", "kind": "youtube", "videoId": "aqz-KE-bpKQ", "start": 90, "aspect": "16:9" }
+    { "id": "p7", "kind": "youtube", "videoId": "aqz-KE-bpKQ", "start": 90, "aspect": "16:9" },
+    { "id": "p8", "kind": "image", "asset": "img-map" },
+    { "id": "p9", "kind": "video", "asset": "vid-clip" }
   ],
   "hidden": []
 }
 ```
 
-- **페이지 종류**: `pdf`(원본 PDF의 특정 쪽), `html`(내장 HTML 파일), `url`(외부 웹앱), `youtube`(유튜브 동영상), `blank`(백지·모눈).
+- **원본(assets)**: 원본 파일 자체는 manifest 밖에 따로 보관하고(아래 "저장"), manifest에는 종류와 화면에 필요한 정보만 둔다. `pdf`는 쪽수와 쪽마다의 가로÷세로 비율(`aspects`), `html`은 CDN 사용 등 경고(`warnings`), `image`·`video`는 저장한 형식(`mime`)과 픽셀 크기, 동영상은 길이(`duration`, 초)와 첫 화면 축소 이미지(`poster`)를 가진다.
+- **페이지 종류**: `pdf`(원본 PDF의 특정 쪽), `html`(내장 HTML 파일), `url`(외부 웹앱), `youtube`(유튜브 동영상), `image`(그림 한 장), `video`(기기에 저장된 동영상), `blank`(백지·모눈).
+  - `image` 페이지는 그림의 가로÷세로 비율 그대로 페이지가 된다. PNG·JPEG·WebP·GIF·SVG·BMP·AVIF·ICO는 그대로 보관하고, 브라우저가 못 그리는 HEIC/HEIF(갤럭시·아이폰 사진)는 JPEG으로, TIFF(스캔)는 PNG로 바꿔 보관한다. 긴 변이 4096px을 넘는 사진은 4096px로 줄인다(SVG·GIF 제외).
+  - `video` 페이지는 동영상의 비율 그대로 페이지가 되고 `<video controls playsinline>`로 페이지 안에서 재생한다. 조작/판서 모드가 있는 인터랙티브 페이지이며, 다른 페이지로 넘어가면 일시정지한다. 원본 파일을 그대로 보관한다(인터넷 불필요).
   - `youtube` 페이지는 `videoId`(11자), 재생목록이면 `list`, 시작 시각이면 `start`(초)를 가진다. 일반·짧은(youtu.be)·Shorts·재생목록 링크를 모두 이 형태로 바꿔 `youtube-nocookie.com/embed`로 페이지 안에서 바로 재생한다(유튜브 시청 페이지는 다른 앱 안에 띄울 수 없음). 다른 페이지로 넘어가면 일시정지하고, 영상 주인이 삽입을 막았으면 "YouTube에서 열기"로 안내한다. 인터넷이 필요하다.
   - `blank` 페이지는 `background`(`"plain"` 백지 · `"grid"` 모눈)와 `aspect`(가로÷세로 숫자)를 가진다. 추가할 때 바로 앞 페이지와 같은 비율로 만든다. 예: `{ "id": "p6", "kind": "blank", "background": "grid", "aspect": 0.7071 }`
   - `html`·`url`·`youtube` 페이지의 `aspect`는 `"16:9"`·`"4:3"`·`"A4"` 중 하나다(R8). 웹앱은 각각 1280×720 · 1024×768 · 794×1123 크기의 화면으로 그린 뒤 페이지 크기에 맞춰 축소·확대한다. 기본값은 `"16:9"`.
@@ -109,8 +116,18 @@ tldraw 같은 무한 캔버스 대신 **페이지 단위 구조**를 택한다. 
 - **필기 데이터**: 페이지 id별로 저장한다. 획마다 `{tool, color, width, points:[x, y, pressure]}`. 좌표는 페이지 크기 대비 0\~1 비율로 저장해 화면 크기가 바뀌어도 위치가 유지되게 한다.
   - `width`는 "페이지 가로 = 1000" 기준 단위다(예: 2 → 페이지 가로의 0.2%). 좌표와 마찬가지로 화면 크기와 무관하게 굵기 비율이 유지된다. 마우스·손가락 획은 실제 필압이 없으므로 `simulatePressure: true`를 함께 저장한다.
 - **HTML 페이지 필기**: HTML 내부 스크롤과 무관하게 페이지 프레임 기준으로 고정한다(판서는 칠판처럼 화면에 남는다).
-- **자동 저장**: IndexedDB. 획이 끝날 때마다 해당 페이지만 저장한다.
-- **프로젝트 파일(.lessondeck)**: 위 구조를 그대로 zip으로 묶는다. `manifest.json`, `ink/<pageId>.json`, `assets/`.
+- **자동 저장**: IndexedDB(`lessondeck` DB). 획이 끝날 때마다 해당 페이지만 저장하고, 페이지 구성·제목이 바뀌면 0.4초 뒤 manifest를 저장한다. 다시 켜면 마지막에 보던 문서를 연다.
+  - `docs`: 문서마다 `{id, title, createdAt, updatedAt, pageCount, manifest, thumb}`. `updatedAt`은 내용(페이지·필기·제목)이 바뀐 시각이며 동기화의 기준이다.
+  - `assets`: `[docId, assetId]` → 원본 Blob. `ink`: `[docId, pageId]` → 획 배열.
+  - `sync`: 문서별 드라이브 동기화 상태 `{docFileId, remoteUpdatedAt, syncedLocalUpdatedAt, assetFiles}`. `tombstones`: 이 기기에서 지운 문서(다음 동기화 때 드라이브에서도 지움). `meta`: 마지막 문서, 드라이브 연결 정보.
+  - 시작할 때 `navigator.storage.persist()`로 저장소가 지워지지 않게 요청한다.
+- **프로젝트 파일(.lessondeck)**: 위 구조를 그대로 zip으로 묶는다. `manifest.json`(위 manifest + `format: "lessondeck"`, `createdAt`, `updatedAt`, 원본 경로표 `files: {assetId: "assets/<assetId>.<확장자>"}`), `ink/<pageId>.json`, `assets/`. 홈의 "파일 가져오기"로 열면 새 문서가 된다.
+- **구글 드라이브 백업·동기화**: 구글 계정의 앱 전용 숨김 폴더(`appDataFolder`, 권한 `drive.appdata`)에 문서마다 두 종류의 파일을 둔다. 사용자의 드라이브 파일은 보지도 건드리지도 않는다.
+  - `doc-<docId>.json.gz`: `{format: "lessondeck-sync", version: 1, docId, createdAt, updatedAt, manifest, ink: {pageId: 획[]}}`를 gzip. 파일 속성(appProperties) `{kind: "doc", docId, updatedAt}`.
+  - `asset-<docId>-<assetId>`: 원본 파일 그대로, 한 번만 올린다. 속성 `{kind: "asset", docId, assetId}`. 5MB보다 크면 이어 올리기(resumable)로 보낸다.
+  - 언제: 앱을 켤 때, 고친 뒤 15초 조용할 때, 앱을 내릴 때, 인터넷이 다시 연결될 때, 켜 두는 동안 3분마다.
+  - 판단: 이 기기 `updatedAt` > `syncedLocalUpdatedAt`이면 "이 기기에서 고침", 드라이브 `updatedAt` ≠ `remoteUpdatedAt`이면 "다른 기기에서 고침". 한쪽만 고쳤으면 올리거나 받고, 양쪽 다 고쳤으면 다른 기기 쪽을 "제목 (다른 기기)" 사본으로 받아 두 판을 모두 남긴다(사본도 바로 올림). 이 기기에서 지운 문서는 드라이브에서도 지우고, 드라이브에서 사라진 문서는 이 기기에서 고친 적이 없을 때만 지운다.
+  - 안드로이드 앱은 구글 Play 서비스의 AuthorizationClient로 권한을 받는다(앱 패키지명 + 서명 SHA-1로 등록한 Android OAuth 클라이언트, 앱 안에 비밀값 없음). 웹 버전은 Google Identity Services 토큰 방식이며 빌드 때 `VITE_GOOGLE_CLIENT_ID`가 필요하다.
 - **PDF 내보내기(2차)**: pdf-lib으로 PDF 페이지에 필기를 벡터로 합성. HTML·URL 페이지는 제목과 "인터랙티브 페이지" 표시가 있는 대체 페이지 + 그 위 필기로 출력한다.
 
 ## 6. 화면 구성과 UX
@@ -248,3 +265,16 @@ SPEC.md를 읽고 Phase 0만 진행해줘.
 - [x] 링크 인식(일반·youtu.be·Shorts·라이브·embed·재생목록·시작 시각), 웹 주소 칸에 넣어도 동영상 페이지로 (단위 테스트)
 - [x] iframe이 Referer를 보냄(`strict-origin-when-cross-origin`) → 유튜브 오류 153 예방, 연결 신호·일시정지 명령 전송, 삽입 금지 영상(오류 150) 안내 (가짜 플레이어로 확인 — 이 개발 환경은 유튜브 접속이 막혀 실제 재생은 못 봄)
 - [ ] 갤럭시탭 APK에서 실제 유튜브 영상 재생·전체 화면·일시정지 확인
+
+### 2026-10-25 저장·드라이브 동기화·이미지·동영상·끌어서 옮기기 (v0.5.0)
+
+- 사용자 요청: 페이지 저장(기기 안 + 구글 드라이브 백업, 어느 기기에서든 연결하면 자동 동기화) / 페이지 바에서 끌어서 순서 바꾸기 / 여러 확장자의 이미지 삽입 / 기기에 저장된 동영상 삽입
+- [x] 자동 저장: 필기·이미지 7종·동영상을 넣고 새로고침 → 마지막 문서가 그대로 열림(9쪽, 필기 유지). 홈 문서 목록에서 이름 바꾸기·삭제 (데스크톱 Chromium)
+- [x] 파일로 내보내기(.lessondeck, 1.2MB) → 가져오기로 같은 문서 복원
+- [x] 이미지: PNG·큰 JPEG(6000×4000 → 4096으로 축소)·TIFF·BMP·WebP·GIF·SVG 한꺼번에 삽입, 각각 비율대로 페이지 생성. HEIC 변환은 실제 사진으로는 아직 시험 못 함
+- [x] 동영상(WebM): 페이지 안 재생, 다른 페이지로 넘기면 일시정지, 썸네일에 길이 표시
+- [x] 끌어서 옮기기: 마우스로 마지막 페이지(동영상)를 잡아 위로 끌기 → 목록 자동 스크롤 → 맨 앞에 놓기, 끄는 동안 미리보기 표시. 손가락은 0.35초 길게 누른 뒤 끔
+- [x] 드라이브 동기화(가짜 드라이브 서버 + 두 브라우저 = 기기 A·B): A 연결 → 원본 2개+문서 올림 / 빈 B 연결 → 문서·필기·이미지 받음 / B 필기 → A가 받음 / A 이름 변경 + B 필기 동시 → 양쪽 모두 원본과 "(다른 기기)" 사본 2개 / B에서 사본 삭제 → 드라이브와 A에서도 삭제 / 7.5MB 원본은 이어 올리기로 전송. 콘솔 오류 0
+- [x] 이전 단계 자동 시험(필기감·손가락·페이지 바·HTML·유튜브·오프라인·10쪽 PDF+HTML) 재실행 통과, 단위 테스트 37개 통과
+- [ ] 실제 구글 계정·Google Cloud 설정으로 APK에서 연결·동기화 확인 (이 개발 환경은 구글 접속이 막혀 있음)
+- [ ] 갤럭시탭에서 S펜·손가락으로 페이지 끌어 옮기기, 갤러리의 HEIC 사진·MP4 동영상 넣기

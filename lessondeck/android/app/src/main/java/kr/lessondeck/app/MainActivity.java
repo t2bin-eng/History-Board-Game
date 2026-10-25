@@ -11,6 +11,8 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        // 앱 안에 들어 있는 플러그인 (구글 드라이브 권한)
+        registerPlugin(GoogleDrivePlugin.class);
         super.onCreate(savedInstanceState);
         // 수업 중에 화면이 꺼지지 않게 한다
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);

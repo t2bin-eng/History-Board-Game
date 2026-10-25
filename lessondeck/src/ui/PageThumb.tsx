@@ -1,6 +1,7 @@
-import { FileCode2, Globe, Play } from "lucide-react";
+import { FileCode2, Film, Globe, Play } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
-import { htmlAsset, pageAspect, pdfAsset, type DocState, type Page } from "../doc/types";
+import { formatDuration } from "../doc/media";
+import { htmlAsset, mediaAsset, pageAspect, pdfAsset, type DocState, type Page } from "../doc/types";
 import { strokeToSvgPath } from "../ink/geometry";
 import { HIGHLIGHTER_ALPHA } from "../ink/palette";
 import type { Stroke } from "../ink/types";
@@ -14,7 +15,7 @@ interface Props {
   width: number;
 }
 
-// 페이지 바의 축소 이미지: PDF 쪽(빈 페이지, 웹앱은 아이콘 카드) + 그 위 필기
+// 페이지 바의 축소 이미지: PDF 쪽·이미지(빈 페이지, 웹앱·동영상은 카드) + 그 위 필기
 export const PageThumb = memo(function PageThumb({ page, doc, strokes, width }: Props) {
   const height = Math.round(width / pageAspect(page, doc.assets));
   const hostRef = useRef<HTMLDivElement>(null);
@@ -68,6 +69,10 @@ export const PageThumb = memo(function PageThumb({ page, doc, strokes, width }: 
       style={{ width, height, backgroundSize: grid ? `${width / 40}px ${width / 40}px` : undefined }}
     >
       {src && <img src={src} alt="" draggable={false} />}
+      {page.kind === "image" && mediaAsset(doc.assets, page.asset) && (
+        <img src={mediaAsset(doc.assets, page.asset)!.url} alt="" draggable={false} decoding="async" />
+      )}
+      {page.kind === "video" && <VideoThumb page={page} doc={doc} />}
       {page.kind === "html" && (
         <span className="thumb-web">
           <FileCode2 size={26} />
@@ -105,6 +110,21 @@ function YouTubeThumb({ page }: { page: Extract<Page, { kind: "youtube" }> }) {
         <Play size={16} fill="currentColor" />
       </span>
       {(failed || !src) && <span>{page.videoId ? "유튜브 동영상" : "유튜브 재생목록"}</span>}
+    </span>
+  );
+}
+
+/** 동영상: 첫 장면 + 재생 표시 + 길이 */
+function VideoThumb({ page, doc }: { page: Extract<Page, { kind: "video" }>; doc: DocState }) {
+  const asset = mediaAsset(doc.assets, page.asset);
+  return (
+    <span className="thumb-web youtube">
+      {asset?.poster ? <img src={asset.poster} alt="" draggable={false} /> : <Film size={26} />}
+      <span className="thumb-play video">
+        <Play size={16} fill="currentColor" />
+      </span>
+      {asset?.duration != null && <span className="thumb-duration">{formatDuration(asset.duration)}</span>}
+      {!asset?.poster && <span>{asset?.name ?? "동영상"}</span>}
     </span>
   );
 }

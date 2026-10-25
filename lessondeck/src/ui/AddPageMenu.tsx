@@ -1,4 +1,4 @@
-import { File, FileCode2, FileText, Globe, Grid3x3, SquarePlay } from "lucide-react";
+import { File, FileCode2, FileText, Film, Globe, Grid3x3, Image, SquarePlay } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { BlankBackground } from "../doc/types";
 
@@ -8,8 +8,8 @@ interface Props {
   left: number;
   top: number;
   onBlank: (background: BlankBackground) => void;
-  onPdf: () => void;
-  onHtml: () => void;
+  /** 파일 고르기 (PDF·HTML·이미지·동영상) */
+  onFile: (kind: "pdf" | "html" | "image" | "video") => void;
   /** 링크로 페이지 추가. 잘못된 링크면 안내 문구를 돌려준다 */
   onLink: (text: string, kind: LinkKind) => string | null;
   onClose: () => void;
@@ -20,8 +20,8 @@ const PLACEHOLDER: Record<LinkKind, string> = {
   youtube: "유튜브 링크 붙여넣기",
 };
 
-// 페이지 추가 메뉴: 빈 페이지·모눈 페이지·PDF 파일·HTML 파일·웹 주소·유튜브
-export function AddPageMenu({ left, top, onBlank, onPdf, onHtml, onLink, onClose }: Props) {
+// 페이지 추가 메뉴: 빈 페이지·모눈 페이지·PDF·이미지·동영상·HTML 파일·웹 주소·유튜브
+export function AddPageMenu({ left, top, onBlank, onFile, onLink, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [linkKind, setLinkKind] = useState<LinkKind | null>(null);
   const [url, setUrl] = useState("");
@@ -53,7 +53,7 @@ export function AddPageMenu({ left, top, onBlank, onPdf, onHtml, onLink, onClose
   };
 
   // 화면 밖으로 넘치지 않게 (상단 오른쪽 버튼에서 열 때 등)
-  const maxTop = window.innerHeight - (linkKind ? 420 : 370);
+  const maxTop = window.innerHeight - (linkKind ? 520 : 470);
   const maxLeft = window.innerWidth - 276;
   return (
     <div
@@ -70,11 +70,19 @@ export function AddPageMenu({ left, top, onBlank, onPdf, onHtml, onLink, onClose
       <button role="menuitem" onClick={() => onBlank("grid")}>
         <Grid3x3 size={20} /> 모눈 페이지
       </button>
-      <button role="menuitem" onClick={onPdf}>
+      <button role="menuitem" onClick={() => onFile("pdf")}>
         <FileText size={20} /> PDF 파일에서 추가…
       </button>
+      <button role="menuitem" onClick={() => onFile("image")}>
+        <Image size={20} /> 이미지…
+        <small>여러 장 · HEIC·TIFF</small>
+      </button>
+      <button role="menuitem" onClick={() => onFile("video")}>
+        <Film size={20} /> 동영상…
+        <small>기기에 저장된 파일</small>
+      </button>
       <div className="add-menu-sep" />
-      <button role="menuitem" onClick={onHtml}>
+      <button role="menuitem" onClick={() => onFile("html")}>
         <FileCode2 size={20} /> HTML 파일…
         <small>오프라인 실행</small>
       </button>

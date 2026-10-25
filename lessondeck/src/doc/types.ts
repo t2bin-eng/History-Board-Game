@@ -23,7 +23,22 @@ export interface HtmlAsset {
   warnings: string[];
 }
 
-export type Asset = PdfAsset | HtmlAsset;
+/** 이미지·동영상 원본. 기기 안(IndexedDB)의 Blob을 object URL로 보여 준다 */
+export interface MediaAsset {
+  kind: "image" | "video";
+  id: string;
+  name: string;
+  mime: string;
+  width: number;
+  height: number;
+  /** 동영상 길이(초) */
+  duration?: number;
+  /** 동영상 첫 장면 (작은 JPEG data URL) */
+  poster?: string;
+  url: string;
+}
+
+export type Asset = PdfAsset | HtmlAsset | MediaAsset;
 
 export type BlankBackground = "plain" | "grid";
 
@@ -44,12 +59,18 @@ export type Page =
   | { id: string; kind: "blank"; background: BlankBackground; aspect: number }
   | { id: string; kind: "html"; asset: string; aspect: AspectPreset }
   | { id: string; kind: "url"; url: string; aspect: AspectPreset }
-  | { id: string; kind: "youtube"; videoId?: string; list?: string; start?: number; aspect: AspectPreset };
+  | { id: string; kind: "youtube"; videoId?: string; list?: string; start?: number; aspect: AspectPreset }
+  | { id: string; kind: "image"; asset: string }
+  | { id: string; kind: "video"; asset: string };
 
-/** iframe으로 띄우는 페이지 (판서/조작 모드가 있는 페이지) */
+/** iframe으로 띄우는 페이지 (화면 비율을 고를 수 있음) */
 export type WebPage = Extract<Page, { kind: "html" | "url" | "youtube" }>;
+/** 판서/조작 모드가 있는 페이지 (웹앱·동영상) */
+export type InteractivePage = Extract<Page, { kind: "html" | "url" | "youtube" | "video" }>;
 
 export interface DocState {
+  /** 기기 안 저장소(IndexedDB)의 문서 id */
+  id: string;
   title: string;
   assets: Record<string, Asset>;
   pages: Page[];
@@ -61,6 +82,10 @@ export const A4_PORTRAIT = 210 / 297;
 
 export function isWebPage(page: Page | undefined): page is WebPage {
   return page?.kind === "html" || page?.kind === "url" || page?.kind === "youtube";
+}
+
+export function isInteractivePage(page: Page | undefined): page is InteractivePage {
+  return isWebPage(page) || page?.kind === "video";
 }
 
 export function pageAspect(page: Page, assets: Record<string, Asset>): number {
@@ -77,7 +102,17 @@ export function pageAspect(page: Page, assets: Record<string, Asset>): number {
       const asset = assets[page.asset];
       return asset?.kind === "pdf" ? (asset.aspects[page.pageIndex] ?? A4_PORTRAIT) : A4_PORTRAIT;
     }
+    case "image":
+    case "video": {
+      const asset = mediaAsset(assets, page.asset);
+      return asset && asset.width > 0 && asset.height > 0 ? asset.width / asset.height : 16 / 9;
+    }
   }
+}
+
+export function mediaAsset(assets: Record<string, Asset>, id: string): MediaAsset | undefined {
+  const a = assets[id];
+  return a?.kind === "image" || a?.kind === "video" ? a : undefined;
 }
 
 export function pdfAsset(assets: Record<string, Asset>, id: string): PdfAsset | undefined {
@@ -90,8 +125,12 @@ export function htmlAsset(assets: Record<string, Asset>, id: string): HtmlAsset 
   return a?.kind === "html" ? a : undefined;
 }
 
-export function newPageId(): string {
+export function newId(prefix: string): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? `p-${crypto.randomUUID()}`
-    : `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    ? `${prefix}-${crypto.randomUUID()}`
+    : `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function newPageId(): string {
+  return newId("p");
 }
