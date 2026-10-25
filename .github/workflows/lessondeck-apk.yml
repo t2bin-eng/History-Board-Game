@@ -40,7 +40,9 @@ jobs:
             lessondeck/android/**/*.gradle*
             lessondeck/android/**/gradle-wrapper.properties
 
-      - uses: android-actions/setup-android@v3
+      # 안드로이드 SDK는 ubuntu 러너에 미리 설치되어 있다 (ANDROID_HOME)
+      - name: Check Android SDK
+        run: echo "ANDROID_HOME=$ANDROID_HOME" && ls "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools"
 
       - name: Install
         run: npm ci
