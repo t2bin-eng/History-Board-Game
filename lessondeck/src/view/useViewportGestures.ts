@@ -11,6 +11,8 @@ interface Options {
   fingerDraw: boolean;
   /** 이 값이 바뀌면(페이지 전환) 배율을 원래대로 */
   resetKey: string;
+  /** 한 손가락으로 쓸어 페이지 넘기기 */
+  swipe: boolean;
   onSwipe: (delta: 1 | -1) => void;
   /** 확대·이동이 끝났을 때 최종 배율 (선명하게 다시 그리기용) */
   onZoomEnd: (z: number) => void;
@@ -178,7 +180,7 @@ export function useViewportGestures(opts: Options) {
       const dt = performance.now() - start.t;
       const isTap = !cancelled && Math.abs(dx) < TAP_SLOP && Math.abs(dy) < TAP_SLOP && dt < 300;
       if (mode === "swipe" && !cancelled) {
-        if (Math.abs(dx) > SWIPE_MIN && Math.abs(dx) > Math.abs(dy) * 1.5 && dt < SWIPE_MAX_MS) {
+        if (optsRef.current.swipe && Math.abs(dx) > SWIPE_MIN && Math.abs(dx) > Math.abs(dy) * 1.5 && dt < SWIPE_MAX_MS) {
           optsRef.current.onSwipe(dx < 0 ? 1 : -1);
         } else if (isTap) {
           onTap(p);

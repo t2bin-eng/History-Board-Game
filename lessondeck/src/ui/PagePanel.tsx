@@ -1,6 +1,6 @@
-import { ArrowDown, ArrowUp, Copy, Plus, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, Eye, EyeOff, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useRef } from "react";
-import type { DocState } from "../doc/types";
+import { isWebPage, type DocState } from "../doc/types";
 import type { InkBook } from "../ink/history";
 import { PageThumb } from "./PageThumb";
 
@@ -14,15 +14,32 @@ interface Props {
   onDuplicate: (id: string) => void;
   onMove: (id: string, delta: number) => void;
   onDelete: (id: string) => void;
+  /** 숨기기 ↔ 보이기 (SPEC F3: HTML로 대체한 원본 쪽 등) */
+  onToggleHidden: (id: string) => void;
+  /** HTML·URL 페이지 화면 비율 바꾸기 (16:9 → 4:3 → A4) */
+  onCycleAspect: (id: string) => void;
   onClose: () => void;
 }
 
 const THUMB_WIDTH = 112;
 
-// 왼쪽 페이지 바 (SPEC F4·F7): 썸네일, 사이사이 + 버튼, 선택한 페이지의 이동·복제·삭제
-export function PagePanel({ doc, ink, currentId, onSelect, onAdd, onDuplicate, onMove, onDelete, onClose }: Props) {
+// 왼쪽 페이지 바 (SPEC F3·F4·F7): 썸네일, 사이사이 + 버튼, 선택한 페이지의 이동·복제·삭제·숨기기·비율
+export function PagePanel({
+  doc,
+  ink,
+  currentId,
+  onSelect,
+  onAdd,
+  onDuplicate,
+  onMove,
+  onDelete,
+  onToggleHidden,
+  onCycleAspect,
+  onClose,
+}: Props) {
   const listRef = useRef<HTMLDivElement>(null);
   const count = doc.pages.length;
+  const hidden = new Set(doc.hidden);
 
   // 현재 페이지가 보이도록 스크롤
   useEffect(() => {
@@ -41,13 +58,24 @@ export function PagePanel({ doc, ink, currentId, onSelect, onAdd, onDuplicate, o
       <div className="page-panel-list" ref={listRef}>
         {doc.pages.map((page, i) => {
           const current = page.id === currentId;
+          const isHidden = hidden.has(page.id);
           return (
             <div key={page.id} className="pp-item">
               <AddSlot index={i} onAdd={onAdd} />
-              <div className={`pp-card${current ? " current" : ""}`} data-page-id={page.id}>
-                <button className="pp-thumb" aria-label={`${i + 1}쪽`} aria-current={current} onClick={() => onSelect(page.id)}>
+              <div className={`pp-card${current ? " current" : ""}${isHidden ? " is-hidden" : ""}`} data-page-id={page.id}>
+                <button
+                  className="pp-thumb"
+                  aria-label={`${i + 1}쪽${isHidden ? " (숨김)" : ""}`}
+                  aria-current={current}
+                  onClick={() => onSelect(page.id)}
+                >
                   <PageThumb page={page} doc={doc} strokes={ink[page.id]?.present ?? []} width={THUMB_WIDTH} />
                   <span className="pp-num">{i + 1}</span>
+                  {isHidden && (
+                    <span className="pp-hidden-badge">
+                      <EyeOff size={12} /> 숨김
+                    </span>
+                  )}
                 </button>
                 {current && (
                   <div className="pp-actions">
@@ -69,6 +97,21 @@ export function PagePanel({ doc, ink, currentId, onSelect, onAdd, onDuplicate, o
                     >
                       <Trash2 size={16} />
                     </button>
+                    <button
+                      className="wide"
+                      aria-label={isHidden ? "보이기" : "숨기기"}
+                      title={isHidden ? "보이기" : "숨기기 (넘길 때 건너뜀)"}
+                      onClick={() => onToggleHidden(page.id)}
+                    >
+                      {isHidden ? <Eye size={14} /> : <EyeOff size={14} />}
+                      {/* 웹 페이지는 비율 버튼과 나눠 쓰므로 아이콘만 */}
+                      {!isWebPage(page) && (isHidden ? "보이기" : "숨기기")}
+                    </button>
+                    {isWebPage(page) && (
+                      <button className="wide" title="화면 비율 바꾸기" onClick={() => onCycleAspect(page.id)}>
+                        {page.aspect}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

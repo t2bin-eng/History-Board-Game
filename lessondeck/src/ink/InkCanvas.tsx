@@ -18,6 +18,8 @@ interface Props {
   fingerDraw: boolean;
   /** 진행 중인 획 캔버스에 desynchronized(저지연) 컨텍스트를 쓴다. 바꾸려면 컴포넌트를 다시 만들어야 한다. */
   lowLatency: boolean;
+  /** false면 필기층을 통과시킨다 (HTML 페이지 조작 모드: 필기는 보이지만 터치·펜은 웹앱으로) */
+  active: boolean;
   onCommit: (strokes: Stroke[]) => void;
 }
 
@@ -76,6 +78,13 @@ export function InkCanvas(props: Props) {
       redraw(base, strokes, page, sizeRef.current.scale);
     }
   }, [props.page, props.strokes, props.zoom]);
+
+  // 조작 모드로 바뀌면 남아 있던 지우개 표시 등을 지운다
+  useEffect(() => {
+    if (props.active) return;
+    const live = liveRef.current!;
+    live.getContext("2d")!.clearRect(0, 0, live.width, live.height);
+  }, [props.active]);
 
   useEffect(() => {
     const live = liveRef.current!;
@@ -371,7 +380,7 @@ export function InkCanvas(props: Props) {
   }, []);
 
   return (
-    <div className="ink-layer">
+    <div className={`ink-layer${props.active ? "" : " passthrough"}`}>
       <canvas ref={baseRef} className="ink-canvas" />
       <canvas ref={liveRef} className="ink-canvas ink-live" />
     </div>

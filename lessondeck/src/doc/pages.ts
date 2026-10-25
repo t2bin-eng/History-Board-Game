@@ -28,3 +28,20 @@ export function pageAfterRemoval(pages: Page[], removedId: string): string | nul
   if (i < 0) return null;
   return pages[i + 1]?.id ?? pages[i - 1]?.id ?? null;
 }
+
+/** 숨긴 페이지를 건너뛰고 delta 방향의 다음 페이지 id. 없으면 null */
+export function stepVisible(pages: Page[], hidden: string[], currentId: string, delta: 1 | -1): string | null {
+  const skip = new Set(hidden);
+  let i = pages.findIndex((p) => p.id === currentId);
+  for (i += delta; i >= 0 && i < pages.length; i += delta) {
+    if (!skip.has(pages[i].id)) return pages[i].id;
+  }
+  return null;
+}
+
+/** 숨기지 않은 페이지 중 몇 번째인지(0부터)와 전체 개수 */
+export function visiblePosition(pages: Page[], hidden: string[], currentId: string): { index: number; count: number } {
+  const skip = new Set(hidden);
+  const visible = pages.filter((p) => !skip.has(p.id));
+  return { index: visible.findIndex((p) => p.id === currentId), count: visible.length };
+}

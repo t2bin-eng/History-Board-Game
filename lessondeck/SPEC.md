@@ -92,7 +92,7 @@ tldraw 같은 무한 캔버스 대신 **페이지 단위 구조**를 택한다. 
     { "id": "p2", "kind": "pdf", "asset": "pdf-a", "pageIndex": 1 },
     { "id": "p3", "kind": "html", "asset": "html-quiz", "aspect": "16:9" },
     { "id": "p4", "kind": "pdf", "asset": "pdf-a", "pageIndex": 2 },
-    { "id": "p5", "kind": "url", "url": "https://example.vercel.app" },
+    { "id": "p5", "kind": "url", "url": "https://example.vercel.app", "aspect": "16:9" },
     { "id": "p6", "kind": "blank", "background": "grid" }
   ],
   "hidden": []
@@ -101,6 +101,9 @@ tldraw 같은 무한 캔버스 대신 **페이지 단위 구조**를 택한다. 
 
 - **페이지 종류**: `pdf`(원본 PDF의 특정 쪽), `html`(내장 HTML 파일), `url`(외부 웹앱), `blank`(백지·모눈).
   - `blank` 페이지는 `background`(`"plain"` 백지 · `"grid"` 모눈)와 `aspect`(가로÷세로 숫자)를 가진다. 추가할 때 바로 앞 페이지와 같은 비율로 만든다. 예: `{ "id": "p6", "kind": "blank", "background": "grid", "aspect": 0.7071 }`
+  - `html`·`url` 페이지의 `aspect`는 `"16:9"`·`"4:3"`·`"A4"` 중 하나다(R8). 웹앱은 각각 1280×720 · 1024×768 · 794×1123 크기의 화면으로 그린 뒤 페이지 크기에 맞춰 축소·확대한다. 기본값은 `"16:9"`.
+  - `hidden`: 숨긴 페이지 id 목록(F3). 숨긴 페이지는 넘길 때 건너뛰고, 페이지 바에서는 흐리게 보이며 다시 보이게 할 수 있다.
+  - HTML 원본(`assets`의 `type: "html"`)은 파일 내용을 그대로 보관하고 `<iframe srcdoc sandbox="allow-scripts allow-forms allow-popups allow-modals">`로 실행한다(`allow-same-origin` 금지, R5). URL 페이지는 그 사이트 자신의 출처로 열리도록 `allow-same-origin`을 더한다(R6). 단, 레슨덱과 같은 출처의 주소면 빼서 격리를 유지한다.
 - **필기 데이터**: 페이지 id별로 저장한다. 획마다 `{tool, color, width, points:[x, y, pressure]}`. 좌표는 페이지 크기 대비 0\~1 비율로 저장해 화면 크기가 바뀌어도 위치가 유지되게 한다.
   - `width`는 "페이지 가로 = 1000" 기준 단위다(예: 2 → 페이지 가로의 0.2%). 좌표와 마찬가지로 화면 크기와 무관하게 굵기 비율이 유지된다. 마우스·손가락 획은 실제 필압이 없으므로 `simulatePressure: true`를 함께 저장한다.
 - **HTML 페이지 필기**: HTML 내부 스크롤과 무관하게 페이지 프레임 기준으로 고정한다(판서는 칠판처럼 화면에 남는다).
@@ -226,3 +229,13 @@ SPEC.md를 읽고 Phase 0만 진행해줘.
 - [x] 사이드 버튼을 누르고 있는 동안 툴바 지우개 활성화 → 쓰면 지워지고 떼면 펜으로 복귀 (펜 입력 흉내로 확인)
 - [x] 왼쪽 페이지 바: 빈 페이지·모눈 페이지·PDF 쪽 추가, 삭제(되돌리기), 복제, 앞뒤 이동, 썸네일에 필기 표시
 - [ ] 갤럭시탭 실기기에서 위 세 가지 재확인
+
+### 2026-10-25 HTML·URL 페이지 (v0.3.0)
+
+- [x] HTML 파일 삽입(F2): 시험용 퀴즈 HTML을 1쪽 뒤에 넣고 조작 모드에서 정답 버튼 동작 확인, CDN 사용 경고 표시
+- [x] 판서/조작 전환(F6): 판서 모드에서 웹앱 위에 필기 → 조작 모드로 돌아가 다시 웹앱 조작, 필기 유지
+- [x] 다른 페이지로 갔다 와도, 비율을 바꾸거나 다른 웹 페이지를 넣어도 웹앱 상태 유지 (최근 3개)
+- [x] URL 페이지: https 자동 보정, 잘못된 주소 거절, "인터넷 필요" 표시
+- [x] 원본 쪽 숨기기(F3): 숨긴 쪽은 넘길 때 건너뜀
+- [x] Phase 1 완료 기준: 10쪽 PDF의 2쪽 뒤에 HTML 삽입 → 1쪽(PDF)·2쪽(PDF)·3쪽(HTML)·4~11쪽(PDF)까지 넘김 (데스크톱 Chromium)
+- [ ] 갤럭시탭 APK에서 실제 수업용 HTML(형성평가 멀티툴·발자국)과 URL 페이지 확인

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { insertPages, movePage, pageAfterRemoval, removePage } from "./pages";
+import { insertPages, movePage, pageAfterRemoval, removePage, stepVisible, visiblePosition } from "./pages";
 import type { Page } from "./types";
 
 const blank = (id: string): Page => ({ id, kind: "blank", background: "plain", aspect: 1 });
@@ -29,5 +29,19 @@ describe("movePage", () => {
     expect(ids(movePage(base, "b", 1))).toEqual(["a", "c", "b"]);
     expect(movePage(base, "a", -1)).toBe(base);
     expect(movePage(base, "c", 1)).toBe(base);
+  });
+});
+
+describe("stepVisible / visiblePosition", () => {
+  const pages = [blank("a"), blank("b"), blank("c"), blank("d")];
+  it("숨긴 페이지를 건너뛴다", () => {
+    expect(stepVisible(pages, ["b", "c"], "a", 1)).toBe("d");
+    expect(stepVisible(pages, ["b", "c"], "d", -1)).toBe("a");
+    expect(stepVisible(pages, ["d"], "c", 1)).toBeNull();
+  });
+  it("숨기지 않은 페이지 기준 위치", () => {
+    expect(visiblePosition(pages, ["b"], "c")).toEqual({ index: 1, count: 3 });
+    // 숨긴 페이지를 보고 있으면 -1
+    expect(visiblePosition(pages, ["b"], "b")).toEqual({ index: -1, count: 3 });
   });
 });

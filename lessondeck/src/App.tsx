@@ -8,6 +8,7 @@ import {
   Highlighter,
   Maximize,
   Minimize,
+  MousePointer2,
   PanelLeft,
   PenLine,
   Redo2,
@@ -15,9 +16,18 @@ import {
   Undo2,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { loadPdfAsset, pagesForAsset } from "./doc/load";
-import { insertPages, movePage, pageAfterRemoval, removePage } from "./doc/pages";
-import { A4_PORTRAIT, newPageId, pageAspect, type BlankBackground, type DocState, type Page } from "./doc/types";
+import { loadHtmlAsset, loadPdfAsset, pagesForAsset } from "./doc/load";
+import { insertPages, movePage, pageAfterRemoval, removePage, stepVisible } from "./doc/pages";
+import {
+  A4_PORTRAIT,
+  ASPECT_PRESETS,
+  isWebPage,
+  newPageId,
+  pageAspect,
+  type BlankBackground,
+  type DocState,
+  type Page,
+} from "./doc/types";
 import { applyInk, type InkAction, type InkBook } from "./ink/history";
 import { DEFAULT_PRESETS, ERASER_LEVELS } from "./ink/palette";
 import type { InkTool, PenPreset, Stroke, Tool } from "./ink/types";
@@ -39,7 +49,7 @@ type PdfTarget = { mode: "new" } | { mode: "insert"; index: number };
 
 const SAMPLE_URL = `${import.meta.env.BASE_URL}sample.pdf`;
 const NO_STROKES: Stroke[] = [];
-const emptyDoc: DocState = { title: "레슨덱", assets: {}, pages: [] };
+const emptyDoc: DocState = { title: "레슨덱", assets: {}, pages: [], hidden: [] };
 
 export default function App() {
   const [doc, setDoc] = useState<DocState>(emptyDoc);
@@ -64,6 +74,8 @@ export default function App() {
   const [eraserSize, setEraserSize] = useState(ERASER_LEVELS[1]);
   const [popover, setPopover] = useState<Popover>(null);
   const [addMenu, setAddMenu] = useState<{ index: number; left: number; top: number } | null>(null);
+  /** HTML·URL 페이지: 조작(웹앱 사용) ↔ 판서. 다른 페이지로 넘어가면 조작으로 돌아간다. */
+  const [webMode, setWebMode] = useState<"interact" | "ink">("interact");
 
   const [fingerDraw, setFingerDraw] = usePersistentFlag("lessondeck.fingerDraw", false);
   const [lowLatency, setLowLatency] = usePersistentFlag("lessondeck.lowLatency", true);
@@ -74,7 +86,9 @@ export default function App() {
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const fileRef = useRef<HTMLInputElement>(null);
+  const htmlFileRef = useRef<HTMLInputElement>(null);
   const pdfTarget = useRef<PdfTarget>({ mode: "new" });
+  const htmlInsertAt = useRef(0);
 
   const activePreset = presets.find((p) => p.id === activePresetId) ?? presets[0];
   const pageIndex = Math.max(0, doc.pages.findIndex((p) => p.id === currentId));
@@ -82,6 +96,7 @@ export default function App() {
   const pageInk = currentPage ? ink[currentPage.id] : undefined;
   const strokes = pageInk?.present ?? NO_STROKES;
   const erasing = tool === "eraser" || sideEraser;
+  const onWebPage = isWebPage(currentPage);
 
   const openToast = useCallback((message: string, action?: NonNullable<Toast>["action"]) => {
     clearTimeout(toastTimer.current);
@@ -95,11 +110,13 @@ export default function App() {
       setLoadError(null);
       setLoading(true);
       const asset = await loadPdfAsset(bytes, name);
-      for (const old of Object.values(docRef.current.assets)) old.doc.loadingTask.destroy();
+      for (const old of Object.values(docRef.current.assets)) {
+        if (old.kind === "pdf") old.doc.loadingTask.destroy();
+      }
       clearRenderCache();
       clearThumbnails();
       const pages = pagesForAsset(asset);
-      setDoc({ title: asset.name, assets: { [asset.id]: asset }, pages });
+      setDoc({ title: asset.name, assets: { [asset.id]: asset }, pages, hidden: [] });
       setInk({});
       setCurrentId(pages[0]?.id ?? "");
     } catch (err) {
@@ -155,12 +172,15 @@ export default function App() {
   };
 
   // ── 페이지 관리 ─────────────────────────────────────────
-  const goTo = useCallback((delta: number) => {
-    const pages = docRef.current.pages;
-    const i = pages.findIndex((p) => p.id === currentIdRef.current);
-    const next = pages[Math.max(0, Math.min(pages.length - 1, i + delta))];
-    if (next && next.id !== currentIdRef.current) setCurrentId(next.id);
+  /** 숨긴 페이지는 건너뛰고 넘긴다 */
+  const goTo = useCallback((delta: 1 | -1) => {
+    const { pages, hidden } = docRef.current;
+    const next = stepVisible(pages, hidden, currentIdRef.current, delta);
+    if (next) setCurrentId(next);
   }, []);
+
+  // 다른 페이지로 넘어가면 웹앱 페이지는 다시 조작 모드로
+  useEffect(() => setWebMode("interact"), [currentId]);
 
   const addBlank = (index: number, background: BlankBackground) => {
     // 바로 앞(없으면 뒤) 페이지와 같은 비율로 만든다
@@ -196,6 +216,51 @@ export default function App() {
     setDoc((d) => ({ ...d, pages: insertPages(d.pages, index + 1, [copy]) }));
     setInk((b) => (b[id] ? { ...b, [copy.id]: { past: [], present: b[id].present, future: [] } } : b));
     setCurrentId(copy.id);
+  };
+
+  const insertWebPage = (index: number, page: Page) => {
+    setDoc((d) => ({ ...d, pages: insertPages(d.pages, index, [page]) }));
+    setCurrentId(page.id);
+  };
+
+  const onPickHtml = async (file: File | undefined) => {
+    if (!file) return;
+    const asset = loadHtmlAsset(await file.arrayBuffer(), file.name);
+    setDoc((d) => ({ ...d, assets: { ...d.assets, [asset.id]: asset } }));
+    insertWebPage(htmlInsertAt.current, { id: newPageId(), kind: "html", asset: asset.id, aspect: "16:9" });
+    openToast(asset.warnings.length ? `${asset.name}: ${asset.warnings[0]}` : `${asset.name} 페이지를 넣었습니다 (조작 모드)`);
+  };
+
+  const pickHtml = (index: number) => {
+    htmlInsertAt.current = index;
+    htmlFileRef.current?.click();
+  };
+
+  const addUrl = (index: number, url: string) => {
+    insertWebPage(index, { id: newPageId(), kind: "url", url, aspect: "16:9" });
+    openToast("웹 페이지를 넣었습니다. 인터넷이 연결되어 있어야 보입니다.");
+  };
+
+  const toggleHidden = (id: string) => {
+    const hiding = !doc.hidden.includes(id);
+    const visibleCount = doc.pages.filter((p) => !doc.hidden.includes(p.id)).length;
+    if (hiding && visibleCount <= 1) {
+      openToast("보이는 페이지가 한 장은 있어야 합니다");
+      return;
+    }
+    setDoc((d) => ({ ...d, hidden: hiding ? [...d.hidden, id] : d.hidden.filter((x) => x !== id) }));
+    if (hiding) {
+      openToast("페이지를 숨겼습니다. 넘길 때 건너뜁니다.");
+    }
+  };
+
+  const cycleAspect = (id: string) => {
+    setDoc((d) => ({
+      ...d,
+      pages: d.pages.map((p) =>
+        isWebPage(p) && p.id === id ? { ...p, aspect: ASPECT_PRESETS[(ASPECT_PRESETS.indexOf(p.aspect) + 1) % ASPECT_PRESETS.length] } : p,
+      ),
+    }));
   };
 
   const openAddMenu = (index: number, anchor: DOMRect) => {
@@ -238,6 +303,8 @@ export default function App() {
     setTool(p.tool);
     setLastByTool((m) => ({ ...m, [p.tool]: id }));
     setPopover(null);
+    // 웹앱 페이지에서 펜을 고르면 판서할 생각이므로 판서 모드로 바꾼다
+    if (onWebPage) setWebMode("ink");
   };
 
   const openPresetSettings = (id: string, rect: DOMRect) => {
@@ -253,9 +320,11 @@ export default function App() {
         setTool("eraser");
         setPopover(null);
       }
+      if (onWebPage) setWebMode("ink");
       return;
     }
     if (tool === t) {
+      if (onWebPage) setWebMode("ink");
       setPopover(popover ? null : { kind: "preset", id: activePresetId, ...anchor });
     } else {
       selectPreset(lastByTool[t]);
@@ -272,6 +341,8 @@ export default function App() {
   // PC에서 시험할 때 쓰는 단축키
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // 주소 입력 중에는 단축키를 쓰지 않는다
+      if ((e.target as Element)?.closest?.("input, textarea, [contenteditable]")) return;
       const mod = e.ctrlKey || e.metaKey;
       if (mod && e.key.toLowerCase() === "z") {
         e.preventDefault();
@@ -352,6 +423,16 @@ export default function App() {
             e.target.value = "";
           }}
         />
+        <input
+          ref={htmlFileRef}
+          type="file"
+          accept="text/html,.html,.htm"
+          hidden
+          onChange={(e) => {
+            onPickHtml(e.target.files?.[0]);
+            e.target.value = "";
+          }}
+        />
       </header>
 
       <nav className="toolrow" aria-label="필기 도구">
@@ -378,6 +459,20 @@ export default function App() {
         <IconButton label="이 페이지 필기 지우기" disabled={strokes.length === 0} onClick={() => inkAction({ type: "clear" })}>
           <Trash2 size={22} />
         </IconButton>
+        {onWebPage && (
+          <>
+            <span className="toolrow-sep" />
+            {/* SPEC F6: HTML·URL 페이지에서만 보이는 판서 ↔ 조작 스위치 */}
+            <div className="mode-switch" role="radiogroup" aria-label="웹앱 페이지 모드">
+              <button role="radio" aria-checked={webMode === "interact"} onClick={() => setWebMode("interact")}>
+                <MousePointer2 size={18} /> 조작
+              </button>
+              <button role="radio" aria-checked={webMode === "ink"} onClick={() => setWebMode("ink")}>
+                <PenLine size={18} /> 판서
+              </button>
+            </div>
+          </>
+        )}
       </nav>
 
       <div className="workspace">
@@ -391,6 +486,8 @@ export default function App() {
             onDuplicate={duplicatePage}
             onMove={(id, delta) => setDoc((d) => ({ ...d, pages: movePage(d.pages, id, delta) }))}
             onDelete={deletePage}
+            onToggleHidden={toggleHidden}
+            onCycleAspect={cycleAspect}
             onClose={() => setPagePanelOpen(false)}
           />
         )}
@@ -405,6 +502,7 @@ export default function App() {
           eraserSize={eraserSize}
           fingerDraw={fingerDraw}
           lowLatency={lowLatency}
+          webMode={webMode}
           onCommit={onCommit}
           onNavigate={goTo}
           onPdfRendered={setPdfRenderMs}
@@ -464,6 +562,14 @@ export default function App() {
           }}
           onPdf={() => {
             pickPdf({ mode: "insert", index: addMenu.index });
+            setAddMenu(null);
+          }}
+          onHtml={() => {
+            pickHtml(addMenu.index);
+            setAddMenu(null);
+          }}
+          onUrl={(url) => {
+            addUrl(addMenu.index, url);
             setAddMenu(null);
           }}
           onClose={closeAddMenu}
