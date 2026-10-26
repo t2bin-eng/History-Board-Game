@@ -67,6 +67,15 @@ jobs:
           mv android/app/build/outputs/apk/debug/app-debug.apk "android/app/build/outputs/apk/debug/$name"
           echo "name=$name" >> "$GITHUB_OUTPUT"
 
+      # 실제 APK의 서명 인증서 지문 (Google Cloud Android OAuth 클라이언트의 SHA-1과 같아야 한다)
+      - name: Print signing certificate
+        run: |
+          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner"
+          "$apksigner" verify --print-certs "android/app/build/outputs/apk/debug/${{ steps.apk.outputs.name }}" | tee cert.txt
+          sha1=$(grep -m1 "SHA-1 digest" cert.txt | awk '{print toupper($NF)}' | sed 's/../&:/g; s/:$//')
+          echo "SHA-1: $sha1"
+          echo "### APK 서명 SHA-1: \`$sha1\`" >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.apk.outputs.name }}
