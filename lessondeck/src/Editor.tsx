@@ -5,17 +5,21 @@ import {
   FilePlus2,
   Hand,
   Highlighter,
+  Link2,
   Minimize2,
   MousePointer2,
+  Palette,
   PanelLeft,
   PenLine,
   Presentation,
   Redo2,
   Share2,
   Trash2,
+  Type,
   Undo2,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { addBox, BOX_SIZES, boxesOf, copyBoxes, DEFAULT_BOX_SIZE, LINK_COLOR, BOX_COLORS, pageNumberLabel, patchBox, removeBox, setBoxLink } from "./doc/boxes";
 import { normalizeUrl } from "./doc/html";
 import { loadHtmlAsset, loadPdfAsset, pagesForAsset } from "./doc/load";
 import { IMAGE_ACCEPT, isVideoFile, prepareImage, prepareVideo, VIDEO_ACCEPT } from "./doc/media";
@@ -32,8 +36,10 @@ import {
   pdfAsset,
   type Asset,
   type BlankBackground,
+  type BoxLink,
   type DocState,
   type Page,
+  type TextBox,
 } from "./doc/types";
 import { parseYouTube } from "./doc/youtube";
 import { applyInk, type InkAction, type InkBook } from "./ink/history";
@@ -50,9 +56,11 @@ import { AddPageMenu, type LinkKind } from "./ui/AddPageMenu";
 import { onBackPress } from "./lib/nativeShell";
 import { DebugPanel } from "./ui/DebugPanel";
 import { IconButton } from "./ui/IconButton";
+import { LinkDialog } from "./ui/LinkDialog";
 import { PagePanel } from "./ui/PagePanel";
 import { PenPalette } from "./ui/PenPalette";
 import { ToolSettings } from "./ui/ToolSettings";
+import { BoxLayer } from "./view/BoxLayer";
 import { PageView } from "./view/PageView";
 
 type Popover = { kind: "preset"; id: string; left: number; top: number } | { kind: "eraser"; left: number; top: number } | null;
@@ -124,6 +132,14 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   const [lowLatency, setLowLatency] = usePersistentFlag("lessondeck.lowLatency", true);
   const [debugOpen, setDebugOpen] = usePersistentFlag("lessondeck.debugOpen", false);
   const [pagePanelOpen, setPagePanelOpen] = usePersistentFlag("lessondeck.pagePanel", true);
+  const [paletteOpen, setPaletteOpen] = usePersistentFlag("lessondeck.penPalette", true);
+  /** 텍스트 모드: 페이지를 누르면 글상자, 상자를 누르면 고르기·고치기·링크 */
+  const [textMode, setTextMode] = useState(false);
+  const [selectedBox, setSelectedBox] = useState<string | null>(null);
+  const [editingBox, setEditingBox] = useState<string | null>(null);
+  /** 링크 걸기 창. created: "링크 만들기"로 방금 만든 상자 (취소하면 지우고 원래 모드로) */
+  const [linkDialog, setLinkDialog] = useState<{ boxId: string; created: boolean; wasTextMode?: boolean } | null>(null);
+  const [textColor, setTextColor] = useState(BOX_COLORS[0]);
   /** 강의 모드: 도구 막대·페이지 바를 숨기고 페이지를 화면 가득 */
   const [lecture, setLecture] = useState(false);
   /** 강의 모드에 들어가며 브라우저 전체 화면을 켰는지 (나올 때 같이 끈다) */
@@ -316,6 +332,11 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
 
   // 다른 페이지로 넘어가면 웹앱·동영상 페이지는 다시 조작 모드로
   useEffect(() => setWebMode("interact"), [currentId]);
+  // 페이지를 넘기면 고른 상자를 놓는다
+  useEffect(() => {
+    setSelectedBox(null);
+    setEditingBox(null);
+  }, [currentId]);
 
   const addBlank = (index: number, background: BlankBackground) => {
     // 바로 앞(없으면 뒤) 페이지와 같은 비율로 만든다
@@ -345,7 +366,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     const index = doc.pages.findIndex((p) => p.id === id);
     const page = doc.pages[index];
     if (!page) return;
-    const copy: Page = { ...page, id: newPageId() };
+    const copy: Page = { ...page, id: newPageId(), boxes: copyBoxes(page.boxes) };
     setDoc((d) => ({ ...d, pages: insertPages(d.pages, index + 1, [copy]) }));
     setInk((b) => (b[id] ? { ...b, [copy.id]: { past: [], present: b[id].present, future: [] } } : b));
     setCurrentId(copy.id);
@@ -406,6 +427,9 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   const enterLecture = useCallback(() => {
     setPopover(null);
     setAddMenu(null);
+    setTextMode(false);
+    setSelectedBox(null);
+    setEditingBox(null);
     setLecture(true);
     // APK는 처음부터 상태 표시줄 없는 전체 화면이다. 브라우저에서는 전체 화면도 켠다
     if (!isNativeApp && !document.fullscreenElement && document.documentElement.requestFullscreen) {
@@ -437,10 +461,116 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   // 안드로이드 뒤로 가기는 앱을 닫기 전에 강의 모드부터 끝낸다
   useEffect(() => (lecture ? onBackPress(exitLecture) : undefined), [lecture, exitLecture]);
 
+  // ── 텍스트 상자·하이퍼링크 ─────────────────────────────
+  const leaveTextMode = () => {
+    setTextMode(false);
+    setSelectedBox(null);
+    setEditingBox(null);
+  };
+
+  /** 상자가 들어 있는 페이지를 찾아 목록을 바꾼다 (편집 중에 페이지를 넘겨도 맞는 페이지에) */
+  const editBoxes = (boxId: string, fn: (pages: Page[], pageId: string, box: TextBox) => Page[]) =>
+    setDoc((d) => {
+      for (const p of d.pages) {
+        const box = p.boxes?.find((b) => b.id === boxId);
+        if (box) return { ...d, pages: fn(d.pages, p.id, box) };
+      }
+      return d;
+    });
+
+  const createBox = (x: number, y: number) => {
+    if (!currentPage) return;
+    const box: TextBox = { id: newId("b"), x, y, text: "", size: DEFAULT_BOX_SIZE, color: textColor };
+    setDoc((d) => ({ ...d, pages: addBox(d.pages, currentPage.id, box) }));
+    setSelectedBox(box.id);
+    setEditingBox(box.id);
+  };
+
+  /** 글을 다 쓰면: 글도 링크도 없는 상자는 지운다 */
+  const endEdit = (id: string) => {
+    setEditingBox((e) => (e === id ? null : e));
+    editBoxes(id, (pages, pageId, box) => (!box.text.trim() && !box.link ? removeBox(pages, pageId, id) : pages));
+  };
+
+  const resizeBox = (id: string, step: 1 | -1) =>
+    editBoxes(id, (pages, pageId, box) => {
+      const i = BOX_SIZES.reduce((best, v, k) => (Math.abs(v - box.size) < Math.abs(BOX_SIZES[best] - box.size) ? k : best), 0);
+      const size = BOX_SIZES[Math.min(BOX_SIZES.length - 1, Math.max(0, i + step))];
+      return patchBox(pages, pageId, id, { size });
+    });
+
+  const deleteBox = (id: string) => {
+    // 되돌리기용: 이 상자와, 이 상자가 만든 돌아가기 링크
+    const removed: { pageId: string; box: TextBox }[] = [];
+    for (const p of docRef.current.pages) for (const b of p.boxes ?? []) if (b.id === id || b.backOf === id) removed.push({ pageId: p.id, box: b });
+    editBoxes(id, (pages, pageId) => removeBox(pages, pageId, id));
+    setSelectedBox(null);
+    setEditingBox(null);
+    showToast("상자를 지웠습니다", {
+      label: "되돌리기",
+      run: () => setDoc((d) => ({ ...d, pages: removed.reduce((ps, r) => addBox(ps, r.pageId, r.box), d.pages) })),
+    });
+  };
+
+  /** "링크 만들기": 링크 상자를 만들고 바로 연결할 곳을 고른다 */
+  const createLinkBox = () => {
+    if (!currentPage) return;
+    setPopover(null);
+    setTextMode(true);
+    const box: TextBox = { id: newId("b"), x: 0.06, y: 0.86, text: "", size: DEFAULT_BOX_SIZE, color: LINK_COLOR };
+    setDoc((d) => ({ ...d, pages: addBox(d.pages, currentPage.id, box) }));
+    setSelectedBox(box.id);
+    setEditingBox(null);
+    setLinkDialog({ boxId: box.id, created: true, wasTextMode: textMode });
+  };
+
+  const applyLink = (link: BoxLink, addBack: boolean) => {
+    if (!linkDialog) return;
+    const { boxId } = linkDialog;
+    const before = docRef.current.pages;
+    const targetBoxes = (pages: Page[]) => (link.type === "page" ? boxesOf(pages.find((p) => p.id === link.pageId)).length : 0);
+    const owner = before.find((p) => p.boxes?.some((b) => b.id === boxId));
+    if (owner && link.type === "page" && addBack) {
+      const after = setBoxLink(before, owner.id, boxId, link, addBack);
+      if (targetBoxes(after) > targetBoxes(before)) {
+        showToast(`${pageNumberLabel(after, docRef.current.hidden, link.pageId)}에 "돌아가기" 링크를 넣었습니다`);
+      }
+    }
+    editBoxes(boxId, (pages, pageId) => setBoxLink(pages, pageId, boxId, link, addBack));
+    setLinkDialog(null);
+  };
+
+  const removeLink = () => {
+    if (!linkDialog) return;
+    const { boxId } = linkDialog;
+    editBoxes(boxId, (pages, pageId, box) => {
+      const unlinked = setBoxLink(pages, pageId, boxId, undefined);
+      return box.text.trim() ? unlinked : removeBox(unlinked, pageId, boxId);
+    });
+    setLinkDialog(null);
+  };
+
+  const closeLinkDialog = () => {
+    if (!linkDialog) return;
+    const { boxId, created, wasTextMode } = linkDialog;
+    // 링크 만들기를 취소하면 빈 상자를 남기지 않고 원래 모드로 돌아간다
+    if (created) {
+      editBoxes(boxId, (pages, pageId, box) => (!box.link && !box.text.trim() ? removeBox(pages, pageId, boxId) : pages));
+      if (wasTextMode) setSelectedBox(null);
+      else leaveTextMode();
+    }
+    setLinkDialog(null);
+  };
+
+  const followLink = (link: BoxLink) => {
+    if (link.type === "page" && docRef.current.pages.some((p) => p.id === link.pageId)) setCurrentId(link.pageId);
+  };
+
   // ── 도구 ───────────────────────────────────────────────
   const selectPreset = (id: string) => {
     const p = presets.find((x) => x.id === id);
     if (!p) return;
+    leaveTextMode();
     setActivePresetId(id);
     setTool(p.tool);
     setLastByTool((m) => ({ ...m, [p.tool]: id }));
@@ -454,6 +584,13 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   };
 
   const onToolButton = (t: Tool, e: MouseEvent<HTMLButtonElement>) => {
+    if (textMode) {
+      leaveTextMode();
+      if (t !== "eraser") {
+        selectPreset(lastByTool[t]);
+        return;
+      }
+    }
     const rect = e.currentTarget.getBoundingClientRect();
     const anchor = { left: Math.max(8, rect.left - 40), top: rect.bottom + 8 };
     if (t === "eraser") {
@@ -492,6 +629,9 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
       } else if (mod && e.key.toLowerCase() === "y") {
         e.preventDefault();
         inkAction({ type: "redo" });
+      } else if ((e.key === "Delete" || e.key === "Backspace") && selectedBox && !editingBox) {
+        e.preventDefault();
+        deleteBox(selectedBox);
       } else if (e.key === "F5") {
         // 파워포인트처럼 F5로 강의 시작, Esc로 끝
         e.preventDefault();
@@ -506,7 +646,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [inkAction, goTo, enterLecture, exitLecture, lecture]);
+  }, [inkAction, goTo, enterLecture, exitLecture, lecture, selectedBox, editingBox]);
 
   const popoverPreset = popover?.kind === "preset" ? presets.find((p) => p.id === popover.id) : undefined;
 
@@ -580,21 +720,43 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
           <Redo2 size={24} />
         </IconButton>
         <span className="toolrow-sep" />
-        <IconButton label="펜" active={tool === "pen" && !sideEraser} onClick={(e) => onToolButton("pen", e)}>
+        <IconButton label="펜" active={tool === "pen" && !sideEraser && !textMode} onClick={(e) => onToolButton("pen", e)}>
           <PenLine size={24} />
           {tool === "pen" && <span className="tool-color-dot" style={{ background: activePreset.color }} />}
         </IconButton>
-        <IconButton label="형광펜" active={tool === "highlighter" && !sideEraser} onClick={(e) => onToolButton("highlighter", e)}>
+        <IconButton label="형광펜" active={tool === "highlighter" && !sideEraser && !textMode} onClick={(e) => onToolButton("highlighter", e)}>
           <Highlighter size={24} />
           {tool === "highlighter" && <span className="tool-color-dot" style={{ background: activePreset.color }} />}
         </IconButton>
-        <IconButton label={sideEraser ? "지우개 (사이드 버튼)" : "지우개"} active={erasing} onClick={(e) => onToolButton("eraser", e)}>
+        <IconButton label={sideEraser ? "지우개 (사이드 버튼)" : "지우개"} active={erasing && !textMode} onClick={(e) => onToolButton("eraser", e)}>
           <Eraser size={24} />
           {sideEraser && <span className="side-badge" aria-hidden="true" />}
+        </IconButton>
+        <IconButton
+          label="텍스트 상자"
+          active={textMode}
+          disabled={!currentPage}
+          onClick={() => {
+            if (textMode) {
+              leaveTextMode();
+              return;
+            }
+            setPopover(null);
+            setTextMode(true);
+            showToast("페이지를 누르면 글상자가 생깁니다. 상자를 누르면 옮기기·고치기·링크");
+          }}
+        >
+          <Type size={23} />
+        </IconButton>
+        <IconButton label="링크 만들기" disabled={!currentPage} onClick={createLinkBox}>
+          <Link2 size={23} />
         </IconButton>
         <span className="toolrow-sep" />
         <IconButton label="이 페이지 필기 지우기" disabled={strokes.length === 0} onClick={() => inkAction({ type: "clear" })}>
           <Trash2 size={22} />
+        </IconButton>
+        <IconButton label={paletteOpen ? "펜 바 감추기" : "펜 바 보이기"} active={paletteOpen} onClick={() => setPaletteOpen((v) => !v)}>
+          <Palette size={22} />
         </IconButton>
         {onInteractive && (
           <>
@@ -645,6 +807,40 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
           onNavigate={goTo}
           onPdfRendered={setPdfRenderMs}
           lecture={lecture}
+          inkOff={textMode}
+          pageOverlay={(size) =>
+            currentPage && (
+              <BoxLayer
+                page={currentPage}
+                pages={doc.pages}
+                hidden={doc.hidden}
+                size={size}
+                editMode={textMode}
+                selectedId={selectedBox}
+                editingId={editingBox}
+                onCreate={createBox}
+                onSelect={(id) => {
+                  setSelectedBox(id);
+                  if (!id) setEditingBox(null);
+                }}
+                onStartEdit={(id) => {
+                  setSelectedBox(id);
+                  setEditingBox(id);
+                }}
+                onText={(id, text) => editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { text }))}
+                onEndEdit={endEdit}
+                onMove={(id, x, y) => editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { x, y }))}
+                onFollow={followLink}
+                onLink={(id) => setLinkDialog({ boxId: id, created: false })}
+                onResize={resizeBox}
+                onColor={(id, color) => {
+                  setTextColor(color);
+                  editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { color }));
+                }}
+                onDelete={deleteBox}
+              />
+            )
+          }
           navExtra={
             lecture && (
               <>
@@ -675,6 +871,13 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
                     {webMode === "ink" ? <PenLine size={20} /> : <MousePointer2 size={20} />}
                   </button>
                 )}
+                <button
+                  aria-label={paletteOpen ? "펜 바 감추기" : "펜 바 보이기"}
+                  className={paletteOpen ? "on" : undefined}
+                  onClick={() => setPaletteOpen((v) => !v)}
+                >
+                  <Palette size={20} />
+                </button>
                 <span className="page-nav-sep" />
                 <button aria-label="강의 모드 끝내기" title="강의 모드 끝내기 (Esc)" onClick={exitLecture}>
                   <Minimize2 size={20} />
@@ -685,12 +888,19 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
         >
           {doc.pages.length === 0 && <div className="page-area-message">페이지가 없습니다. 페이지를 추가해 주세요.</div>}
 
-          <PenPalette
-            presets={presets}
-            activeId={erasing ? null : activePresetId}
-            onSelect={selectPreset}
-            onOpenSettings={openPresetSettings}
-          />
+          {paletteOpen && (
+            <PenPalette
+              presets={presets}
+              activeId={erasing || textMode ? null : activePresetId}
+              onSelect={selectPreset}
+              onOpenSettings={openPresetSettings}
+              onHide={() => {
+                setPaletteOpen(false);
+                setPopover(null);
+                showToast("펜 바를 감췄습니다", { label: "다시 보이기", run: () => setPaletteOpen(true) });
+              }}
+            />
+          )}
 
           {debugOpen && !lecture && (
             <DebugPanel
@@ -723,6 +933,18 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
             setPopover(null);
           }}
           onClose={closePopover}
+        />
+      )}
+      {linkDialog && currentPage && (
+        <LinkDialog
+          pages={doc.pages}
+          hidden={doc.hidden}
+          assets={doc.assets}
+          fromPageId={doc.pages.find((p) => p.boxes?.some((b) => b.id === linkDialog.boxId))?.id ?? currentPage.id}
+          current={doc.pages.flatMap((p) => p.boxes ?? []).find((b) => b.id === linkDialog.boxId)?.link}
+          onApply={applyLink}
+          onRemove={removeLink}
+          onClose={closeLinkDialog}
         />
       )}
       {addMenu && (

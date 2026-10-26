@@ -54,14 +54,36 @@ export const VIRTUAL_SCREEN: Record<AspectPreset, { width: number; height: numbe
   A4: { width: 794, height: 1123 },
 };
 
-export type Page =
+/** 텍스트 상자의 하이퍼링크: 이 문서의 다른 페이지 또는 외부 웹 주소 */
+export type BoxLink = { type: "page"; pageId: string } | { type: "url"; url: string };
+
+/** 페이지 위 텍스트 상자 (SPEC 5장). 위치는 페이지 대비 0~1, 글자 크기는 "페이지 가로 = 1000" 단위 */
+export interface TextBox {
+  id: string;
+  x: number;
+  y: number;
+  text: string;
+  size: number;
+  color: string;
+  link?: BoxLink;
+  /** 페이지 링크를 걸 때 연결한 페이지에 자동으로 생긴 "돌아가기" 링크 */
+  role?: "back";
+  /** 이 돌아가기 링크를 만든 원래 링크 상자 id (원래 링크를 지우면 같이 지운다) */
+  backOf?: string;
+}
+
+export type Page = (
   | { id: string; kind: "pdf"; asset: string; pageIndex: number }
   | { id: string; kind: "blank"; background: BlankBackground; aspect: number }
   | { id: string; kind: "html"; asset: string; aspect: AspectPreset }
   | { id: string; kind: "url"; url: string; aspect: AspectPreset }
   | { id: string; kind: "youtube"; videoId?: string; list?: string; start?: number; aspect: AspectPreset }
   | { id: string; kind: "image"; asset: string }
-  | { id: string; kind: "video"; asset: string };
+  | { id: string; kind: "video"; asset: string }
+) & {
+  /** 텍스트 상자·하이퍼링크 */
+  boxes?: TextBox[];
+};
 
 /** iframe으로 띄우는 페이지 (화면 비율을 고를 수 있음) */
 export type WebPage = Extract<Page, { kind: "html" | "url" | "youtube" }>;

@@ -1,6 +1,7 @@
-import { ChevronDown, ChevronUp, GripHorizontal } from "lucide-react";
+import { ChevronDown, ChevronUp, EyeOff, GripHorizontal } from "lucide-react";
 import { useState } from "react";
 import type { PenPreset } from "../ink/types";
+import { useFloatingDrag } from "../view/useFloatingDrag";
 
 interface Props {
   presets: PenPreset[];
@@ -8,17 +9,30 @@ interface Props {
   onSelect: (id: string) => void;
   /** 이미 선택된 펜을 한 번 더 누르면 색·굵기 설정을 연다 (스타노트와 같은 동작) */
   onOpenSettings: (id: string, anchor: DOMRect) => void;
+  /** 펜 바 감추기 (도구 막대·강의 모드 바의 펜 바 버튼으로 다시 보인다) */
+  onHide: () => void;
 }
 
-// 화면 왼쪽에 떠 있는 즐겨찾는 펜 목록
-export function PenPalette({ presets, activeId, onSelect, onOpenSettings }: Props) {
+// 화면 왼쪽에 떠 있는 즐겨찾는 펜 목록. 위쪽 손잡이를 잡고 끌어 옮기고, 누르면 접는다.
+export function PenPalette({ presets, activeId, onSelect, onOpenSettings, onHide }: Props) {
   const [collapsed, setCollapsed] = useState(false);
+  const float = useFloatingDrag<HTMLDivElement>({
+    storageKey: "lessondeck.penPalettePos",
+    canStart: (t) => !!t.closest(".pen-palette-handle"),
+  });
 
   return (
-    <div className={`pen-palette${collapsed ? " collapsed" : ""}`} data-no-gesture>
+    <div
+      ref={float.ref}
+      className={`pen-palette${collapsed ? " collapsed" : ""}${float.dragging ? " dragging" : ""}`}
+      style={float.style}
+      data-no-gesture
+      {...float.handlers}
+    >
       <button
         className="pen-palette-handle"
         aria-label={collapsed ? "펜 목록 펼치기" : "펜 목록 접기"}
+        title="끌어서 옮기기 · 누르면 접기/펼치기"
         onClick={() => setCollapsed((c) => !c)}
       >
         <GripHorizontal size={20} />
@@ -39,9 +53,14 @@ export function PenPalette({ presets, activeId, onSelect, onOpenSettings }: Prop
             <span className="pen-size">{p.width.toFixed(1)}</span>
           </button>
         ))}
-      <button className="pen-palette-toggle" aria-label="접기/펼치기" onClick={() => setCollapsed((c) => !c)}>
-        {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
-      </button>
+      <div className="pen-palette-foot">
+        <button className="pen-palette-toggle" aria-label="접기/펼치기" onClick={() => setCollapsed((c) => !c)}>
+          {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+        </button>
+        <button className="pen-palette-toggle" aria-label="펜 바 감추기" title="펜 바 감추기" onClick={onHide}>
+          <EyeOff size={15} />
+        </button>
+      </div>
     </div>
   );
 }

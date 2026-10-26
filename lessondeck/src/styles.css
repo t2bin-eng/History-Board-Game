@@ -974,6 +974,25 @@ button {
   padding-bottom: 4px;
 }
 
+.pen-palette-handle {
+  cursor: grab;
+  touch-action: none;
+}
+
+.pen-palette.dragging {
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  outline: 1px solid var(--accent);
+}
+
+.pen-palette.dragging .pen-palette-handle {
+  cursor: grabbing;
+}
+
+.pen-palette-foot {
+  display: flex;
+  justify-content: center;
+}
+
 /* ── 도구 설정 팝오버 ───────────────── */
 .tool-settings {
   position: fixed;
@@ -1676,4 +1695,275 @@ button.doc-title:hover {
 
 .sync-setup code.wrap {
   word-break: break-all;
+}
+
+/* ── 텍스트 상자·하이퍼링크 (src/view/BoxLayer.tsx) ── */
+.box-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* 텍스트 모드: 빈 곳을 누르면 상자를 만든다 */
+.box-layer.edit {
+  pointer-events: auto;
+  cursor: text;
+  touch-action: none;
+}
+
+.text-box {
+  position: absolute;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.2em;
+  line-height: 1.3;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-weight: 500;
+  border-radius: 4px;
+  pointer-events: none;
+  user-select: none;
+  text-decoration: none;
+}
+
+/* 평소에는 링크만 누를 수 있다 (나머지 글자 위로는 필기가 지나감) */
+.text-box.link,
+.box-layer.edit .text-box {
+  pointer-events: auto;
+}
+
+.text-box.link {
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.text-box.link .text-box-text {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.text-box.back {
+  padding: 0.1em 0.45em;
+  background: rgba(21, 101, 192, 0.08);
+  border: 1px solid rgba(21, 101, 192, 0.35);
+  border-radius: 999px;
+}
+
+.text-box.back .text-box-text {
+  text-decoration: none;
+}
+
+.text-box.dangling {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.text-box.dangling .text-box-text {
+  text-decoration: line-through;
+}
+
+.text-box-icon {
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.box-layer.edit .text-box {
+  cursor: move;
+  outline: 1px dashed rgba(0, 150, 200, 0.45);
+  outline-offset: 2px;
+}
+
+.box-layer.edit .text-box.selected,
+.box-layer.edit .text-box.editing {
+  outline: 2px solid var(--accent);
+}
+
+.text-box textarea {
+  field-sizing: content;
+  min-width: 4em;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: rgba(255, 255, 255, 0.85);
+  font: inherit;
+  line-height: 1.3;
+  resize: none;
+}
+
+.box-toolbar {
+  position: absolute;
+  left: -2px;
+  bottom: calc(100% + 8px);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: rgba(24, 24, 24, 0.94);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  font-size: 14px;
+  white-space: nowrap;
+  cursor: default;
+  z-index: 2;
+}
+
+.box-toolbar.below {
+  bottom: auto;
+  top: calc(100% + 8px);
+}
+
+.box-toolbar button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--icon);
+  cursor: pointer;
+}
+
+.box-toolbar button.on {
+  background: var(--active-bg);
+  color: var(--accent);
+}
+
+.box-color span {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+}
+
+.box-color.on span {
+  border-color: var(--accent);
+}
+
+/* 링크 걸기 창 */
+.link-dialog .modal-head strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.link-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.link-tabs button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 42px;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: #262626;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.link-tabs button[aria-selected="true"] {
+  background: var(--active-bg);
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.link-back {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.link-back input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.link-pages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 46vh;
+  overflow-y: auto;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+}
+
+.link-pages button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 46px;
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 1px solid #2a2a2a;
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.link-pages li:last-child button {
+  border-bottom: 0;
+}
+
+.link-pages button:hover:not(:disabled),
+.link-pages button.on {
+  background: var(--active-bg);
+}
+
+.link-pages button:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.link-page-no {
+  min-width: 48px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.link-page-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.link-pages small {
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.link-url input {
+  width: 100%;
+  height: 46px;
+  padding: 0 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: #1c1c1c;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.link-error {
+  margin: 8px 0 0;
+  color: #ffb020;
+  font-size: 13px;
 }

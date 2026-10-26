@@ -29,6 +29,10 @@ interface Props {
   lecture?: boolean;
   /** 페이지 넘기기 바에 덧붙일 버튼 (강의 모드 도구) */
   navExtra?: ReactNode;
+  /** 필기를 잠시 끈다 (텍스트 모드) */
+  inkOff?: boolean;
+  /** 페이지 위, 필기층 위에 그릴 것 (텍스트 상자·링크). 페이지 크기를 받는다 */
+  pageOverlay?: (size: PageSize) => ReactNode;
   /** 페이지 영역 위에 떠 있는 것들 (펜 팔레트, 디버그 패널) */
   children?: ReactNode;
 }
@@ -49,7 +53,7 @@ export function PageView(props: Props) {
   const zoomTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   // 웹앱·동영상 페이지: 판서/조작 모드가 있고, 넘겼다 돌아와도 상태가 유지된다
   const web = isInteractivePage(page);
-  const inkActive = !web || props.webMode === "ink";
+  const inkActive = !props.inkOff && (!web || props.webMode === "ink");
 
   useLayoutEffect(() => {
     const el = areaRef.current!;
@@ -156,6 +160,7 @@ export function PageView(props: Props) {
             active={inkActive}
             onCommit={props.onCommit}
           />
+          {props.pageOverlay?.(size)}
           {web && (
             <div className="web-mode-chip" aria-hidden="true">
               {props.webMode === "ink" ? <PenLine size={13} /> : <MousePointer2 size={13} />}
@@ -167,7 +172,6 @@ export function PageView(props: Props) {
 
       {(doc.pages.length > 1 || props.navExtra) && (
         <PageNav
-          area={area}
           label={pos.index < 0 ? "숨긴 페이지" : `${pos.index + 1} / ${pos.count}`}
           hasPrev={hasPrev}
           hasNext={hasNext}
