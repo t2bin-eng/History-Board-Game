@@ -5,11 +5,11 @@ import {
   FilePlus2,
   Hand,
   Highlighter,
-  Maximize,
-  Minimize,
+  Minimize2,
   MousePointer2,
   PanelLeft,
   PenLine,
+  Presentation,
   Redo2,
   Share2,
   Trash2,
@@ -47,6 +47,7 @@ import { thumbnailFor } from "./pdf/thumbnails";
 import { putAsset, saveInk, saveManifest, setThumb, toManifest, type OpenedDoc } from "./store/docStore";
 import { exportProject, PROJECT_EXT } from "./store/projectFile";
 import { AddPageMenu, type LinkKind } from "./ui/AddPageMenu";
+import { onBackPress } from "./lib/nativeShell";
 import { DebugPanel } from "./ui/DebugPanel";
 import { IconButton } from "./ui/IconButton";
 import { PagePanel } from "./ui/PagePanel";
@@ -123,7 +124,10 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   const [lowLatency, setLowLatency] = usePersistentFlag("lessondeck.lowLatency", true);
   const [debugOpen, setDebugOpen] = usePersistentFlag("lessondeck.debugOpen", false);
   const [pagePanelOpen, setPagePanelOpen] = usePersistentFlag("lessondeck.pagePanel", true);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  /** 강의 모드: 도구 막대·페이지 바를 숨기고 페이지를 화면 가득 */
+  const [lecture, setLecture] = useState(false);
+  /** 강의 모드에 들어가며 브라우저 전체 화면을 켰는지 (나올 때 같이 끈다) */
+  const lectureFs = useRef(false);
 
   const fileRef = useRef<HTMLInputElement>(null);
   const fileTarget = useRef<FileTarget>({ kind: "pdf", index: 0 });
@@ -398,17 +402,40 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   // S펜 사이드 버튼을 누르는 동안 툴바의 지우개를 켠다
   useEffect(() => onSideButtonChange(setSideEraser), []);
 
-  // ── 화면 ───────────────────────────────────────────────
+  // ── 강의 모드 ──────────────────────────────────────────
+  const enterLecture = useCallback(() => {
+    setPopover(null);
+    setAddMenu(null);
+    setLecture(true);
+    // APK는 처음부터 상태 표시줄 없는 전체 화면이다. 브라우저에서는 전체 화면도 켠다
+    if (!isNativeApp && !document.fullscreenElement && document.documentElement.requestFullscreen) {
+      lectureFs.current = true;
+      document.documentElement.requestFullscreen().catch(() => (lectureFs.current = false));
+    }
+  }, []);
+
+  const exitLecture = useCallback(() => {
+    setLecture(false);
+    if (lectureFs.current) {
+      lectureFs.current = false;
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    }
+  }, []);
+
   useEffect(() => {
-    const onFs = () => setIsFullscreen(!!document.fullscreenElement);
+    // 브라우저에서 Esc 등으로 전체 화면이 풀리면 강의 모드도 끝낸다
+    const onFs = () => {
+      if (!document.fullscreenElement && lectureFs.current) {
+        lectureFs.current = false;
+        setLecture(false);
+      }
+    };
     document.addEventListener("fullscreenchange", onFs);
     return () => document.removeEventListener("fullscreenchange", onFs);
   }, []);
 
-  const toggleFullscreen = () => {
-    if (document.fullscreenElement) document.exitFullscreen();
-    else document.documentElement.requestFullscreen?.().catch(() => showToast("전체 화면을 지원하지 않는 브라우저입니다"));
-  };
+  // 안드로이드 뒤로 가기는 앱을 닫기 전에 강의 모드부터 끝낸다
+  useEffect(() => (lecture ? onBackPress(exitLecture) : undefined), [lecture, exitLecture]);
 
   // ── 도구 ───────────────────────────────────────────────
   const selectPreset = (id: string) => {
@@ -465,6 +492,12 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
       } else if (mod && e.key.toLowerCase() === "y") {
         e.preventDefault();
         inkAction({ type: "redo" });
+      } else if (e.key === "F5") {
+        // 파워포인트처럼 F5로 강의 시작, Esc로 끝
+        e.preventDefault();
+        enterLecture();
+      } else if (e.key === "Escape" && lecture) {
+        exitLecture();
       } else if (e.key === "ArrowRight" || e.key === "PageDown") {
         goTo(1);
       } else if (e.key === "ArrowLeft" || e.key === "PageUp") {
@@ -473,12 +506,12 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [inkAction, goTo]);
+  }, [inkAction, goTo, enterLecture, exitLecture, lecture]);
 
   const popoverPreset = popover?.kind === "preset" ? presets.find((p) => p.id === popover.id) : undefined;
 
   return (
-    <div className="app">
+    <div className={`app${lecture ? " lecture" : ""}`}>
       <header className="topbar">
         <div className="topbar-left">
           <IconButton label="문서 목록" onClick={goHome}>
@@ -491,6 +524,9 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
         </div>
         <div className="topbar-right">
           {headerExtra}
+          <IconButton label="강의 모드 (F5)" onClick={enterLecture} disabled={!currentPage}>
+            <Presentation size={22} />
+          </IconButton>
           <IconButton label="페이지 바" active={pagePanelOpen} onClick={() => setPagePanelOpen((v) => !v)}>
             <PanelLeft size={22} />
           </IconButton>
@@ -522,12 +558,6 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
           <IconButton label="입력 디버그" active={debugOpen} onClick={() => setDebugOpen((v) => !v)}>
             <Activity size={22} />
           </IconButton>
-          {/* APK는 처음부터 상태 표시줄 없는 전체 화면으로 열린다 */}
-          {!isNativeApp && (
-            <IconButton label={isFullscreen ? "전체 화면 끝내기" : "전체 화면"} onClick={toggleFullscreen}>
-              {isFullscreen ? <Minimize size={22} /> : <Maximize size={22} />}
-            </IconButton>
-          )}
         </div>
         <input
           ref={fileRef}
@@ -583,7 +613,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
       </nav>
 
       <div className="workspace">
-        {pagePanelOpen && doc.pages.length > 0 && (
+        {pagePanelOpen && !lecture && doc.pages.length > 0 && (
           <PagePanel
             doc={doc}
             ink={ink}
@@ -614,6 +644,44 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
           onCommit={onCommit}
           onNavigate={goTo}
           onPdfRendered={setPdfRenderMs}
+          lecture={lecture}
+          navExtra={
+            lecture && (
+              <>
+                <span className="page-nav-sep" />
+                <button aria-label="실행 취소" disabled={!pageInk?.past.length} onClick={() => inkAction({ type: "undo" })}>
+                  <Undo2 size={20} />
+                </button>
+                <button
+                  aria-label="지우개"
+                  aria-pressed={erasing}
+                  className={erasing ? "on" : undefined}
+                  onClick={() => {
+                    if (tool === "eraser") selectPreset(activePresetId);
+                    else {
+                      setTool("eraser");
+                      if (onInteractive) setWebMode("ink");
+                    }
+                  }}
+                >
+                  <Eraser size={20} />
+                </button>
+                {onInteractive && (
+                  <button
+                    aria-label={webMode === "ink" ? "조작 모드로" : "판서 모드로"}
+                    className={webMode === "ink" ? "on" : undefined}
+                    onClick={() => setWebMode((m) => (m === "ink" ? "interact" : "ink"))}
+                  >
+                    {webMode === "ink" ? <PenLine size={20} /> : <MousePointer2 size={20} />}
+                  </button>
+                )}
+                <span className="page-nav-sep" />
+                <button aria-label="강의 모드 끝내기" title="강의 모드 끝내기 (Esc)" onClick={exitLecture}>
+                  <Minimize2 size={20} />
+                </button>
+              </>
+            )
+          }
         >
           {doc.pages.length === 0 && <div className="page-area-message">페이지가 없습니다. 페이지를 추가해 주세요.</div>}
 
@@ -624,7 +692,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
             onOpenSettings={openPresetSettings}
           />
 
-          {debugOpen && (
+          {debugOpen && !lecture && (
             <DebugPanel
               lowLatency={lowLatency}
               onLowLatency={setLowLatency}

@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, MousePointer2, PenLine } from "lucide-react";
+import { MousePointer2, PenLine } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { stepVisible, visiblePosition } from "../doc/pages";
 import { isInteractivePage, mediaAsset, pageAspect, pdfAsset, type DocState, type InteractivePage, type Page } from "../doc/types";
@@ -6,6 +6,7 @@ import { fitPage, type PageSize } from "../ink/geometry";
 import { InkCanvas } from "../ink/InkCanvas";
 import type { Stroke, Tool } from "../ink/types";
 import { PdfPageView } from "../pdf/PdfPageView";
+import { PageNav } from "./PageNav";
 import { useViewportGestures } from "./useViewportGestures";
 import { WebStage } from "./WebStage";
 
@@ -24,10 +25,16 @@ interface Props {
   onCommit: (strokes: Stroke[]) => void;
   onNavigate: (delta: 1 | -1) => void;
   onPdfRendered?: (ms: number) => void;
+  /** 강의 모드: 여백 없이 화면 가득 페이지를 키운다 */
+  lecture?: boolean;
+  /** 페이지 넘기기 바에 덧붙일 버튼 (강의 모드 도구) */
+  navExtra?: ReactNode;
   /** 페이지 영역 위에 떠 있는 것들 (펜 팔레트, 디버그 패널) */
   children?: ReactNode;
 }
 
+/** 페이지 둘레 여백 (강의 모드는 0) */
+const PAGE_MARGIN = 16;
 /** 넘겼다 돌아와도 상태가 유지되도록 열어 둘 웹 페이지 수 (메모리 보호) */
 const KEEP_ALIVE = 3;
 
@@ -55,7 +62,8 @@ export function PageView(props: Props) {
   }, []);
 
   const aspect = page ? pageAspect(page, doc.assets) : 210 / 297;
-  const size: PageSize = useMemo(() => fitPage(area.width, area.height, aspect), [area.width, area.height, aspect]);
+  const margin = props.lecture ? 0 : PAGE_MARGIN;
+  const size: PageSize = useMemo(() => fitPage(area.width, area.height, aspect, margin), [area.width, area.height, aspect, margin]);
 
   const onZoomEnd = useCallback((z: number) => {
     clearTimeout(zoomTimer.current);
@@ -92,11 +100,11 @@ export function PageView(props: Props) {
         doc: asset.doc,
         assetId: asset.id,
         pageIndex: p.pageIndex,
-        size: fitPage(area.width, area.height, asset.aspects[p.pageIndex]),
+        size: fitPage(area.width, area.height, asset.aspects[p.pageIndex], margin),
       });
     }
     return list;
-  }, [doc, page, area.width, area.height]);
+  }, [doc, page, area.width, area.height, margin]);
 
   // 최근에 본 웹 페이지 몇 개는 iframe을 닫지 않고 숨겨 둔다.
   // iframe은 DOM에서 자리를 옮기면 다시 불러오므로, 그리는 순서는 처음 연 순서로 고정하고
@@ -125,7 +133,7 @@ export function PageView(props: Props) {
   const hasNext = !!page && stepVisible(doc.pages, doc.hidden, page.id, 1) !== null;
 
   return (
-    <main className="page-area" ref={areaRef}>
+    <main className={`page-area${props.lecture ? " lecture" : ""}`} ref={areaRef}>
       {page && size.width > 0 && (
         <div
           ref={pageRef}
@@ -157,16 +165,15 @@ export function PageView(props: Props) {
         </div>
       )}
 
-      {doc.pages.length > 1 && (
-        <div className="page-nav" data-no-gesture>
-          <button aria-label="이전 페이지" disabled={!hasPrev} onClick={() => onNavigate(-1)}>
-            <ChevronLeft size={22} />
-          </button>
-          <span className="page-nav-count">{pos.index < 0 ? "숨긴 페이지" : `${pos.index + 1} / ${pos.count}`}</span>
-          <button aria-label="다음 페이지" disabled={!hasNext} onClick={() => onNavigate(1)}>
-            <ChevronRight size={22} />
-          </button>
-        </div>
+      {(doc.pages.length > 1 || props.navExtra) && (
+        <PageNav
+          area={area}
+          label={pos.index < 0 ? "숨긴 페이지" : `${pos.index + 1} / ${pos.count}`}
+          hasPrev={hasPrev}
+          hasNext={hasNext}
+          onNavigate={onNavigate}
+          extra={props.navExtra}
+        />
       )}
 
       {props.children}

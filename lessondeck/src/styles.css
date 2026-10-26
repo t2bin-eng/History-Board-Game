@@ -262,6 +262,60 @@ button {
   text-align: center;
   font-size: 14px;
   font-variant-numeric: tabular-nums;
+  cursor: grab;
+}
+
+/* 손잡이·쪽수를 잡고 끌어 옮긴다 (src/view/PageNav.tsx) */
+.page-nav {
+  user-select: none;
+  touch-action: none;
+}
+
+.page-nav-grip {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 40px;
+  margin-left: 2px;
+  color: var(--icon-muted);
+  cursor: grab;
+}
+
+.page-nav.dragging {
+  cursor: grabbing;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.55);
+  border-color: var(--accent);
+}
+
+.page-nav.dragging .page-nav-grip,
+.page-nav.dragging .page-nav-count {
+  cursor: grabbing;
+}
+
+.page-nav-sep {
+  width: 1px;
+  height: 24px;
+  margin: 0 4px;
+  background: var(--chrome-border);
+}
+
+.page-nav button.on {
+  background: var(--active-bg);
+  color: var(--accent);
+}
+
+/* ── 강의 모드: 도구 막대·페이지 바 없이 페이지를 화면 가득 ── */
+.app.lecture .topbar,
+.app.lecture .toolrow {
+  display: none;
+}
+
+.page-area.lecture {
+  background: #000;
+}
+
+.page-area.lecture .page {
+  box-shadow: none;
 }
 
 /* ── 왼쪽 페이지 바 ─────────────────── */
