@@ -108,7 +108,7 @@ npm run build && npm run preview
 2. 아래쪽 **Artifacts**에서 `lessondeck-<번호>-<커밋>.apk`를 내려받습니다. zip 파일로 받아지니 압축을 풉니다.
 3. 태블릿에서 APK를 누릅니다. 처음 한 번은 "출처를 알 수 없는 앱 설치"를 허용해야 합니다.
 
-모든 빌드가 저장소에 들어 있는 같은 디버그 키(`android/app/lessondeck-debug.keystore`)로 서명됩니다. 그래서 새 APK를 지우지 않고 기존 앱 위에 덮어 설치할 수 있습니다. 이 키는 기기에 직접 설치하는 시험용입니다. Play 스토어에 올리려면 배포용 키를 따로 만들어 비밀로 보관해야 합니다.
+모든 빌드가 저장소에 들어 있는 같은 디버그 키(`android/app/lessondeck-debug.keystore`)로 서명됩니다. 그래서 새 APK를 지우지 않고 기존 앱 위에 덮어 설치할 수 있습니다. 단, v0.5.1에서 이 키를 새로 만들었으므로(구글 드라이브 연결용 지문 충돌 해결) 그 전 APK가 깔려 있으면 한 번은 지우고 새로 설치해야 합니다. 지우기 전에 남길 문서는 "파일로 내보내기"로 백업하세요. 이 키는 기기에 직접 설치하는 시험용입니다. Play 스토어에 올리려면 배포용 키를 따로 만들어 비밀로 보관해야 합니다.
 
 ### 직접 빌드 (Windows PC)
 
@@ -132,7 +132,7 @@ Android Studio에서 열려면 `npx cap open android`를 실행합니다. USB로
 3. **OAuth 동의 화면**(Google 인증 플랫폼): 앱 이름 "레슨덱", 사용자 유형 **외부**. **데이터 액세스(범위)**에 `https://www.googleapis.com/auth/drive.appdata`를 추가하고, **대상 → 테스트 사용자**에 쓸 구글 계정을 넣습니다. (`drive.appdata`는 민감하지 않은 범위라 테스트 상태로 계속 써도 되고, 여러 사람이 쓰려면 "앱 게시"를 누릅니다.)
 4. **사용자 인증 정보 → OAuth 클라이언트 ID 만들기 → Android**
    - 패키지 이름: `kr.lessondeck.app`
-   - SHA-1 인증서 지문: `26:9D:BE:BA:3A:BF:3F:AE:61:A8:CF:97:FC:35:5E:EC:1F:52:1E:35` (저장소의 디버그 키. GitHub Actions APK가 모두 이 키로 서명됨)
+   - SHA-1 인증서 지문: `F8:DD:CE:A1:7A:85:04:B6:35:69:A9:5D:CC:66:A2:D5:88:20:08:A8` (저장소의 디버그 키. GitHub Actions APK가 모두 이 키로 서명됨)
 5. 태블릿의 레슨덱에서 상단 구름 버튼 → **구글 계정 연결**.
 
 "Google Cloud 설정이 앱과 맞지 않습니다(DEVELOPER_ERROR)"가 뜨면 4번의 패키지 이름·SHA-1을 다시 확인하세요. 설정이 반영되기까지 몇 분 걸릴 수 있습니다.

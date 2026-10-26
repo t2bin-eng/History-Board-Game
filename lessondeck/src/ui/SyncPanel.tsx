@@ -4,7 +4,7 @@ import { connectDrive, disconnectDrive, syncNow, useSyncState, type SyncState } 
 import { relativeTime } from "./HomeScreen";
 
 /** 저장소에 고정한 디버그 서명 키의 SHA-1 (Google Cloud의 Android OAuth 클라이언트에 등록) */
-const SIGNING_SHA1 = "26:9D:BE:BA:3A:BF:3F:AE:61:A8:CF:97:FC:35:5E:EC:1F:52:1E:35";
+const SIGNING_SHA1 = "F8:DD:CE:A1:7A:85:04:B6:35:69:A9:5D:CC:66:A2:D5:88:20:08:A8";
 const PACKAGE_NAME = "kr.lessondeck.app";
 
 /** 상단 바의 동기화 상태 버튼 */
