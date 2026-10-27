@@ -3,6 +3,8 @@ import { newId } from "../doc/types";
 import type { Stroke } from "../ink/types";
 import { db, getMeta, setMeta, type DocRecord, type Manifest, type SyncRecord } from "../store/db";
 import { deleteDoc, getAsset, getDoc, hasAsset, listDocs, loadInk, onDocChange, writeDoc } from "../store/docStore";
+import { hasFolders, libraryKey, parseLibrary } from "../store/folders";
+import { docFolder, loadLibrary, mergeRemoteLibrary, onLibraryChange, placeDoc } from "../store/library";
 import { AuthRequiredError, driveAvailability, getAccessToken, revokeAccess } from "./auth";
 import { aboutEmail, createFile, deleteFile, downloadFile, listAppFiles, updateFile, type DriveFile } from "./drive";
 
@@ -10,6 +12,7 @@ import { aboutEmail, createFile, deleteFile, downloadFile, listAppFiles, updateF
 // 드라이브 앱 전용 숨김 폴더에 문서마다
 //   - doc-<docId>.json.gz : 페이지 구성(manifest) + 모든 페이지 필기 (자주 바뀜, 압축)
 //   - asset-<docId>-<assetId> : PDF·HTML·이미지·동영상 원본 (한 번만 올림)
+// 그리고 계정에 하나 library.json.gz (홈의 폴더 정리)
 // 을 둔다. 어느 기기에서든 같은 구글 계정을 연결하면 문서를 모두 받아 오고, 이후 자동으로 맞춘다.
 
 export type SyncPhase = "off" | "unavailable" | "idle" | "syncing" | "offline" | "needs-auth" | "error";
@@ -25,6 +28,14 @@ interface DriveMeta {
   connected: boolean;
   email?: string;
   lastSyncAt?: number;
+}
+
+/** 드라이브의 폴더 정리 파일과 마지막으로 맞춘 상태 */
+interface LibrarySyncMeta {
+  fileId?: string;
+  remoteUpdatedAt?: number;
+  /** 그때 드라이브에 있던 내용 (libraryKey) */
+  remoteKey?: string;
 }
 
 interface DocPayload {
@@ -108,6 +119,7 @@ export async function disconnectDrive(): Promise<void> {
   const d = await db();
   await d.clear("sync");
   await d.clear("tombstones");
+  await setMeta("librarySync", null);
   await setMeta("drive", { connected: false } satisfies DriveMeta);
   setState({ phase: "off", email: undefined, lastSyncAt: undefined, message: undefined });
 }
@@ -117,6 +129,7 @@ export async function disconnectDrive(): Promise<void> {
 let timer: ReturnType<typeof setTimeout> | undefined;
 let poll: ReturnType<typeof setInterval> | undefined;
 let offChange: (() => void) | undefined;
+let offLibrary: (() => void) | undefined;
 
 function scheduleSync(delay: number) {
   clearTimeout(timer);
@@ -134,6 +147,9 @@ function startAuto() {
   offChange = onDocChange((_id, kind) => {
     if (kind !== "remote") scheduleSync(CHANGE_DELAY);
   });
+  offLibrary = onLibraryChange((kind) => {
+    if (kind === "local") scheduleSync(CHANGE_DELAY);
+  });
   poll = setInterval(() => void syncNow(), POLL_INTERVAL);
   document.addEventListener("visibilitychange", onVisibility);
   window.addEventListener("online", onOnline);
@@ -144,6 +160,8 @@ function stopAuto() {
   clearInterval(poll);
   offChange?.();
   offChange = undefined;
+  offLibrary?.();
+  offLibrary = undefined;
   document.removeEventListener("visibilitychange", onVisibility);
   window.removeEventListener("online", onOnline);
 }
@@ -173,6 +191,7 @@ export function syncNow(): Promise<void> {
 interface Remote {
   docs: Map<string, DriveFile>;
   assets: Map<string, DriveFile>;
+  library: DriveFile[];
 }
 
 const assetKey = (docId: string, assetId: string) => `${docId}/${assetId}`;
@@ -209,7 +228,17 @@ async function runSync(): Promise<void> {
       await d.delete("tombstones", t.docId);
     }
 
-    // 2) 이 기기의 문서
+    // 2) 폴더 정리 (문서보다 먼저: 충돌 사본을 원래 문서의 지금 폴더에 두려고)
+    let libraryFiles: DriveFile[] | null = null;
+    try {
+      libraryFiles = await syncLibrary(remote.library);
+    } catch (err) {
+      console.error("폴더 정리 동기화 실패", err);
+      errors.push(`폴더 정리: ${err instanceof Error ? err.message : err}`);
+    }
+    const libraryBefore = libraryKey(await loadLibrary());
+
+    // 3) 이 기기의 문서
     const syncRecs = new Map((await d.getAll("sync")).map((s) => [s.docId, s]));
     for (const doc of await listDocs()) {
       try {
@@ -221,13 +250,23 @@ async function runSync(): Promise<void> {
       remote.docs.delete(doc.id);
     }
 
-    // 3) 다른 기기에만 있는 문서 → 받아 오기
+    // 4) 다른 기기에만 있는 문서 → 받아 오기
     for (const r of remote.docs.values()) {
       try {
         await download(r, remote, false);
       } catch (err) {
         console.error("받기 실패", r.name, err);
         errors.push(`${r.name}: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+
+    // 5) 충돌 사본을 폴더에 두는 등 문서를 맞추며 정리가 바뀌었으면 바로 올린다
+    if (libraryFiles && libraryKey(await loadLibrary()) !== libraryBefore) {
+      try {
+        await syncLibrary(libraryFiles);
+      } catch (err) {
+        console.error("폴더 정리 동기화 실패", err);
+        errors.push(`폴더 정리: ${err instanceof Error ? err.message : err}`);
       }
     }
   } catch (err) {
@@ -247,6 +286,7 @@ async function runSync(): Promise<void> {
 function indexRemote(files: DriveFile[]): Remote {
   const docs = new Map<string, DriveFile>();
   const assets = new Map<string, DriveFile>();
+  const library: DriveFile[] = [];
   for (const f of files) {
     const p = f.appProperties ?? {};
     if (p.kind === "doc" && p.docId) {
@@ -254,9 +294,11 @@ function indexRemote(files: DriveFile[]): Remote {
       if (!prev || Number(p.updatedAt) > Number(prev.appProperties?.updatedAt)) docs.set(p.docId, f);
     } else if (p.kind === "asset" && p.docId && p.assetId) {
       assets.set(assetKey(p.docId, p.assetId), f);
+    } else if (p.kind === "library") {
+      library.push(f);
     }
   }
-  return { docs, assets };
+  return { docs, assets, library };
 }
 
 async function syncDoc(doc: DocRecord, st: SyncRecord | undefined, remote: Remote) {
@@ -285,7 +327,11 @@ async function syncDoc(doc: DocRecord, st: SyncRecord | undefined, remote: Remot
     await upload(doc, { ...(st ?? { docId: doc.id, assetFiles: {} }), docFileId: r.id }, remote);
     // 사본도 바로 올려 다른 기기에서도 두 판을 모두 볼 수 있게 한다
     const copy = copyId && (await getDoc(copyId));
-    if (copy) await upload(copy, undefined, remote);
+    if (copy) {
+      // 사본은 원래 문서와 같은 폴더에
+      await placeDoc(copy.id, await docFolder(doc.id));
+      await upload(copy, undefined, remote);
+    }
     return;
   }
   if (localDirty) await upload(doc, { ...(st ?? { docId: doc.id, assetFiles: {} }), docFileId: r.id }, remote);
@@ -393,6 +439,48 @@ async function download(r: DriveFile, remote: Remote, asCopy: boolean): Promise<
     await putSync({ docId: targetId, docFileId: r.id, remoteUpdatedAt: remoteUpdated, syncedLocalUpdatedAt: payload.updatedAt, assetFiles });
   }
   return targetId;
+}
+
+/**
+ * 폴더 정리: 다른 기기가 바꿨으면 받아 합치고, 합친 것이 드라이브 것과 다르면 올린다.
+ * 폴더·배치마다 더 최근 것을 고르는 합치기라 충돌 사본이 생기지 않는다.
+ * 맞춘 뒤 드라이브에 남은 정리 파일 (같은 동기화 안에서 다시 부를 때 쓴다)
+ */
+async function syncLibrary(files: DriveFile[]): Promise<DriveFile[]> {
+  const st = (await getMeta<LibrarySyncMeta | null>("librarySync")) ?? {};
+  const updatedOf = (f: DriveFile) => Number(f.appProperties?.updatedAt ?? 0);
+  // 하나만 남긴다. 두 기기가 동시에 정리해도 같은 파일을 남기도록 id 순으로 고른다
+  const sorted = [...files].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const [main, ...extras] = sorted;
+
+  let remoteKey = main && main.id === st.fileId && updatedOf(main) === st.remoteUpdatedAt ? st.remoteKey : undefined;
+  if (main && (remoteKey === undefined || extras.length)) {
+    setState({ message: "폴더 정리 받는 중…" });
+    for (const f of sorted) {
+      const remoteLib = parseLibrary(await gunzipJson<unknown>(await downloadFile(f.id)));
+      await mergeRemoteLibrary(remoteLib);
+      if (f === main) remoteKey = libraryKey(remoteLib);
+    }
+  }
+
+  const local = await loadLibrary();
+  const localKey = libraryKey(local);
+  let fileId = main?.id;
+  let remoteUpdatedAt = main ? updatedOf(main) : undefined;
+  if (localKey !== remoteKey && (main || hasFolders(local))) {
+    setState({ message: "폴더 정리 올리는 중…" });
+    const updatedAt = Date.now();
+    const data = await gzipJson(local);
+    const meta = { appProperties: { kind: "library", updatedAt: String(updatedAt) } };
+    fileId = main ? await updateFile(main.id, meta, data) : await createFile({ ...meta, name: "library.json.gz", mimeType: "application/gzip" }, data);
+    remoteUpdatedAt = updatedAt;
+    remoteKey = localKey;
+  }
+  for (const f of extras) await deleteFile(f.id);
+  await setMeta("librarySync", { fileId, remoteUpdatedAt, remoteKey } satisfies LibrarySyncMeta);
+  return fileId
+    ? [{ id: fileId, name: "library.json.gz", mimeType: "application/gzip", appProperties: { kind: "library", updatedAt: String(remoteUpdatedAt) } }]
+    : [];
 }
 
 // ── 압축 ─────────────────────────────────────────────────
