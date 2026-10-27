@@ -72,6 +72,13 @@ export function NameDialog({ title, initial, submitLabel, color, onSubmit, onClo
           e.preventDefault();
           submit();
         }}
+        onKeyDown={(e) => {
+          // 색을 고른 뒤 Enter도 만들기 (색 단추를 다시 누르는 대신)
+          if (e.key === "Enter" && (e.target as HTMLElement).classList.contains("swatch")) {
+            e.preventDefault();
+            submit();
+          }
+        }}
       >
         <input ref={input} value={name} maxLength={80} aria-label="이름" onChange={(e) => setName(e.target.value)} />
         {color && (
