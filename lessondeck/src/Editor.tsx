@@ -634,6 +634,9 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   const onLongPress = (p: LongPress) => {
     setPopover(null);
     setAddMenu(null);
+    // 손가락으로 연 메뉴는 손끝에 가리지 않게 조금 비켜서 연다 (자리 계산은 누른 점 그대로)
+    const offset = p.pointerType === "touch" ? 18 : 0;
+    const menuAt = { x: p.clientX + offset, y: p.clientY + offset };
     // 평소에는 링크 아닌 글상자가 누름을 통과시키므로 자리로 찾는다
     const hit = [...document.querySelectorAll<HTMLElement>(".page .text-box[data-box-id]")].reverse().find((el) => {
       const r = el.getBoundingClientRect();
@@ -641,7 +644,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     });
     if (hit) {
       setEditingBox(null);
-      setMenu({ kind: "box", x: p.clientX, y: p.clientY, boxId: hit.dataset.boxId! });
+      setMenu({ kind: "box", ...menuAt, boxId: hit.dataset.boxId! });
       return;
     }
     const pageEl = document.querySelector(".page");
@@ -649,8 +652,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     const inside = r && p.clientX >= r.left && p.clientX <= r.right && p.clientY >= r.top && p.clientY <= r.bottom;
     setMenu({
       kind: "page",
-      x: p.clientX,
-      y: p.clientY,
+      ...menuAt,
       at: inside ? { x: (p.clientX - r.left) / r.width, y: (p.clientY - r.top) / r.height } : undefined,
     });
   };

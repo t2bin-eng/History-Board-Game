@@ -29,6 +29,8 @@ interface Props {
 export function ContextMenu({ x, y, title, groups, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: x, top: y, ready: false });
+  // 메뉴를 연 손가락을 떼는 순간 생기는 click은 버린다. 메뉴 안을 새로 눌러야 항목이 동작한다
+  const armed = useRef(false);
 
   useLayoutEffect(() => {
     const el = ref.current!;
@@ -57,7 +59,10 @@ export function ContextMenu({ x, y, title, groups, onClose }: Props) {
       }}
       onContextMenu={(e) => {
         e.preventDefault();
-        onClose();
+        // 손가락·펜으로 길게 누르면 브라우저가 메뉴가 열린 뒤에 contextmenu를 한 번 더 보낸다 → 무시.
+        // 마우스로 바깥을 오른쪽 클릭했을 때만 닫는다
+        const type = (e.nativeEvent as PointerEvent).pointerType || "mouse";
+        if (type === "mouse" && e.target === e.currentTarget) onClose();
       }}
     >
       <div
@@ -67,6 +72,7 @@ export function ContextMenu({ x, y, title, groups, onClose }: Props) {
         aria-label={title ?? "메뉴"}
         style={{ left: pos.left, top: pos.top }}
         onContextMenu={(e) => e.preventDefault()}
+        onPointerDown={() => (armed.current = true)}
       >
         {title && <div className="ctx-title">{title}</div>}
         {visible.map((group, gi) => (
@@ -77,7 +83,9 @@ export function ContextMenu({ x, y, title, groups, onClose }: Props) {
                 role="menuitem"
                 className={item.danger ? "danger" : undefined}
                 disabled={item.disabled}
-                onClick={() => {
+                onClick={(e) => {
+                  // 키보드(Enter)로 고른 경우는 detail이 0
+                  if (!armed.current && e.detail !== 0) return;
                   onClose();
                   item.onSelect();
                 }}
