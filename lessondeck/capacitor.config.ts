@@ -7,7 +7,8 @@ const config: CapacitorConfig = {
   webDir: "dist",
   backgroundColor: "#262626",
   android: {
-    allowMixedContent: false,
+    // http:// 주소로만 열리는 학교·기관 사이트, https 사이트 안의 http 그림·영상도 웹 주소 페이지에서 보이게 한다
+    allowMixedContent: true,
   },
 };
 

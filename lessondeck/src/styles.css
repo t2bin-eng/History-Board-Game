@@ -2236,3 +2236,125 @@ button.doc-title:hover {
     opacity: 1;
   }
 }
+
+/* ── 웹 페이지 불러오기 안내 (src/view/WebStage.tsx FrameStatus) ── */
+.frame-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  background: #fff;
+  color: #455a64;
+  text-align: center;
+  font-size: 15px;
+  pointer-events: none;
+  /* 빨리 열리는 페이지에서 깜빡이지 않게 잠깐 뒤에 보인다 */
+  animation: frame-status-in 0.2s ease 0.5s both;
+}
+
+.frame-status.problem {
+  pointer-events: auto;
+  animation-delay: 0s;
+}
+
+/* 오래 걸릴 때: 사이트를 가리지 않는 위쪽 띠 */
+.frame-status.banner {
+  /* 위 모서리의 "조작 모드"·"브라우저에서 열기" 표시 아래에 떠 있는 띠 */
+  inset: 38px 10px auto 10px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid #cfd8dc;
+  border-radius: 12px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+  font-size: 13px;
+  animation-delay: 0s;
+}
+
+.frame-status.banner p {
+  font-size: 13px;
+}
+
+.frame-status.banner .spinner {
+  width: 18px;
+  height: 18px;
+  border-width: 2px;
+}
+
+.frame-status.banner .frame-actions {
+  margin-top: 0;
+}
+
+.frame-status.banner .frame-actions button,
+.frame-status.banner .frame-actions a {
+  height: 32px;
+  font-size: 13px;
+}
+
+.frame-status p {
+  max-width: 34em;
+  margin: 0;
+  font-weight: 600;
+  color: #263238;
+}
+
+.frame-status small {
+  max-width: 34em;
+  color: #607d8b;
+  font-size: 13px;
+}
+
+.frame-status .spinner {
+  width: 30px;
+  height: 30px;
+  border-width: 3px;
+  border-color: rgba(21, 101, 192, 0.2);
+  border-top-color: #1565c0;
+}
+
+.frame-status svg {
+  color: #e65100;
+}
+
+.frame-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.frame-actions button,
+.frame-actions a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid #cfd8dc;
+  border-radius: 10px;
+  background: #f5f7f8;
+  color: #263238;
+  font-size: 14px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.frame-actions svg {
+  color: #546e7a;
+}
+
+@keyframes frame-status-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

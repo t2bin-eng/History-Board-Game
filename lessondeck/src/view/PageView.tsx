@@ -1,5 +1,6 @@
 import { MousePointer2, PenLine } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { toEmbeddableUrl } from "../doc/embed";
 import { stepVisible, visiblePosition } from "../doc/pages";
 import { isInteractivePage, mediaAsset, pageAspect, pdfAsset, type DocState, type InteractivePage, type Page } from "../doc/types";
 import { fitPage, type PageSize } from "../ink/geometry";
@@ -246,6 +247,9 @@ export function PageView(props: Props) {
     .map((id) => doc.pages.find((p) => p.id === id))
     .filter((p): p is InteractivePage => isInteractivePage(p));
 
+  // 안드로이드 앱이 미리 알아 둘 웹 주소 페이지 주소들 (띄우기 거부 머리글 처리)
+  const frameUrls = useMemo(() => doc.pages.flatMap((p) => (p.kind === "url" ? [toEmbeddableUrl(p.url)] : [])), [doc.pages]);
+
   const pos = page ? visiblePosition(doc.pages, doc.hidden, page.id) : { index: -1, count: 0 };
   const hasPrev = !!page && stepVisible(doc.pages, doc.hidden, page.id, -1) !== null;
   const hasNext = !!page && stepVisible(doc.pages, doc.hidden, page.id, 1) !== null;
@@ -259,7 +263,7 @@ export function PageView(props: Props) {
           style={{ width: size.width, height: size.height }}
         >
           <PageBackground page={page} doc={doc} size={size} zoom={renderZoom} prefetch={prefetch} onRendered={props.onPdfRendered} />
-          <WebStage pages={alivePages} currentId={page.id} assets={doc.assets} size={size} reloads={props.webReloads} />
+          <WebStage pages={alivePages} currentId={page.id} assets={doc.assets} size={size} reloads={props.webReloads} frameUrls={frameUrls} />
           <InkCanvas
             key={props.lowLatency ? "ll" : "std"}
             page={size}
