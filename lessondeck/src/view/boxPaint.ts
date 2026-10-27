@@ -1,60 +1,51 @@
 import { boxLabel, boxesOf, isDangling } from "../doc/boxes";
+import { layoutBox, LINE_HEIGHT } from "../doc/textLayout";
 import type { Page } from "../doc/types";
 import type { PageSize } from "../ink/geometry";
+import { BOX_FONT, measureText } from "./textMeasure";
 
-// 페이지 바 축소 이미지에 텍스트 상자를 그린다 (화면의 BoxLayer와 같은 자리·크기·줄바꿈)
+// 페이지 바 축소 이미지에 텍스트 상자를 그린다 (화면의 BoxLayer와 같은 배치: 같은 줄·글자 크기·링크 단추 모양)
 export function paintBoxes(ctx: CanvasRenderingContext2D, page: Page, pages: Page[], hidden: string[], size: PageSize) {
   ctx.save();
   ctx.textBaseline = "top";
+  const heightRatio = size.height / Math.max(1, size.width);
+  const scale = size.width / 1000;
   for (const b of boxesOf(page)) {
     const dangling = isDangling(b, pages);
     if (b.role === "back" && dangling) continue;
     const label = boxLabel(b, pages, hidden);
     if (!label.trim()) continue;
-    const fs = (b.size * size.width) / 1000;
-    const lh = fs * 1.3;
-    const back = b.role === "back";
-    const pad = back ? fs * 0.45 : 0;
-    ctx.font = `500 ${fs}px system-ui, sans-serif`;
-    const maxWidth = Math.max(fs * 4, (1 - b.x) * size.width - 4) - pad * 2;
-    const lines = wrapText(ctx, label, maxWidth);
+    const layout = layoutBox(b, label, heightRatio, measureText);
+    const fs = layout.size * scale;
+    const lh = fs * LINE_HEIGHT;
+    const { padX, padY, icon } = layout.chrome;
     const x = b.x * size.width;
     const y = b.y * size.height;
-    const textWidth = Math.max(...lines.map((l) => ctx.measureText(l).width));
+    const textWidth = Math.max(...layout.lines.map((l) => measureText(l, layout.size))) * scale;
+    const boxW = layout.fitted ? b.w! * size.width : textWidth + fs * (padX * 2 + icon);
+    const boxH = layout.fitted ? b.h! * size.height : lh * layout.lines.length + fs * padY * 2;
     ctx.globalAlpha = dangling ? 0.45 : 1;
-    if (back) {
+    if (b.link) {
+      // 링크는 필기와 헷갈리지 않게 단추 모양 (화면과 같은 색)
       ctx.beginPath();
-      ctx.roundRect(x, y, textWidth + pad * 2, lh * lines.length + fs * 0.2, (lh + fs * 0.2) / 2);
-      ctx.fillStyle = "rgba(21, 101, 192, 0.08)";
+      ctx.roundRect(x, y, boxW, boxH, b.role === "back" ? Math.min(boxH, boxW) / 2 : fs * 0.45);
+      ctx.fillStyle = dangling ? "rgba(240, 240, 240, 0.95)" : "rgba(227, 242, 253, 0.95)";
       ctx.fill();
-      ctx.strokeStyle = "rgba(21, 101, 192, 0.35)";
-      ctx.lineWidth = Math.max(0.5, fs * 0.05);
+      ctx.strokeStyle = dangling ? "rgba(120, 120, 120, 0.6)" : "rgba(21, 101, 192, 0.6)";
+      ctx.lineWidth = Math.max(0.5, fs * 0.08);
       ctx.stroke();
+      if (icon) {
+        ctx.fillStyle = "#1565c0";
+        ctx.beginPath();
+        ctx.arc(x + fs * (padX + 0.45), y + fs * padY + lh / 2, fs * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
+    ctx.font = `500 ${fs}px ${BOX_FONT}`;
     ctx.fillStyle = b.color;
-    lines.forEach((line, i) => {
-      const ty = y + (back ? fs * 0.1 : 0) + i * lh + (lh - fs) / 2;
-      ctx.fillText(line, x + pad, ty);
-      if (b.link && !back) ctx.fillRect(x + pad, ty + fs * 1.05, ctx.measureText(line).width, Math.max(0.5, fs * 0.07));
+    layout.lines.forEach((line, i) => {
+      ctx.fillText(line, x + fs * (padX + icon), y + fs * padY + i * lh + (lh - fs) / 2);
     });
   }
   ctx.restore();
-}
-
-/** 상자 폭에 맞춰 줄을 나눈다 (줄바꿈 문자 유지, 한글은 글자 단위로) */
-function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
-  const lines: string[] = [];
-  for (const para of text.split("\n")) {
-    let line = "";
-    for (const ch of para) {
-      if (line && ctx.measureText(line + ch).width > maxWidth) {
-        lines.push(line);
-        line = ch.trimStart();
-      } else {
-        line += ch;
-      }
-    }
-    lines.push(line);
-  }
-  return lines;
 }

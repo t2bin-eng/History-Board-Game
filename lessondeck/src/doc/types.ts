@@ -62,6 +62,9 @@ export interface TextBox {
   id: string;
   x: number;
   y: number;
+  /** 상자 크기 (페이지 가로·세로 대비). 있으면 글자 크기를 상자에 맞게 자동으로 정한다 */
+  w?: number;
+  h?: number;
   text: string;
   size: number;
   color: string;

@@ -142,4 +142,11 @@ describe("상자 복사·붙여넣기", () => {
     expect(pasted.backOf).toBeUndefined();
     expect(boxesOf(page(r.pages, "a"))).toHaveLength(1);
   });
+
+  it("길게 눌러 붙이면 누른 자리에 놓인다", () => {
+    const pages = setup();
+    const clip = makeClip("doc1", [boxesOf(page(pages, "a"))[0]], pages, []);
+    const r = pasteBoxes(pages, "b", clip, "doc1", { x: 0.5, y: 0.7 });
+    expect(boxesOf(page(r.pages, "b"))[0]).toMatchObject({ x: 0.5, y: 0.7 });
+  });
 });

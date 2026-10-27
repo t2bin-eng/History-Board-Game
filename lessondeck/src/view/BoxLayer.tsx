@@ -1,8 +1,10 @@
 import { Copy, ExternalLink, Link2, Minus, Pencil, Plus, Scissors, Trash2 } from "lucide-react";
-import { useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { BOX_COLORS, boxLabel, boxesOf, isDangling } from "../doc/boxes";
+import { layoutBox } from "../doc/textLayout";
 import type { BoxLink, Page, TextBox } from "../doc/types";
 import type { PageSize } from "../ink/geometry";
+import { measureText } from "./textMeasure";
 
 interface Props {
   page: Page;
@@ -22,6 +24,8 @@ interface Props {
   onFollow: (link: BoxLink) => void;
   onLink: (id: string) => void;
   onResize: (id: string, step: 1 | -1) => void;
+  /** 손잡이로 상자 크기를 바꿈 (그 크기에 맞춘 글자 크기 함께) */
+  onBoxSize: (id: string, w: number, h: number, size: number) => void;
   onColor: (id: string, color: string) => void;
   onCopy: (id: string) => void;
   onCut: (id: string) => void;
@@ -29,6 +33,11 @@ interface Props {
 }
 
 const DRAG_SLOP = 5;
+/** 가장 작은 상자 (페이지 대비) */
+const MIN_W = 0.04;
+const MIN_H = 0.02;
+
+type HandleMode = "e" | "s" | "se";
 
 // 페이지 위 텍스트 상자·하이퍼링크 층 (필기층 위). 평소에는 링크만 누를 수 있고 나머지는 필기가 지나간다.
 export function BoxLayer(props: Props) {
@@ -36,6 +45,19 @@ export function BoxLayer(props: Props) {
   const layerRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ id: string; pointer: number; sx: number; sy: number; dx: number; dy: number; moved: boolean } | null>(null);
   const [dragPos, setDragPos] = useState<{ id: string; x: number; y: number } | null>(null);
+  const resize = useRef<{ id: string; pointer: number; mode: HandleMode; w0: number; h0: number; x: number; y: number } | null>(null);
+  const [liveSize, setLiveSize] = useState<{ id: string; w: number; h: number } | null>(null);
+  const heightRatio = size.height / Math.max(1, size.width);
+
+  // 길게 누르기로 메뉴가 열리면 누르고 있던 상자는 고르기·고치기로 넘어가지 않는다
+  useEffect(() => {
+    const onLongPress = () => {
+      drag.current = null;
+      setDragPos(null);
+    };
+    window.addEventListener("lessondeck:longpress", onLongPress);
+    return () => window.removeEventListener("lessondeck:longpress", onLongPress);
+  }, []);
 
   // 확대 중이면 화면상 크기가 다르므로 늘 실제 위치로 비율을 잰다
   const toRatio = (clientX: number, clientY: number) => {
@@ -98,19 +120,62 @@ export function BoxLayer(props: Props) {
     else props.onSelect(b.id);
   };
 
+  // 크기 손잡이: 오른쪽(가로), 아래(세로), 모서리(둘 다). 줄바꿈과 글자 크기는 상자에 맞춰 저절로
+  const onHandleDown = (b: TextBox, mode: HandleMode, e: ReactPointerEvent<HTMLElement>) => {
+    e.stopPropagation();
+    if (e.button > 0) return;
+    // 크기가 정해지지 않은 상자는 지금 보이는 크기에서 시작한다
+    const el = (e.currentTarget as HTMLElement).closest(".text-box") as HTMLElement;
+    const w0 = b.w ?? el.offsetWidth / size.width;
+    const h0 = b.h ?? el.offsetHeight / size.height;
+    resize.current = { id: b.id, pointer: e.pointerId, mode, w0, h0, x: b.x, y: b.y };
+    setLiveSize({ id: b.id, w: w0, h: h0 });
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // 잡을 수 없는 포인터면 그냥 둔다
+    }
+  };
+
+  const onHandleMove = (e: ReactPointerEvent<HTMLElement>) => {
+    const r = resize.current;
+    if (!r || r.pointer !== e.pointerId) return;
+    e.stopPropagation();
+    const p = toRatio(e.clientX, e.clientY);
+    const w = r.mode === "s" ? r.w0 : clamp(p.x - r.x, MIN_W, 1 - r.x);
+    const h = r.mode === "e" ? r.h0 : clamp(p.y - r.y, MIN_H, 1 - r.y);
+    setLiveSize({ id: r.id, w, h });
+  };
+
+  const onHandleUp = (b: TextBox, e: ReactPointerEvent<HTMLElement>) => {
+    const r = resize.current;
+    if (!r || r.pointer !== e.pointerId) return;
+    e.stopPropagation();
+    resize.current = null;
+    if (liveSize && liveSize.id === b.id) {
+      const sized = { ...b, w: liveSize.w, h: liveSize.h };
+      props.onBoxSize(b.id, liveSize.w, liveSize.h, layoutBox(sized, boxLabel(sized, pages, hidden), heightRatio, measureText).size);
+    }
+    setLiveSize(null);
+  };
+
   return (
     <div ref={layerRef} className={`box-layer${editMode ? " edit" : ""}`} data-no-gesture={editMode || undefined} onClick={onLayerClick}>
       {boxes.map((b) => {
         const pos = dragPos?.id === b.id ? dragPos : b;
+        const live = liveSize?.id === b.id ? { ...b, w: liveSize.w, h: liveSize.h } : b;
         const label = boxLabel(b, pages, hidden);
         const dangling = isDangling(b, pages);
         const editing = editingId === b.id;
         const selected = selectedId === b.id && editMode;
-        const fontSize = (b.size * size.width) / 1000;
+        // 줄은 직접 나눈다 (썸네일과 같은 결과). 크기가 정해진 상자는 글자 크기도 상자에 맞춘다
+        const layout = layoutBox({ ...live, x: pos.x }, editing ? b.text || label : label, heightRatio, measureText);
+        const fontSize = (layout.size * size.width) / 1000;
         const className = [
           "text-box",
           b.link && "link",
           b.role === "back" && "back",
+          layout.fitted && "fitted",
           dangling && "dangling",
           selected && "selected",
           editing && "editing",
@@ -122,12 +187,14 @@ export function BoxLayer(props: Props) {
           top: pos.y * size.height,
           fontSize,
           color: b.color,
-          maxWidth: Math.max(fontSize * 4, (1 - pos.x) * size.width - 4),
+          padding: `${layout.chrome.padY}em ${layout.chrome.padX}em`,
+          ...(layout.fitted ? { width: live.w! * size.width, height: live.h! * size.height } : {}),
         };
         const common = {
           className,
           style,
           "data-no-gesture": true,
+          "data-box-id": b.id,
           onPointerDown: (e: ReactPointerEvent<HTMLElement>) => onBoxDown(b, e),
           onPointerMove: onBoxMove,
           onPointerUp: (e: ReactPointerEvent<HTMLElement>) => onBoxUp(b, e),
@@ -142,6 +209,7 @@ export function BoxLayer(props: Props) {
                 value={b.text}
                 placeholder={b.link ? label : "글자 입력"}
                 aria-label="텍스트 상자 글자"
+                className={layout.fitted ? "fill" : undefined}
                 style={{ fontSize, color: b.color }}
                 onChange={(e) => props.onText(b.id, e.target.value)}
                 onBlur={() => props.onEndEdit(b.id)}
@@ -153,11 +221,37 @@ export function BoxLayer(props: Props) {
 
         const body = (
           <>
-            <span className="text-box-text">{label || " "}</span>
-            {b.link?.type === "url" && <ExternalLink className="text-box-icon" size={Math.max(10, fontSize * 0.75)} />}
+            {layout.chrome.icon > 0 && (
+              <span className="text-box-icon" aria-hidden="true">
+                {b.link?.type === "url" ? <ExternalLink size="0.9em" strokeWidth={2.4} /> : <Link2 size="0.9em" strokeWidth={2.4} />}
+              </span>
+            )}
+            <span className="text-box-text">
+              {layout.lines.map((line, i) => (
+                <span key={i} className="tb-line">
+                  {line || "\u00a0"}
+                </span>
+              ))}
+            </span>
           </>
         );
-        const toolbar = selected && !dragPos && (
+        const handles =
+          selected && !dragPos && !editing ? (
+            <>
+              {(["e", "s", "se"] as const).map((mode) => (
+                <span
+                  key={mode}
+                  className={`tb-handle ${mode}`}
+                  aria-hidden="true"
+                  onPointerDown={(e) => onHandleDown(b, mode, e)}
+                  onPointerMove={onHandleMove}
+                  onPointerUp={(e) => onHandleUp(b, e)}
+                  onPointerCancel={(e) => onHandleUp(b, e)}
+                />
+              ))}
+            </>
+          ) : null;
+        const toolbar = selected && !dragPos && !liveSize && (
           <BoxToolbar
             box={b}
             below={pos.y < 0.12}
@@ -193,6 +287,7 @@ export function BoxLayer(props: Props) {
           >
             {body}
             {toolbar}
+            {handles}
           </div>
         );
       })}

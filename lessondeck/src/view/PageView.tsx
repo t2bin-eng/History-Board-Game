@@ -35,9 +35,24 @@ interface Props {
   inkOff?: boolean;
   /** 페이지 위, 필기층 위에 그릴 것 (텍스트 상자·링크). 페이지 크기를 받는다 */
   pageOverlay?: (size: PageSize) => ReactNode;
+  /** 펜·손가락으로 길게 누르기, 마우스 오른쪽 클릭 → 메뉴 */
+  onLongPress?: (p: LongPress) => void;
+  /** 펜 길게 누르기를 받을지 (지우개로 지우는 중에는 받지 않는다) */
+  penLongPress?: boolean;
   /** 페이지 영역 위에 떠 있는 것들 (펜 팔레트, 디버그 패널) */
   children?: ReactNode;
 }
+
+export interface LongPress {
+  clientX: number;
+  clientY: number;
+  pointerType: string;
+  target: Element;
+}
+
+/** 길게 누르기로 보는 시간 (펜은 점 찍기와 헷갈리지 않게 조금 길게) */
+const LONG_PRESS_MS = { pen: 600, touch: 500 } as const;
+const LONG_PRESS_SLOP = 10;
 
 /** 페이지 둘레 여백 (강의 모드는 0) */
 const PAGE_MARGIN = 16;
@@ -70,6 +85,103 @@ export function PageView(props: Props) {
   const aspect = page ? pageAspect(page, doc.assets) : 210 / 297;
   const margin = props.lecture ? 0 : PAGE_MARGIN;
   const size: PageSize = useMemo(() => fitPage(area.width, area.height, aspect, margin), [area.width, area.height, aspect, margin]);
+
+  // ── 길게 누르기 ────────────────────────────────────────
+  const [ring, setRing] = useState<{ x: number; y: number; ms: number } | null>(null);
+  const longPressRef = useRef(props.onLongPress);
+  longPressRef.current = props.onLongPress;
+  const penLongPressRef = useRef(props.penLongPress ?? true);
+  penLongPressRef.current = props.penLongPress ?? true;
+  useEffect(() => {
+    const area = areaRef.current!;
+    let press: { id: number; x: number; y: number; type: string; target: Element; timer: number; ringTimer: number } | null = null;
+    let firedAt = 0;
+    // 팔레트·넘기기 바 같은 떠 있는 도구 위는 빼고, 페이지와 글상자 위만
+    const eligible = (t: Element) => !!t.closest(".text-box") || !t.closest("[data-no-gesture]");
+    const cancel = () => {
+      if (!press) return;
+      clearTimeout(press.timer);
+      clearTimeout(press.ringTimer);
+      press = null;
+      setRing(null);
+    };
+    const fire = () => {
+      const p = press;
+      if (!p) return;
+      cancel();
+      firedAt = performance.now();
+      // 쓰기 시작한 점·끌던 상자를 버리게 알린다
+      window.dispatchEvent(new Event("lessondeck:longpress"));
+      navigator.vibrate?.(12);
+      longPressRef.current?.({ clientX: p.x, clientY: p.y, pointerType: p.type, target: p.target });
+    };
+    const onDown = (e: PointerEvent) => {
+      if (press) {
+        // 두 번째 손가락 → 확대·이동
+        cancel();
+        return;
+      }
+      if (!longPressRef.current || e.pointerType === "mouse") return;
+      if (e.pointerType === "pen" && !penLongPressRef.current) return;
+      const target = e.target as Element;
+      if (!eligible(target)) return;
+      const ms = e.pointerType === "pen" ? LONG_PRESS_MS.pen : LONG_PRESS_MS.touch;
+      const r = area.getBoundingClientRect();
+      const x = e.clientX;
+      const y = e.clientY;
+      press = {
+        id: e.pointerId,
+        x,
+        y,
+        type: e.pointerType,
+        target,
+        // 잠깐 지나면 누른 자리에 원이 차오르며 곧 메뉴가 열린다는 걸 보여 준다
+        ringTimer: window.setTimeout(() => setRing({ x: x - r.left, y: y - r.top, ms: ms - 150 }), 150),
+        timer: window.setTimeout(fire, ms),
+      };
+    };
+    const onMove = (e: PointerEvent) => {
+      if (press && e.pointerId === press.id && Math.hypot(e.clientX - press.x, e.clientY - press.y) > LONG_PRESS_SLOP) cancel();
+    };
+    const onUp = (e: PointerEvent) => {
+      if (press && e.pointerId === press.id) cancel();
+    };
+    // 길게 누른 뒤 손을 떼며 생기는 click(링크 이동, 글상자 만들기)은 버린다
+    const onClick = (e: MouseEvent) => {
+      if (performance.now() - firedAt < 800) {
+        firedAt = 0;
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    };
+    const onContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      const type = (e as PointerEvent).pointerType || "mouse";
+      // 손가락·펜 길게 누르기에 브라우저가 보내는 메뉴 신호: 우리 타이머가 처리 (먼저 오면 바로 연다)
+      if (type !== "mouse") {
+        if (press) fire();
+        return;
+      }
+      const target = e.target as Element;
+      if (!longPressRef.current || !eligible(target)) return;
+      longPressRef.current({ clientX: e.clientX, clientY: e.clientY, pointerType: "mouse", target });
+    };
+    area.addEventListener("pointerdown", onDown, true);
+    area.addEventListener("pointermove", onMove, true);
+    area.addEventListener("pointerup", onUp, true);
+    area.addEventListener("pointercancel", onUp, true);
+    area.addEventListener("click", onClick, true);
+    area.addEventListener("contextmenu", onContextMenu);
+    return () => {
+      cancel();
+      area.removeEventListener("pointerdown", onDown, true);
+      area.removeEventListener("pointermove", onMove, true);
+      area.removeEventListener("pointerup", onUp, true);
+      area.removeEventListener("pointercancel", onUp, true);
+      area.removeEventListener("click", onClick, true);
+      area.removeEventListener("contextmenu", onContextMenu);
+    };
+  }, []);
 
   const onZoomEnd = useCallback((z: number) => {
     clearTimeout(zoomTimer.current);
@@ -181,6 +293,8 @@ export function PageView(props: Props) {
           extra={props.navExtra}
         />
       )}
+
+      {ring && <span className="press-ring" style={{ left: ring.x, top: ring.y, animationDuration: `${ring.ms}ms` }} aria-hidden="true" />}
 
       {props.children}
     </main>

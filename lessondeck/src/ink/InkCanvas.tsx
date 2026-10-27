@@ -93,6 +93,8 @@ export function InkCanvas(props: Props) {
     let gesture: Gesture | null = null;
     let liveBox: Box | null = null;
     let hover: { x: number; y: number } | null = null;
+    /** 길게 누르기로 메뉴가 열린 포인터: 뗄 때까지 획을 시작하지 않는다 */
+    let ignored: number | null = null;
 
     const page = () => propsRef.current.page;
     const scale = () => sizeRef.current.scale;
@@ -234,6 +236,7 @@ export function InkCanvas(props: Props) {
 
     const onDown = (e: PointerEvent) => {
       recordPointer(e);
+      if (e.pointerId === ignored) return;
       if (gesture) {
         // 두 번째 손가락은 onAnyDown이 이미 처리했다 (쓰던 획 취소 → 확대·이동)
         if (e.pointerType === "touch") return;
@@ -264,6 +267,7 @@ export function InkCanvas(props: Props) {
       const predicted = e.getPredictedEvents?.() ?? [];
       recordPointer(e, coalesced.length, predicted.length);
 
+      if (e.pointerId === ignored) return;
       if (!gesture) {
         if (e.pointerType === "touch") return;
         // 사이드 버튼을 누른 채 펜이 닿는 경우(버튼 → 접촉 순서)는 pointermove로만 들어온다
@@ -335,8 +339,29 @@ export function InkCanvas(props: Props) {
       redraw(base, renderedRef.current, page(), scale());
     };
 
-    const onUp = (e: PointerEvent) => finish(e, false);
-    const onCancel = (e: PointerEvent) => finish(e, true);
+    const release = (e: PointerEvent) => {
+      if (e.pointerId !== ignored) return false;
+      ignored = null;
+      return true;
+    };
+    const onUp = (e: PointerEvent) => {
+      if (!release(e)) finish(e, false);
+    };
+    const onCancel = (e: PointerEvent) => {
+      if (!release(e)) finish(e, true);
+    };
+    // 길게 누르기(메뉴): 쓰던 점은 그리지 않는다. 지우던 중이면 지운 것은 그대로 둔다
+    const onLongPress = () => {
+      if (!gesture) return;
+      ignored = gesture.pointerId;
+      if (gesture.mode === "draw") cancelGesture();
+      else {
+        const g = gesture;
+        gesture = null;
+        clearLive();
+        if (g.erased) propsRef.current.onCommit(g.working);
+      }
+    };
     const onLostCapture = (e: PointerEvent) => {
       if (gesture && e.pointerId === gesture.pointerId) finish(e, true);
     };
@@ -366,8 +391,10 @@ export function InkCanvas(props: Props) {
     live.addEventListener("pointerleave", onLeave);
     live.addEventListener("contextmenu", onContextMenu);
     window.addEventListener("pointerdown", onAnyDown, true);
+    window.addEventListener("lessondeck:longpress", onLongPress);
     return () => {
       window.removeEventListener("pointerdown", onAnyDown, true);
+      window.removeEventListener("lessondeck:longpress", onLongPress);
       offSide();
       live.removeEventListener("pointerdown", onDown);
       live.removeEventListener("pointermove", onMove);

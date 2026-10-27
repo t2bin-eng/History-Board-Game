@@ -131,14 +131,23 @@ export function makeClip(docId: string, boxes: TextBox[], pages: Page[], hidden:
  * 페이지 링크는 이 문서에 그 페이지가 있으면 그대로 잇고 돌아가기 링크도 만든다.
  * 다른 문서의 페이지 링크는 이어 갈 곳이 없으므로 보이던 글자만 남긴다.
  */
-export function pasteBoxes(pages: Page[], pageId: string, clip: BoxClip, docId: string): { pages: Page[]; ids: string[]; unlinked: number } {
+export function pasteBoxes(
+  pages: Page[],
+  pageId: string,
+  clip: BoxClip,
+  docId: string,
+  /** 길게 눌러 붙일 때: 첫 상자를 이 자리에 (나머지는 같은 간격으로) */
+  at?: { x: number; y: number },
+): { pages: Page[]; ids: string[]; unlinked: number } {
   let next = pages;
+  const dx = at && clip.boxes[0] ? at.x - clip.boxes[0].x : 0;
+  const dy = at && clip.boxes[0] ? at.y - clip.boxes[0].y : 0;
   const ids: string[] = [];
   let unlinked = 0;
   if (!pages.some((p) => p.id === pageId)) return { pages, ids, unlinked };
   clip.boxes.forEach((src, i) => {
     const { backOf: _backOf, link, role, ...rest } = src;
-    let box: TextBox = { ...rest, id: newId("b") };
+    let box: TextBox = { ...rest, id: newId("b"), x: Math.min(0.95, Math.max(0, rest.x + dx)), y: Math.min(0.97, Math.max(0, rest.y + dy)) };
     let pageLink = link?.type === "page" ? link : undefined;
     if (link?.type === "url") box.link = link;
     if (pageLink && (clip.docId !== docId || !next.some((p) => p.id === pageLink!.pageId))) {

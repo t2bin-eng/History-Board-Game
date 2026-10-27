@@ -1,6 +1,12 @@
 import {
   Activity,
   ChevronLeft,
+  Copy,
+  CopyPlus,
+  EllipsisVertical,
+  ExternalLink,
+  Pencil,
+  Scissors,
   ClipboardPaste,
   Eraser,
   FilePlus2,
@@ -26,7 +32,9 @@ import {
   BOX_COLORS,
   BOX_SIZES,
   boxesOf,
+  boxLabel,
   copyBoxes,
+  isDangling,
   DEFAULT_BOX_SIZE,
   LINK_COLOR,
   makeClip,
@@ -74,12 +82,15 @@ import { AddPageMenu, type LinkKind } from "./ui/AddPageMenu";
 import { onBackPress } from "./lib/nativeShell";
 import { DebugPanel } from "./ui/DebugPanel";
 import { IconButton } from "./ui/IconButton";
+import { ContextMenu, type MenuGroups } from "./ui/ContextMenu";
 import { LinkDialog } from "./ui/LinkDialog";
 import { PagePanel } from "./ui/PagePanel";
 import { PenPalette } from "./ui/PenPalette";
 import { ToolSettings } from "./ui/ToolSettings";
 import { BoxLayer } from "./view/BoxLayer";
+import type { LongPress } from "./view/PageView";
 import { PageView } from "./view/PageView";
+import { fittedSize } from "./view/textMeasure";
 
 type Popover = { kind: "preset"; id: string; left: number; top: number } | { kind: "eraser"; left: number; top: number } | null;
 type FileTarget = { kind: "pdf" | "html" | "image" | "video"; index: number };
@@ -160,6 +171,13 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   /** 링크 걸기 창. created: "링크 만들기"로 방금 만든 상자 (취소하면 지우고 원래 모드로) */
   const [linkDialog, setLinkDialog] = useState<{ boxId: string; created: boolean; wasTextMode?: boolean } | null>(null);
   const [textColor, setTextColor] = useState(BOX_COLORS[0]);
+  /** 길게 누르기·더보기 메뉴 */
+  const [menu, setMenu] = useState<
+    | { kind: "box"; x: number; y: number; boxId: string }
+    | { kind: "page"; x: number; y: number; at?: { x: number; y: number } }
+    | { kind: "more"; x: number; y: number }
+    | null
+  >(null);
   /** 복사·잘라낸 상자 (문서를 바꿔도 남음) */
   const [boxClip, setClipState] = useState<BoxClip | null>(getBoxClip);
   /** 강의 모드: 도구 막대·페이지 바를 숨기고 페이지를 화면 가득 */
@@ -511,11 +529,28 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   /** 글을 다 쓰면: 글도 링크도 없는 상자는 지운다 */
   const endEdit = (id: string) => {
     setEditingBox((e) => (e === id ? null : e));
-    editBoxes(id, (pages, pageId, box) => (!box.text.trim() && !box.link ? removeBox(pages, pageId, id) : pages));
+    editBoxes(id, (pages, pageId, box) => {
+      if (!box.text.trim() && !box.link) return removeBox(pages, pageId, id);
+      if (box.w == null || box.h == null) return pages;
+      // 크기가 정해진 상자: 글에 맞춰 바뀐 글자 크기를 적어 둔다 (이전 버전·썸네일용)
+      const page = pages.find((p) => p.id === pageId)!;
+      const size = fittedSize(box, boxLabel(box, pages, docRef.current.hidden), 1 / pageAspect(page, docRef.current.assets));
+      return size === box.size ? pages : patchBox(pages, pageId, id, { size });
+    });
   };
 
+  /** 글자 작게/크게: 크기가 정해진 상자는 상자를 키우고 줄여(글자는 맞춰서), 아니면 글자 크기 단계로 */
   const resizeBox = (id: string, step: 1 | -1) =>
     editBoxes(id, (pages, pageId, box) => {
+      if (box.w != null && box.h != null) {
+        const page = pages.find((p) => p.id === pageId)!;
+        const factor = step > 0 ? 1.15 : 1 / 1.15;
+        const w = Math.min(1 - box.x, Math.max(0.04, box.w * factor));
+        const h = Math.min(1 - box.y, Math.max(0.02, box.h * factor));
+        const sized = { ...box, w, h };
+        const size = fittedSize(sized, boxLabel(sized, pages, docRef.current.hidden), 1 / pageAspect(page, docRef.current.assets));
+        return patchBox(pages, pageId, id, { w, h, size });
+      }
       const i = BOX_SIZES.reduce((best, v, k) => (Math.abs(v - box.size) < Math.abs(BOX_SIZES[best] - box.size) ? k : best), 0);
       const size = BOX_SIZES[Math.min(BOX_SIZES.length - 1, Math.max(0, i + step))];
       return patchBox(pages, pageId, id, { size });
@@ -552,13 +587,13 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     if (copyBox(id, systemText)) deleteBox(id, "상자를 잘라냈습니다. 붙일 곳에서 붙여넣기");
   };
 
-  const pasteClip = (clip: BoxClip | null = boxClip) => {
+  const pasteClip = (clip: BoxClip | null = boxClip, at?: { x: number; y: number }) => {
     if (!clip || !currentPage) return;
     const target = currentPage.id;
-    const r = pasteBoxes(docRef.current.pages, target, clip, docRef.current.id);
+    const r = pasteBoxes(docRef.current.pages, target, clip, docRef.current.id, at);
     if (!r.ids.length) return;
     // 미리 계산한 결과를 그대로 쓴다 (setBoxLink가 만드는 돌아가기 링크 id까지 같게)
-    setDoc((d) => ({ ...d, pages: d.pages === docRef.current.pages ? r.pages : pasteBoxes(d.pages, target, clip, d.id).pages }));
+    setDoc((d) => ({ ...d, pages: d.pages === docRef.current.pages ? r.pages : pasteBoxes(d.pages, target, clip, d.id, at).pages }));
     setTextMode(true);
     setSelectedBox(r.ids[r.ids.length - 1]);
     setEditingBox(null);
@@ -578,12 +613,163 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     pasteClip(clip);
   };
 
+  /** 상자를 그 자리 옆에 하나 더 (클립보드는 그대로) */
+  const duplicateBox = (id: string) => {
+    const box = findBox(id);
+    if (!box || !currentPage) return;
+    const clip = makeClip(docRef.current.id, [box], docRef.current.pages, docRef.current.hidden);
+    pasteClip(clip);
+  };
+
+  /** 웹 주소를 새 창(APK는 기본 브라우저)으로 연다. 상자의 링크와 같은 방식 */
+  const openUrl = (url: string) => {
+    const a = document.createElement("a");
+    a.href = url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.click();
+  };
+
+  // 길게 누르기(펜·손가락)·오른쪽 클릭: 글상자 위면 상자 메뉴, 아니면 페이지 메뉴
+  const onLongPress = (p: LongPress) => {
+    setPopover(null);
+    setAddMenu(null);
+    // 평소에는 링크 아닌 글상자가 누름을 통과시키므로 자리로 찾는다
+    const hit = [...document.querySelectorAll<HTMLElement>(".page .text-box[data-box-id]")].reverse().find((el) => {
+      const r = el.getBoundingClientRect();
+      return p.clientX >= r.left - 4 && p.clientX <= r.right + 4 && p.clientY >= r.top - 4 && p.clientY <= r.bottom + 4;
+    });
+    if (hit) {
+      setEditingBox(null);
+      setMenu({ kind: "box", x: p.clientX, y: p.clientY, boxId: hit.dataset.boxId! });
+      return;
+    }
+    const pageEl = document.querySelector(".page");
+    const r = pageEl?.getBoundingClientRect();
+    const inside = r && p.clientX >= r.left && p.clientX <= r.right && p.clientY >= r.top && p.clientY <= r.bottom;
+    setMenu({
+      kind: "page",
+      x: p.clientX,
+      y: p.clientY,
+      at: inside ? { x: (p.clientX - r.left) / r.width, y: (p.clientY - r.top) / r.height } : undefined,
+    });
+  };
+
+  const menuGroups = (): { title?: string; groups: MenuGroups } => {
+    if (!menu) return { groups: [] };
+    if (menu.kind === "box") {
+      const box = findBox(menu.boxId);
+      if (!box) return { groups: [] };
+      const id = box.id;
+      const dangling = isDangling(box, doc.pages);
+      return {
+        title: box.link ? "링크" : "글상자",
+        groups: [
+          [
+            box.link &&
+              !dangling && {
+                label: box.link.type === "url" ? "링크 열기" : `${pageNumberLabel(doc.pages, doc.hidden, box.link.pageId)}으로 가기`,
+                icon: box.link.type === "url" ? <ExternalLink size={18} /> : <Link2 size={18} />,
+                onSelect: () => (box.link!.type === "url" ? openUrl(box.link!.url) : followLink(box.link!)),
+              },
+            {
+              label: "글자 고치기",
+              icon: <Pencil size={18} />,
+              onSelect: () => {
+                setTextMode(true);
+                setSelectedBox(id);
+                setEditingBox(id);
+              },
+            },
+            { label: box.link ? "링크 바꾸기" : "링크 걸기", icon: <Link2 size={18} />, onSelect: () => setLinkDialog({ boxId: id, created: false }) },
+            {
+              label: "크기·위치 조절",
+              icon: <Type size={18} />,
+              onSelect: () => {
+                setTextMode(true);
+                setSelectedBox(id);
+              },
+            },
+          ],
+          [
+            {
+              label: "복사",
+              icon: <Copy size={18} />,
+              hint: "Ctrl+C",
+              onSelect: () => {
+                copyBox(id);
+                showToast("상자를 복사했습니다. 붙일 곳을 길게 누르세요");
+              },
+            },
+            { label: "잘라내기", icon: <Scissors size={18} />, hint: "Ctrl+X", onSelect: () => cutBox(id) },
+            { label: "복제", icon: <CopyPlus size={18} />, onSelect: () => duplicateBox(id) },
+            boxClip && { label: "붙여넣기", icon: <ClipboardPaste size={18} />, hint: "Ctrl+V", onSelect: () => pasteClip() },
+          ],
+          [{ label: "지우기", icon: <Trash2 size={18} />, danger: true, onSelect: () => deleteBox(id) }],
+        ],
+      };
+    }
+    if (menu.kind === "page") {
+      const at = menu.at;
+      return {
+        title: currentPage ? `${pageNumberLabel(doc.pages, doc.hidden, currentPage.id) ?? ""} 페이지` : undefined,
+        groups: [
+          [
+            boxClip && { label: at ? "여기에 붙여넣기" : "붙여넣기", icon: <ClipboardPaste size={18} />, hint: "Ctrl+V", onSelect: () => pasteClip(boxClip, at) },
+            at && {
+              label: "여기에 글상자",
+              icon: <Type size={18} />,
+              onSelect: () => {
+                setTextMode(true);
+                createBox(at.x, at.y);
+              },
+            },
+            at && { label: "여기에 링크", icon: <Link2 size={18} />, onSelect: () => createLinkBox(at) },
+          ],
+          [
+            { label: "실행 취소", icon: <Undo2 size={18} />, hint: "Ctrl+Z", disabled: !pageInk?.past.length, onSelect: () => inkAction({ type: "undo" }) },
+            { label: "다시 실행", icon: <Redo2 size={18} />, hint: "Ctrl+Y", disabled: !pageInk?.future.length, onSelect: () => inkAction({ type: "redo" }) },
+            strokes.length > 0 && { label: "이 페이지 필기 지우기", icon: <Eraser size={18} />, onSelect: () => inkAction({ type: "clear" }) },
+          ],
+          [
+            { label: "뒤에 빈 페이지 추가", icon: <FilePlus2 size={18} />, onSelect: () => addBlank(pageIndex + 1, "plain") },
+            currentPage && { label: "이 페이지 복제", icon: <CopyPlus size={18} />, onSelect: () => duplicatePage(currentPage.id) },
+            isWebPage(currentPage) && { label: "페이지 새로고침", icon: <RotateCw size={18} />, onSelect: reloadWebPage },
+          ],
+          [
+            lecture
+              ? { label: "강의 모드 끝내기", icon: <Minimize2 size={18} />, hint: "Esc", onSelect: exitLecture }
+              : { label: "강의 모드", icon: <Presentation size={18} />, hint: "F5", onSelect: enterLecture },
+            !paletteOpen && { label: "펜 바 보이기", icon: <Palette size={18} />, onSelect: () => setPaletteOpen(true) },
+          ],
+        ],
+      };
+    }
+    return {
+      groups: [
+        [
+          { label: "이름 바꾸기", icon: <Pencil size={18} />, onSelect: rename },
+          { label: "파일로 내보내기 (.lessondeck)", icon: <Share2 size={18} />, onSelect: exportDoc },
+        ],
+        [
+          { label: "펜 바", icon: <Palette size={18} />, checked: paletteOpen, onSelect: () => setPaletteOpen((v) => !v) },
+          { label: "페이지 바", icon: <PanelLeft size={18} />, checked: pagePanelOpen, onSelect: () => setPagePanelOpen((v) => !v) },
+          { label: "입력 디버그", icon: <Activity size={18} />, checked: debugOpen, onSelect: () => setDebugOpen((v) => !v) },
+        ],
+      ],
+    };
+  };
+
   /** "링크 만들기": 링크 상자를 만들고 바로 연결할 곳을 고른다 */
-  const createLinkBox = () => {
+  const createLinkBox = (at?: { x: number; y: number }) => {
     if (!currentPage) return;
     setPopover(null);
     setTextMode(true);
-    const box: TextBox = { id: newId("b"), x: 0.06, y: 0.86, text: "", size: DEFAULT_BOX_SIZE, color: LINK_COLOR };
+    // 링크를 여러 개 만들어도 겹치지 않게 왼쪽 아래부터 위로 쌓는다
+    let y = 0.86;
+    const others = boxesOf(currentPage);
+    while (y > 0.1 && others.some((b) => Math.abs(b.y - y) < 0.045 && Math.abs(b.x - 0.06) < 0.25)) y -= 0.06;
+    const box: TextBox = { id: newId("b"), x: at?.x ?? 0.06, y: at?.y ?? y, text: "", size: DEFAULT_BOX_SIZE, color: LINK_COLOR };
     setDoc((d) => ({ ...d, pages: addBox(d.pages, currentPage.id, box) }));
     setSelectedBox(box.id);
     setEditingBox(null);
@@ -771,9 +957,10 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
         </div>
         <div className="topbar-right">
           {headerExtra}
-          <IconButton label="강의 모드 (F5)" onClick={enterLecture} disabled={!currentPage}>
-            <Presentation size={22} />
-          </IconButton>
+          <button className="lecture-btn" aria-label="강의 모드 (F5)" title="강의 모드 (F5)" onClick={enterLecture} disabled={!currentPage}>
+            <Presentation size={19} /> 강의 모드
+          </button>
+          <span className="topbar-sep" />
           <IconButton label="페이지 바" active={pagePanelOpen} onClick={() => setPagePanelOpen((v) => !v)}>
             <PanelLeft size={22} />
           </IconButton>
@@ -789,9 +976,6 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
           >
             <FilePlus2 size={22} />
           </IconButton>
-          <IconButton label="파일로 내보내기 (.lessondeck)" onClick={exportDoc}>
-            <Share2 size={21} />
-          </IconButton>
           <IconButton
             label={fingerDraw ? "손가락 필기 끄기" : "손가락으로도 필기"}
             active={fingerDraw}
@@ -802,8 +986,15 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
           >
             <Hand size={22} />
           </IconButton>
-          <IconButton label="입력 디버그" active={debugOpen} onClick={() => setDebugOpen((v) => !v)}>
-            <Activity size={22} />
+          <IconButton
+            label="더보기"
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              setPopover(null);
+              setMenu({ kind: "more", x: r.right - 250, y: r.bottom + 6 });
+            }}
+          >
+            <EllipsisVertical size={22} />
           </IconButton>
         </div>
         <input
@@ -855,7 +1046,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
         >
           <Type size={23} />
         </IconButton>
-        <IconButton label="링크 만들기" disabled={!currentPage} onClick={createLinkBox}>
+        <IconButton label="링크 만들기" disabled={!currentPage} onClick={() => createLinkBox()}>
           <Link2 size={23} />
         </IconButton>
         {boxClip && (
@@ -926,6 +1117,8 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
           lecture={lecture}
           inkOff={textMode}
           webReloads={webReloads}
+          onLongPress={onLongPress}
+          penLongPress={!erasing}
           pageOverlay={(size) =>
             currentPage && (
               <BoxLayer
@@ -951,6 +1144,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
                 onFollow={followLink}
                 onLink={(id) => setLinkDialog({ boxId: id, created: false })}
                 onResize={resizeBox}
+                onBoxSize={(id, w, h, size) => editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { w, h, size }))}
                 onColor={(id, color) => {
                   setTextColor(color);
                   editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { color }));
@@ -1062,6 +1256,9 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
           }}
           onClose={closePopover}
         />
+      )}
+      {menu && (
+        <ContextMenu x={menu.x} y={menu.y} {...menuGroups()} onClose={() => setMenu(null)} />
       )}
       {linkDialog && currentPage && (
         <LinkDialog
