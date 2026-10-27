@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addBox, boxesOf, boxLabel, copyBoxes, isDangling, removeBox, setBoxLink } from "./boxes";
+import { addBox, boxesOf, boxLabel, copyBoxes, isDangling, makeClip, pasteBoxes, removeBox, setBoxLink } from "./boxes";
 import { movePageTo, removePage } from "./pages";
 import type { Page, TextBox } from "./types";
 
@@ -81,5 +81,65 @@ describe("페이지 링크와 돌아가기 링크", () => {
     expect(copied[0].backOf).toBeUndefined();
     expect(copied[0].role).toBe("back");
     expect(copyBoxes(undefined)).toBeUndefined();
+  });
+});
+
+describe("상자 복사·붙여넣기", () => {
+  it("같은 페이지에 붙이면 새 id로 조금 비켜서 놓인다", () => {
+    const pages = setup();
+    const src = boxesOf(page(pages, "a"))[0];
+    const clip = makeClip("doc1", [src], pages, []);
+    const r1 = pasteBoxes(pages, "a", clip, "doc1");
+    const r2 = pasteBoxes(r1.pages, "a", clip, "doc1");
+    const boxes = boxesOf(page(r2.pages, "a"));
+    expect(boxes).toHaveLength(3);
+    expect(new Set(boxes.map((b) => b.id)).size).toBe(3);
+    expect(boxes[1]).toMatchObject({ text: "자료 보기", x: 0.13, y: 0.13 });
+    expect(boxes[2].x).toBeCloseTo(0.16);
+  });
+
+  it("페이지 링크를 다른 페이지에 붙이면 링크를 잇고 돌아가기 링크도 만든다", () => {
+    const pages = setBoxLink(setup(), "a", "link1", { type: "page", pageId: "c" });
+    const clip = makeClip("doc1", [boxesOf(page(pages, "a"))[0]], pages, []);
+    const r = pasteBoxes(pages, "b", clip, "doc1");
+    const pasted = boxesOf(page(r.pages, "b"))[0];
+    expect(pasted.link).toEqual({ type: "page", pageId: "c" });
+    const backs = boxesOf(page(r.pages, "c")).filter((b) => b.role === "back");
+    expect(backs.map((b) => (b.link as { pageId: string }).pageId).sort()).toEqual(["a", "b"]);
+    expect(backs.find((b) => b.backOf === pasted.id)).toBeTruthy();
+  });
+
+  it("잘라내서(지우고) 붙이면 돌아가기 링크도 새 자리를 가리킨다", () => {
+    let pages = setBoxLink(setup(), "a", "link1", { type: "page", pageId: "c" });
+    const clip = makeClip("doc1", [boxesOf(page(pages, "a"))[0]], pages, []);
+    pages = removeBox(pages, "a", "link1");
+    const r = pasteBoxes(pages, "b", clip, "doc1");
+    const backs = boxesOf(page(r.pages, "c"));
+    expect(backs).toHaveLength(1);
+    expect(backs[0].link).toEqual({ type: "page", pageId: "b" });
+  });
+
+  it("다른 문서에 붙이면 페이지 링크는 풀고 보이던 글자를 남긴다, 웹 주소 링크는 그대로", () => {
+    let pages = addBox([blank("a"), blank("b"), blank("c")], "a", box("l"));
+    pages = setBoxLink(pages, "a", "l", { type: "page", pageId: "c" }, false);
+    pages = addBox(pages, "a", { ...box("u"), link: { type: "url", url: "https://example.com/" } });
+    const clip = makeClip("doc1", boxesOf(page(pages, "a")), pages, []);
+    const other = [blank("x")];
+    const r = pasteBoxes(other, "x", clip, "doc2");
+    const [l, u] = boxesOf(r.pages[0]);
+    expect(r.unlinked).toBe(1);
+    expect(l.link).toBeUndefined();
+    expect(l.text).toBe("3쪽으로 가기 →");
+    expect(u.link).toEqual({ type: "url", url: "https://example.com/" });
+  });
+
+  it("돌아가기 링크를 붙여도 돌아가기 링크를 또 만들지 않는다", () => {
+    const pages = setBoxLink(setup(), "a", "link1", { type: "page", pageId: "c" });
+    const back = boxesOf(page(pages, "c"))[0];
+    const r = pasteBoxes(pages, "b", makeClip("doc1", [back], pages, []), "doc1");
+    const pasted = boxesOf(page(r.pages, "b"))[0];
+    expect(pasted).toMatchObject({ role: "back", link: { type: "page", pageId: "a" } });
+    expect(pasted.backOf).toBeUndefined();
+    expect(boxesOf(page(r.pages, "a"))).toHaveLength(1);
   });
 });

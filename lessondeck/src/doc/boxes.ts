@@ -113,3 +113,56 @@ export function boxLabel(box: TextBox, pages: Page[], hidden: string[]): string 
   }
   return "";
 }
+
+/** 복사·잘라낸 상자 (앱 안 클립보드). 다른 문서에 붙여도 보이던 글자를 살리려고 이름을 같이 둔다 */
+export interface BoxClip {
+  docId: string;
+  boxes: TextBox[];
+  /** 복사할 때 화면에 보이던 글자 (시스템 클립보드에도 이 글자를 넣는다) */
+  labels: string[];
+}
+
+export function makeClip(docId: string, boxes: TextBox[], pages: Page[], hidden: string[]): BoxClip {
+  return { docId, boxes: boxes.map((b) => ({ ...b })), labels: boxes.map((b) => boxLabel(b, pages, hidden)) };
+}
+
+/**
+ * 클립보드의 상자를 페이지에 붙인다. 새 id, 같은 자리(이미 상자가 있으면 조금씩 비켜서).
+ * 페이지 링크는 이 문서에 그 페이지가 있으면 그대로 잇고 돌아가기 링크도 만든다.
+ * 다른 문서의 페이지 링크는 이어 갈 곳이 없으므로 보이던 글자만 남긴다.
+ */
+export function pasteBoxes(pages: Page[], pageId: string, clip: BoxClip, docId: string): { pages: Page[]; ids: string[]; unlinked: number } {
+  let next = pages;
+  const ids: string[] = [];
+  let unlinked = 0;
+  if (!pages.some((p) => p.id === pageId)) return { pages, ids, unlinked };
+  clip.boxes.forEach((src, i) => {
+    const { backOf: _backOf, link, role, ...rest } = src;
+    let box: TextBox = { ...rest, id: newId("b") };
+    let pageLink = link?.type === "page" ? link : undefined;
+    if (link?.type === "url") box.link = link;
+    if (pageLink && (clip.docId !== docId || !next.some((p) => p.id === pageLink!.pageId))) {
+      box = { ...box, text: box.text || clip.labels[i] || "" };
+      pageLink = undefined;
+      unlinked++;
+    }
+    if (pageLink && role) box.role = role;
+    box = { ...box, ...freeSpot(boxesOf(next.find((p) => p.id === pageId)), box.x, box.y) };
+    next = addBox(next, pageId, box);
+    // 돌아가기 링크를 붙인 것은 그 자체가 돌아가는 길이므로 또 돌아가기를 만들지 않는다
+    if (pageLink) next = setBoxLink(next, pageId, box.id, pageLink, role !== "back");
+    ids.push(box.id);
+  });
+  return { pages: next, ids, unlinked };
+}
+
+/** 같은 자리에 상자가 있으면 오른쪽 아래로 조금씩 비킨다 */
+function freeSpot(existing: TextBox[], x: number, y: number): { x: number; y: number } {
+  let px = x;
+  let py = y;
+  for (let k = 0; k < 30 && existing.some((b) => Math.abs(b.x - px) < 0.01 && Math.abs(b.y - py) < 0.01); k++) {
+    px = Math.min(0.9, px + 0.03);
+    py = Math.min(0.95, py + 0.03);
+  }
+  return { x: px, y: py };
+}

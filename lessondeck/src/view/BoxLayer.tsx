@@ -1,5 +1,5 @@
-import { ExternalLink, Link2, Minus, Pencil, Plus, Trash2 } from "lucide-react";
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { Copy, ExternalLink, Link2, Minus, Pencil, Plus, Scissors, Trash2 } from "lucide-react";
+import { useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { BOX_COLORS, boxLabel, boxesOf, isDangling } from "../doc/boxes";
 import type { BoxLink, Page, TextBox } from "../doc/types";
 import type { PageSize } from "../ink/geometry";
@@ -23,6 +23,8 @@ interface Props {
   onLink: (id: string) => void;
   onResize: (id: string, step: 1 | -1) => void;
   onColor: (id: string, color: string) => void;
+  onCopy: (id: string) => void;
+  onCut: (id: string) => void;
   onDelete: (id: string) => void;
 }
 
@@ -159,10 +161,14 @@ export function BoxLayer(props: Props) {
           <BoxToolbar
             box={b}
             below={pos.y < 0.12}
+            boxLeft={pos.x * size.width}
+            pageWidth={size.width}
             onEdit={() => props.onStartEdit(b.id)}
             onLink={() => props.onLink(b.id)}
             onResize={(s) => props.onResize(b.id, s)}
             onColor={(c) => props.onColor(b.id, c)}
+            onCopy={() => props.onCopy(b.id)}
+            onCut={() => props.onCut(b.id)}
             onDelete={() => props.onDelete(b.id)}
           />
         );
@@ -197,24 +203,46 @@ export function BoxLayer(props: Props) {
 function BoxToolbar({
   box,
   below,
+  boxLeft,
+  pageWidth,
   onEdit,
   onLink,
   onResize,
   onColor,
+  onCopy,
+  onCut,
   onDelete,
 }: {
   box: TextBox;
   below: boolean;
+  /** 상자 왼쪽 위치와 페이지 폭: 막대가 페이지 밖으로 나가지 않게 옆으로 민다 */
+  boxLeft: number;
+  pageWidth: number;
   onEdit: () => void;
   onLink: () => void;
   onResize: (step: 1 | -1) => void;
   onColor: (color: string) => void;
+  onCopy: () => void;
+  onCut: () => void;
   onDelete: () => void;
 }) {
   // 상자를 끌거나 고르는 동작과 겹치지 않게 막대 위의 누름은 상자에 전달하지 않는다
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+  const ref = useRef<HTMLDivElement>(null);
+  const [left, setLeft] = useState(-2);
+  useLayoutEffect(() => {
+    const w = ref.current!.offsetWidth;
+    setLeft(Math.max(4 - boxLeft, Math.min(-2, pageWidth - 4 - boxLeft - w)));
+  }, [boxLeft, pageWidth]);
   return (
-    <div className={`box-toolbar${below ? " below" : ""}`} onPointerDown={stop} onPointerUp={stop} onClick={stop}>
+    <div
+      ref={ref}
+      className={`box-toolbar${below ? " below" : ""}`}
+      style={{ left, maxWidth: pageWidth - 8 }}
+      onPointerDown={stop}
+      onPointerUp={stop}
+      onClick={stop}
+    >
       <button aria-label="글자 고치기" title="글자 고치기" onClick={onEdit}>
         <Pencil size={16} />
       </button>
@@ -237,6 +265,12 @@ function BoxToolbar({
           <span style={{ background: c }} />
         </button>
       ))}
+      <button aria-label="상자 복사" title="복사 (Ctrl+C)" onClick={onCopy}>
+        <Copy size={16} />
+      </button>
+      <button aria-label="상자 잘라내기" title="잘라내기 (Ctrl+X)" onClick={onCut}>
+        <Scissors size={16} />
+      </button>
       <button aria-label="상자 지우기" title="지우기" onClick={onDelete}>
         <Trash2 size={16} />
       </button>

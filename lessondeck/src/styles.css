@@ -1843,6 +1843,8 @@ button.doc-title:hover {
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
   font-size: 14px;
   white-space: nowrap;
+  flex-wrap: wrap;
+  width: max-content;
   cursor: default;
   z-index: 2;
 }

@@ -1,6 +1,7 @@
 import {
   Activity,
   ChevronLeft,
+  ClipboardPaste,
   Eraser,
   FilePlus2,
   Hand,
@@ -20,7 +21,23 @@ import {
   Undo2,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { addBox, BOX_SIZES, boxesOf, copyBoxes, DEFAULT_BOX_SIZE, LINK_COLOR, BOX_COLORS, pageNumberLabel, patchBox, removeBox, setBoxLink } from "./doc/boxes";
+import {
+  addBox,
+  BOX_COLORS,
+  BOX_SIZES,
+  boxesOf,
+  copyBoxes,
+  DEFAULT_BOX_SIZE,
+  LINK_COLOR,
+  makeClip,
+  pageNumberLabel,
+  pasteBoxes,
+  patchBox,
+  removeBox,
+  setBoxLink,
+  type BoxClip,
+} from "./doc/boxes";
+import { getBoxClip, setBoxClip } from "./doc/boxClipboard";
 import { normalizeUrl } from "./doc/html";
 import { loadHtmlAsset, loadPdfAsset, pagesForAsset } from "./doc/load";
 import { IMAGE_ACCEPT, isVideoFile, prepareImage, prepareVideo, VIDEO_ACCEPT } from "./doc/media";
@@ -143,6 +160,8 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   /** 링크 걸기 창. created: "링크 만들기"로 방금 만든 상자 (취소하면 지우고 원래 모드로) */
   const [linkDialog, setLinkDialog] = useState<{ boxId: string; created: boolean; wasTextMode?: boolean } | null>(null);
   const [textColor, setTextColor] = useState(BOX_COLORS[0]);
+  /** 복사·잘라낸 상자 (문서를 바꿔도 남음) */
+  const [boxClip, setClipState] = useState<BoxClip | null>(getBoxClip);
   /** 강의 모드: 도구 막대·페이지 바를 숨기고 페이지를 화면 가득 */
   const [lecture, setLecture] = useState(false);
   /** 강의 모드에 들어가며 브라우저 전체 화면을 켰는지 (나올 때 같이 끈다) */
@@ -502,17 +521,61 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
       return patchBox(pages, pageId, id, { size });
     });
 
-  const deleteBox = (id: string) => {
+  const deleteBox = (id: string, message = "상자를 지웠습니다") => {
     // 되돌리기용: 이 상자와, 이 상자가 만든 돌아가기 링크
     const removed: { pageId: string; box: TextBox }[] = [];
     for (const p of docRef.current.pages) for (const b of p.boxes ?? []) if (b.id === id || b.backOf === id) removed.push({ pageId: p.id, box: b });
     editBoxes(id, (pages, pageId) => removeBox(pages, pageId, id));
     setSelectedBox(null);
     setEditingBox(null);
-    showToast("상자를 지웠습니다", {
+    showToast(message, {
       label: "되돌리기",
       run: () => setDoc((d) => ({ ...d, pages: removed.reduce((ps, r) => addBox(ps, r.pageId, r.box), d.pages) })),
     });
+  };
+
+  // 복사·잘라내기·붙여넣기 (링크도 함께). 다른 문서에 붙여도 된다
+  const findBox = (id: string) => docRef.current.pages.flatMap((p) => p.boxes ?? []).find((b) => b.id === id);
+
+  /** 상자를 클립보드에 담는다. 시스템 클립보드에는 보이는 글자를 넣는다 (다른 앱에 붙일 수 있게) */
+  const copyBox = (id: string, systemText = true): BoxClip | null => {
+    const box = findBox(id);
+    if (!box) return null;
+    const clip = makeClip(docRef.current.id, [box], docRef.current.pages, docRef.current.hidden);
+    setBoxClip(clip);
+    setClipState(clip);
+    if (systemText) navigator.clipboard?.writeText(clip.labels.join("\n")).catch(() => {});
+    return clip;
+  };
+
+  const cutBox = (id: string, systemText = true) => {
+    if (copyBox(id, systemText)) deleteBox(id, "상자를 잘라냈습니다. 붙일 곳에서 붙여넣기");
+  };
+
+  const pasteClip = (clip: BoxClip | null = boxClip) => {
+    if (!clip || !currentPage) return;
+    const target = currentPage.id;
+    const r = pasteBoxes(docRef.current.pages, target, clip, docRef.current.id);
+    if (!r.ids.length) return;
+    // 미리 계산한 결과를 그대로 쓴다 (setBoxLink가 만드는 돌아가기 링크 id까지 같게)
+    setDoc((d) => ({ ...d, pages: d.pages === docRef.current.pages ? r.pages : pasteBoxes(d.pages, target, clip, d.id).pages }));
+    setTextMode(true);
+    setSelectedBox(r.ids[r.ids.length - 1]);
+    setEditingBox(null);
+    if (r.unlinked) showToast("다른 문서의 페이지 링크는 글자만 붙였습니다");
+  };
+
+  /** 다른 앱에서 복사한 글: 새 글상자로 (웹 주소 하나면 링크 상자로) */
+  const pasteText = (text: string) => {
+    if (!currentPage) return;
+    const trimmed = text.trim().slice(0, 2000);
+    if (!trimmed) return;
+    const url = !/\s/.test(trimmed) ? normalizeUrl(trimmed) : null;
+    const box: TextBox = url
+      ? { id: newId("b"), x: 0.08, y: 0.08, text: "", size: DEFAULT_BOX_SIZE, color: LINK_COLOR, link: { type: "url", url } }
+      : { id: newId("b"), x: 0.08, y: 0.08, text: trimmed, size: DEFAULT_BOX_SIZE, color: textColor };
+    const clip: BoxClip = { docId: docRef.current.id, boxes: [box], labels: [trimmed] };
+    pasteClip(clip);
   };
 
   /** "링크 만들기": 링크 상자를 만들고 바로 연결할 곳을 고른다 */
@@ -627,6 +690,39 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
 
   const closePopover = useCallback(() => setPopover(null), []);
   const closeAddMenu = useCallback(() => setAddMenu(null), []);
+
+  // PC 키보드: 고른 상자 Ctrl+C·Ctrl+X, 어디서든 Ctrl+V (글 입력 중에는 평소대로)
+  const clipRef = useRef({ copyBox, cutBox, pasteClip, pasteText, selectedBox, editingBox, boxClip });
+  clipRef.current = { copyBox, cutBox, pasteClip, pasteText, selectedBox, editingBox, boxClip };
+  useEffect(() => {
+    const typing = (e: Event) => !!(e.target as Element)?.closest?.("input, textarea, [contenteditable]");
+    const onCopyCut = (e: ClipboardEvent) => {
+      const c = clipRef.current;
+      if (typing(e) || !c.selectedBox || c.editingBox || window.getSelection()?.toString()) return;
+      const clip = e.type === "cut" ? (c.cutBox(c.selectedBox, false), getBoxClip()) : c.copyBox(c.selectedBox, false);
+      if (!clip) return;
+      e.clipboardData?.setData("text/plain", clip.labels.join("\n"));
+      e.preventDefault();
+    };
+    const onPaste = (e: ClipboardEvent) => {
+      if (typing(e)) return;
+      const c = clipRef.current;
+      const text = e.clipboardData?.getData("text/plain") ?? "";
+      // 시스템 클립보드 글이 마지막으로 복사한 상자 글과 같으면 상자(링크·모양 그대로)를, 아니면 그 글을 붙인다
+      if (c.boxClip && (!text || text === c.boxClip.labels.join("\n"))) c.pasteClip();
+      else if (text.trim()) c.pasteText(text);
+      else return;
+      e.preventDefault();
+    };
+    document.addEventListener("copy", onCopyCut);
+    document.addEventListener("cut", onCopyCut);
+    document.addEventListener("paste", onPaste);
+    return () => {
+      document.removeEventListener("copy", onCopyCut);
+      document.removeEventListener("cut", onCopyCut);
+      document.removeEventListener("paste", onPaste);
+    };
+  }, []);
 
   // PC에서 시험할 때 쓰는 단축키
   useEffect(() => {
@@ -762,6 +858,11 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
         <IconButton label="링크 만들기" disabled={!currentPage} onClick={createLinkBox}>
           <Link2 size={23} />
         </IconButton>
+        {boxClip && (
+          <IconButton label="상자 붙여넣기" disabled={!currentPage} onClick={() => pasteClip()}>
+            <ClipboardPaste size={22} />
+          </IconButton>
+        )}
         <span className="toolrow-sep" />
         <IconButton label="이 페이지 필기 지우기" disabled={strokes.length === 0} onClick={() => inkAction({ type: "clear" })}>
           <Trash2 size={22} />
@@ -854,7 +955,12 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
                   setTextColor(color);
                   editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { color }));
                 }}
-                onDelete={deleteBox}
+                onCopy={(id) => {
+                  copyBox(id);
+                  showToast("상자를 복사했습니다. 붙일 곳에서 붙여넣기");
+                }}
+                onCut={(id) => cutBox(id)}
+                onDelete={(id) => deleteBox(id)}
               />
             )
           }
