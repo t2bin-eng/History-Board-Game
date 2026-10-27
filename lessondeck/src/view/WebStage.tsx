@@ -4,6 +4,8 @@ import { toEmbeddableUrl } from "../doc/embed";
 import { htmlAsset, mediaAsset, VIRTUAL_SCREEN, type Asset, type InteractivePage } from "../doc/types";
 import { youtubeEmbedUrl, youtubeErrorMessage, youtubeWatchUrl } from "../doc/youtube";
 import type { PageSize } from "../ink/geometry";
+import { captureFramePreview } from "../lib/framePreviews";
+import { isNativeApp } from "../lib/platform";
 import { frameErrorMessage, onFrameError, useFrameHosts } from "../lib/webFrames";
 
 interface Props {
@@ -16,7 +18,12 @@ interface Props {
   reloads?: Record<string, number>;
   /** 이 문서의 웹 주소 페이지 주소들 (안드로이드 앱이 미리 알아 두고 띄우기 거부 머리글을 처리한다) */
   frameUrls?: string[];
+  /** 문서 id (웹 주소 페이지 미리보기를 문서별로 저장) */
+  docId?: string;
 }
+
+/** 웹 주소 페이지가 다 열리고 이만큼 지나면 화면을 찍어 페이지 바 미리보기로 쓴다 (안드로이드 앱) */
+const PREVIEW_DELAY_MS = 3_000;
 
 /** 이만큼 지나면 덮개를 위쪽 띠로 줄여, 일부만 그려진 사이트도 보이게 한다 */
 const BANNER_MS = 4_000;
@@ -28,7 +35,7 @@ const HTML_SANDBOX = "allow-scripts allow-forms allow-popups allow-modals";
 // URL 페이지는 그 사이트 자신의 출처로 열어 localStorage 등이 동작하게 한다 (SPEC R6).
 // 로그인 창·내려받기·발표 화면 등이 막혀 멈추지 않게 몇 가지를 더 허용한다 (앱 화면을 바꾸는 top 이동은 계속 막음)
 const URL_SANDBOX = `${HTML_SANDBOX} allow-same-origin allow-popups-to-escape-sandbox allow-downloads allow-presentation allow-storage-access-by-user-activation`;
-const URL_ALLOW = "fullscreen; autoplay; clipboard-read; clipboard-write; encrypted-media; picture-in-picture; web-share";
+const URL_ALLOW = "fullscreen; autoplay; clipboard-read; clipboard-write; encrypted-media; picture-in-picture";
 const YOUTUBE_ALLOW = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen";
 const YOUTUBE_ORIGINS = ["https://www.youtube-nocookie.com", "https://www.youtube.com"];
 
@@ -47,7 +54,7 @@ function postToYouTube(frame: HTMLIFrameElement | null | undefined, id: string, 
 }
 
 // HTML·URL·유튜브 페이지: 가상 화면(1280×720 등) 크기로 그리고 페이지 크기에 맞춰 통째로 축소·확대한다 (SPEC R8)
-export function WebStage({ pages, currentId, assets, size, reloads, frameUrls = [] }: Props) {
+export function WebStage({ pages, currentId, assets, size, reloads, frameUrls = [], docId }: Props) {
   const online = useOnline();
   const current = pages.find((p) => p.id === currentId);
   const frames = useRef(new Map<string, HTMLIFrameElement>());
@@ -88,6 +95,14 @@ export function WebStage({ pages, currentId, assets, size, reloads, frameUrls = 
       clearTimeout(t2);
     };
   }, [currentKey, currentLoad]);
+
+  // 안드로이드 앱: 웹 주소 페이지가 열리면 잠시 뒤 화면을 찍어 페이지 바 미리보기로 (이번 실행에서 한 번, 새로고침하면 다시)
+  useEffect(() => {
+    if (!isNativeApp || !docId || current?.kind !== "url" || !currentKey || currentLoad?.state !== "loaded") return;
+    const pageId = current.id;
+    const t = setTimeout(() => void captureFramePreview(docId, pageId, currentKey), PREVIEW_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [docId, current, currentKey, currentLoad]);
 
   // 안드로이드 앱: 네이티브가 알려 준 iframe 오류 (연결 실패, 404 등)를 그 페이지에 보여 준다
   const pagesRef = useRef(pages);
@@ -190,7 +205,7 @@ export function WebStage({ pages, currentId, assets, size, reloads, frameUrls = 
         const screen = VIRTUAL_SCREEN[page.aspect];
         const style = { width: screen.width, height: screen.height, transform: `scale(${size.width / screen.width})` };
         return (
-          <div key={page.id} className="web-frame" style={{ display: visible ? "block" : "none" }}>
+          <div key={page.id} className="web-frame" data-page-id={page.id} style={{ display: visible ? "block" : "none" }}>
             {page.kind === "html" && (
               <iframe
                 key={reloadKey(page.id)}

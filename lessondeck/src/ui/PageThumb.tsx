@@ -7,6 +7,7 @@ import { HIGHLIGHTER_ALPHA } from "../ink/palette";
 import type { Stroke } from "../ink/types";
 import { youtubeThumbUrl } from "../doc/youtube";
 import { thumbnailFor } from "../pdf/thumbnails";
+import { usePreview } from "../lib/framePreviews";
 import { paintBoxes } from "../view/boxPaint";
 
 interface Props {
@@ -88,12 +89,7 @@ export const PageThumb = memo(function PageThumb({ page, doc, strokes, width, li
       {page.kind === "video" && <VideoThumb page={page} doc={doc} />}
       {page.kind === "html" && <HtmlThumb page={page} doc={doc} width={width} run={live && inView} />}
       {page.kind === "youtube" && <YouTubeThumb page={page} />}
-      {page.kind === "url" && (
-        <span className="thumb-web">
-          <Globe size={26} />
-          <span>{hostOf(page.url)}</span>
-        </span>
-      )}
+      {page.kind === "url" && <UrlThumb page={page} docId={doc.id} />}
       <canvas ref={inkRef} style={{ width, height }} />
     </div>
   );
@@ -133,6 +129,37 @@ function HtmlThumb({ page, doc, width, run }: { page: Extract<Page, { kind: "htm
         <FileCode2 size={10} />
         {asset?.name ?? "HTML"}
       </span>
+    </span>
+  );
+}
+
+/**
+ * 웹 주소 페이지: 안드로이드 앱이 찍어 둔 실제 화면, 없으면 사이트 아이콘과 주소.
+ * (다른 사이트를 썸네일에서 따로 실행하지 않는다 — 설문·퀴즈 앱이 한 번 더 열려 세션이 겹칠 수 있음)
+ */
+function UrlThumb({ page, docId }: { page: Extract<Page, { kind: "url" }>; docId: string }) {
+  const preview = usePreview(docId, page.id);
+  const host = hostOf(page.url);
+  const [iconFailed, setIconFailed] = useState(false);
+  if (preview) {
+    return (
+      <span className="thumb-html loaded">
+        <img className="thumb-shot" src={preview} alt="" draggable={false} />
+        <span className="thumb-label">
+          <Globe size={10} />
+          {host}
+        </span>
+      </span>
+    );
+  }
+  return (
+    <span className="thumb-web">
+      {iconFailed ? (
+        <Globe size={26} />
+      ) : (
+        <img className="thumb-favicon" src={`https://${host}/favicon.ico`} alt="" draggable={false} onError={() => setIconFailed(true)} />
+      )}
+      <span>{host}</span>
     </span>
   );
 }

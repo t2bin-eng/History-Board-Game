@@ -520,7 +520,8 @@ button {
 .thumb-label {
   position: absolute;
   left: 3px;
-  bottom: 3px;
+  /* 아래 왼쪽은 쪽 번호 자리 */
+  top: 3px;
   max-width: calc(100% - 6px);
   display: flex;
   align-items: center;
@@ -2357,4 +2358,31 @@ button.doc-title:hover {
   to {
     opacity: 1;
   }
+}
+
+/* 웹 주소 페이지 썸네일: 찍어 둔 화면, 없으면 사이트 아이콘 */
+.thumb-page img.thumb-shot {
+  object-fit: cover;
+  object-position: top left;
+}
+
+.thumb-page img.thumb-favicon {
+  position: static;
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+}
+
+/* 미리보기를 찍는 순간: 웹 페이지 위에 떠 있는 것들을 잠깐 감춘다 (src/lib/framePreviews.ts) */
+.snapshotting .ink-layer,
+.snapshotting .box-layer,
+.snapshotting .web-mode-chip,
+.snapshotting .web-badge,
+.snapshotting .frame-status,
+.snapshotting .pen-palette,
+.snapshotting .page-nav,
+.snapshotting .press-ring,
+.snapshotting .debug-panel,
+.snapshotting .toast {
+  visibility: hidden !important;
 }

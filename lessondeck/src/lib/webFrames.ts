@@ -7,6 +7,8 @@ import { isNativeApp } from "./platform";
 
 interface WebFramesPlugin {
   setHosts(options: { hosts: string[] }): Promise<void>;
+  openExternal(options: { url: string }): Promise<void>;
+  snapshot(options: { x: number; y: number; width: number; height: number; outWidth: number }): Promise<{ dataUrl: string }>;
 }
 
 const WebFrames = registerPlugin<WebFramesPlugin>("WebFrames");
@@ -86,4 +88,41 @@ export function frameErrorMessage(e: FrameError): string {
   if (c >= 500) return `사이트에 문제가 있습니다(${c}). 잠시 뒤 다시 시도해 주세요.`;
   if (c < 0) return `페이지를 불러오지 못했습니다 (${e.description || c}).`;
   return `페이지를 불러오지 못했습니다 (${c}).`;
+}
+
+/** 바깥 브라우저(APK는 기본 브라우저 앱)로 연다 */
+export function openExternal(url: string) {
+  if (isNativeApp) {
+    WebFrames.openExternal({ url }).catch(() => window.open(url, "_blank", "noopener,noreferrer"));
+  } else {
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+}
+
+/**
+ * 안드로이드 앱: 레슨덱 화면의 target=_blank 링크(브라우저에서 열기 등)는 바깥 브라우저로.
+ * 앱은 웹 페이지의 새 창을 앱 안 창으로 띄우게 바뀌었으므로 레슨덱 자신의 링크는 따로 보낸다.
+ */
+export function routeExternalLinks() {
+  if (!isNativeApp) return;
+  document.addEventListener(
+    "click",
+    (e) => {
+      const a = (e.target as Element | null)?.closest?.("a[target=_blank]") as HTMLAnchorElement | null;
+      if (!a?.href || !/^https?:/i.test(a.href)) return;
+      e.preventDefault();
+      openExternal(a.href);
+    },
+    true,
+  );
+}
+
+/** 안드로이드 앱: 화면의 한 부분(CSS 픽셀)을 찍어 작은 JPEG data URL로 */
+export async function snapshotRegion(rect: { x: number; y: number; width: number; height: number }, outWidth = 320): Promise<string | null> {
+  if (!isNativeApp) return null;
+  try {
+    return (await WebFrames.snapshot({ ...rect, outWidth })).dataUrl;
+  } catch {
+    return null;
+  }
 }

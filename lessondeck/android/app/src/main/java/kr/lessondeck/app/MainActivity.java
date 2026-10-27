@@ -24,6 +24,10 @@ public class MainActivity extends BridgeActivity {
         WebView webView = getBridge().getWebView();
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
+        // 웹 페이지의 "크게 보기"(전체 화면)와 새 창이 동작하게 한다
+        webView.setWebChromeClient(new LessonDeckChromeClient(getBridge()));
+        webView.getSettings().setSupportMultipleWindows(true);
+        webView.getSettings().setJavaScriptCanOpenWindowsAutomatically(true);
         // 수업 중에 화면이 꺼지지 않게 한다
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         // 기기의 글꼴 크기 설정 때문에 툴바가 커지거나 깨지지 않게 한다

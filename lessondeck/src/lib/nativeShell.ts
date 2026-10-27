@@ -20,6 +20,11 @@ export function onBackPress(fn: () => void): () => void {
 export function setupNativeShell() {
   let lastBack = 0;
   App.addListener("backButton", () => {
+    // 웹 페이지가 전체 화면(크게 보기)이면 먼저 끝낸다
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+      return;
+    }
     const handler = backHandlers.at(-1);
     if (handler) {
       handler();

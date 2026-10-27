@@ -40,6 +40,8 @@ interface Props {
   onLongPress?: (p: LongPress) => void;
   /** 펜 길게 누르기를 받을지 (지우개로 지우는 중에는 받지 않는다) */
   penLongPress?: boolean;
+  /** 판서 모드의 웹 페이지를 손가락으로 톡 눌렀을 때 (손가락 필기가 꺼져 있으면 웹앱이 반응하지 않으므로 조작 모드로) */
+  onFingerTapWeb?: () => void;
   /** 페이지 영역 위에 떠 있는 것들 (펜 팔레트, 디버그 패널) */
   children?: ReactNode;
 }
@@ -93,10 +95,14 @@ export function PageView(props: Props) {
   longPressRef.current = props.onLongPress;
   const penLongPressRef = useRef(props.penLongPress ?? true);
   penLongPressRef.current = props.penLongPress ?? true;
+  const fingerTapRef = useRef<(() => void) | undefined>(undefined);
+  fingerTapRef.current = web && props.webMode === "ink" && !props.fingerDraw ? props.onFingerTapWeb : undefined;
   useEffect(() => {
     const area = areaRef.current!;
     let press: { id: number; x: number; y: number; type: string; target: Element; timer: number; ringTimer: number } | null = null;
     let firedAt = 0;
+    // 손가락으로 톡 누르기 (판서 모드 웹 페이지 → 조작 모드)
+    let tap: { id: number; x: number; y: number; t: number; onInk: boolean } | null = null;
     // 팔레트·넘기기 바 같은 떠 있는 도구 위는 빼고, 페이지와 글상자 위만
     const eligible = (t: Element) => !!t.closest(".text-box") || !t.closest("[data-no-gesture]");
     const cancel = () => {
@@ -117,6 +123,10 @@ export function PageView(props: Props) {
       longPressRef.current?.({ clientX: p.x, clientY: p.y, pointerType: p.type, target: p.target });
     };
     const onDown = (e: PointerEvent) => {
+      tap =
+        e.pointerType === "touch" && !tap
+          ? { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now(), onInk: !!(e.target as Element).closest?.(".ink-live") }
+          : null;
       if (press) {
         // 두 번째 손가락 → 확대·이동
         cancel();
@@ -146,6 +156,17 @@ export function PageView(props: Props) {
     };
     const onUp = (e: PointerEvent) => {
       if (press && e.pointerId === press.id) cancel();
+      const t = tap;
+      tap = null;
+      if (
+        e.type === "pointerup" &&
+        t?.id === e.pointerId &&
+        t.onInk &&
+        performance.now() - t.t < 350 &&
+        Math.hypot(e.clientX - t.x, e.clientY - t.y) < LONG_PRESS_SLOP
+      ) {
+        fingerTapRef.current?.();
+      }
     };
     // 길게 누른 뒤 손을 떼며 생기는 click(링크 이동, 글상자 만들기)은 버린다
     const onClick = (e: MouseEvent) => {
@@ -263,7 +284,7 @@ export function PageView(props: Props) {
           style={{ width: size.width, height: size.height }}
         >
           <PageBackground page={page} doc={doc} size={size} zoom={renderZoom} prefetch={prefetch} onRendered={props.onPdfRendered} />
-          <WebStage pages={alivePages} currentId={page.id} assets={doc.assets} size={size} reloads={props.webReloads} frameUrls={frameUrls} />
+          <WebStage pages={alivePages} currentId={page.id} assets={doc.assets} size={size} reloads={props.webReloads} frameUrls={frameUrls} docId={doc.id} />
           <InkCanvas
             key={props.lowLatency ? "ll" : "std"}
             page={size}

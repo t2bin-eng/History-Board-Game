@@ -80,6 +80,7 @@ import { putAsset, saveInk, saveManifest, setThumb, toManifest, type OpenedDoc }
 import { exportProject, PROJECT_EXT } from "./store/projectFile";
 import { AddPageMenu, type LinkKind } from "./ui/AddPageMenu";
 import { onBackPress } from "./lib/nativeShell";
+import { openExternal } from "./lib/webFrames";
 import { DebugPanel } from "./ui/DebugPanel";
 import { IconButton } from "./ui/IconButton";
 import { ContextMenu, type MenuGroups } from "./ui/ContextMenu";
@@ -621,14 +622,6 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     pasteClip(clip);
   };
 
-  /** 웹 주소를 새 창(APK는 기본 브라우저)으로 연다. 상자의 링크와 같은 방식 */
-  const openUrl = (url: string) => {
-    const a = document.createElement("a");
-    a.href = url;
-    a.target = "_blank";
-    a.rel = "noopener noreferrer";
-    a.click();
-  };
 
   // 길게 누르기(펜·손가락)·오른쪽 클릭: 글상자 위면 상자 메뉴, 아니면 페이지 메뉴
   const onLongPress = (p: LongPress) => {
@@ -672,7 +665,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
               !dangling && {
                 label: box.link.type === "url" ? "링크 열기" : `${pageNumberLabel(doc.pages, doc.hidden, box.link.pageId)}으로 가기`,
                 icon: box.link.type === "url" ? <ExternalLink size={18} /> : <Link2 size={18} />,
-                onSelect: () => (box.link!.type === "url" ? openUrl(box.link!.url) : followLink(box.link!)),
+                onSelect: () => (box.link!.type === "url" ? openExternal(box.link!.url) : followLink(box.link!)),
               },
             {
               label: "글자 고치기",
@@ -1121,6 +1114,10 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
           webReloads={webReloads}
           onLongPress={onLongPress}
           penLongPress={!erasing}
+          onFingerTapWeb={() => {
+            setWebMode("interact");
+            showToast("조작 모드로 바꿨습니다. 웹 페이지를 다시 눌러 주세요 (S펜은 판서)");
+          }}
           pageOverlay={(size) =>
             currentPage && (
               <BoxLayer
