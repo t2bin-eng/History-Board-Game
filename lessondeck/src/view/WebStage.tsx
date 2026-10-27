@@ -10,6 +10,8 @@ interface Props {
   currentId: string;
   assets: Record<string, Asset>;
   size: PageSize;
+  /** 페이지별 새로고침 횟수. 바뀌면 그 페이지의 웹앱을 처음부터 다시 불러온다 */
+  reloads?: Record<string, number>;
 }
 
 // 사용자 HTML은 앱 데이터에 접근하지 못하게 출처 없이(sandbox, allow-same-origin 금지) 실행한다 (SPEC R5)
@@ -34,12 +36,21 @@ function postToYouTube(frame: HTMLIFrameElement | null | undefined, id: string, 
 }
 
 // HTML·URL·유튜브 페이지: 가상 화면(1280×720 등) 크기로 그리고 페이지 크기에 맞춰 통째로 축소·확대한다 (SPEC R8)
-export function WebStage({ pages, currentId, assets, size }: Props) {
+export function WebStage({ pages, currentId, assets, size, reloads }: Props) {
   const online = useOnline();
   const current = pages.find((p) => p.id === currentId);
   const frames = useRef(new Map<string, HTMLIFrameElement>());
   const videos = useRef(new Map<string, HTMLVideoElement>());
   const [ytErrors, setYtErrors] = useState<Record<string, number>>({});
+  // 새로고침하면 iframe을 새로 만든다 (srcdoc HTML은 다시 실행, 유튜브 오류 안내도 지움)
+  const reloadKey = (id: string) => `${id}:${reloads?.[id] ?? 0}`;
+  const lastReloads = useRef(reloads);
+  useEffect(() => {
+    const prev = lastReloads.current;
+    lastReloads.current = reloads;
+    const changed = Object.keys(reloads ?? {}).filter((id) => reloads?.[id] !== prev?.[id]);
+    if (changed.length) setYtErrors((m) => Object.fromEntries(Object.entries(m).filter(([id]) => !changed.includes(id))));
+  }, [reloads]);
 
   // 유튜브 플레이어가 보내는 알림(오류 등)을 받는다
   useEffect(() => {
@@ -116,6 +127,7 @@ export function WebStage({ pages, currentId, assets, size }: Props) {
           <div key={page.id} className="web-frame" style={{ display: visible ? "block" : "none" }}>
             {page.kind === "html" && (
               <iframe
+                key={reloadKey(page.id)}
                 title={htmlAsset(assets, page.asset)?.name ?? "HTML 페이지"}
                 srcDoc={htmlAsset(assets, page.asset)?.html ?? "<p>원본 HTML을 찾을 수 없습니다</p>"}
                 sandbox={HTML_SANDBOX}
@@ -125,6 +137,7 @@ export function WebStage({ pages, currentId, assets, size }: Props) {
             )}
             {page.kind === "url" && (
               <iframe
+                key={reloadKey(page.id)}
                 title={page.url}
                 src={page.url}
                 sandbox={urlSandbox(page.url)}
@@ -137,6 +150,7 @@ export function WebStage({ pages, currentId, assets, size }: Props) {
               <>
                 {/* 유튜브는 출처 정보(Referer)가 없으면 재생을 막으므로(오류 153) referrerPolicy를 명시한다 */}
                 <iframe
+                  key={reloadKey(page.id)}
                   ref={setFrame(page.id)}
                   className="youtube"
                   title="유튜브 동영상"

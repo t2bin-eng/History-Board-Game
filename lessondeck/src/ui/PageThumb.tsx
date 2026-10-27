@@ -1,32 +1,42 @@
 import { FileCode2, Film, Globe, Play } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
 import { formatDuration } from "../doc/media";
-import { htmlAsset, mediaAsset, pageAspect, pdfAsset, type DocState, type Page } from "../doc/types";
+import { htmlAsset, mediaAsset, pageAspect, pdfAsset, VIRTUAL_SCREEN, type DocState, type Page } from "../doc/types";
 import { strokeToSvgPath } from "../ink/geometry";
 import { HIGHLIGHTER_ALPHA } from "../ink/palette";
 import type { Stroke } from "../ink/types";
 import { youtubeThumbUrl } from "../doc/youtube";
 import { thumbnailFor } from "../pdf/thumbnails";
+import { paintBoxes } from "../view/boxPaint";
 
 interface Props {
   page: Page;
   doc: DocState;
   strokes: Stroke[];
   width: number;
+  /** HTML 페이지를 실제로 실행해 미리 보여 줄지 (끄는 중 따라다니는 작은 그림은 끈다) */
+  live?: boolean;
 }
 
-// 페이지 바의 축소 이미지: PDF 쪽·이미지(빈 페이지, 웹앱·동영상은 카드) + 그 위 필기
-export const PageThumb = memo(function PageThumb({ page, doc, strokes, width }: Props) {
+// 페이지 바의 축소 이미지: PDF 쪽·이미지·HTML 화면(빈 페이지, 웹 주소·동영상은 카드) + 그 위 필기·텍스트 상자
+export const PageThumb = memo(function PageThumb({ page, doc, strokes, width, live = true }: Props) {
   const height = Math.round(width / pageAspect(page, doc.assets));
   const hostRef = useRef<HTMLDivElement>(null);
   const inkRef = useRef<HTMLCanvasElement>(null);
   const [visible, setVisible] = useState(false);
+  const [inView, setInView] = useState(false);
   const [src, setSrc] = useState<string | null>(null);
 
-  // 화면에 보일 때만 PDF 축소 이미지를 만든다 (쪽이 많은 PDF 대비)
+  // 화면에 보일 때만 PDF 축소 이미지를 만든다 (쪽이 많은 PDF 대비). HTML 미리보기는 보이는 동안만 실행한다
   useEffect(() => {
     const el = hostRef.current!;
-    const io = new IntersectionObserver(([entry]) => entry.isIntersecting && setVisible(true), { rootMargin: "200px" });
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        setInView(entry.isIntersecting);
+        if (entry.isIntersecting) setVisible(true);
+      },
+      { rootMargin: "200px" },
+    );
     io.observe(el);
     return () => io.disconnect();
   }, []);
@@ -59,7 +69,10 @@ export const PageThumb = memo(function PageThumb({ page, doc, strokes, width }: 
       ctx.fillStyle = s.color;
       ctx.fill(new Path2D(d));
     }
-  }, [strokes, width, height]);
+    ctx.globalAlpha = 1;
+    // 화면처럼 텍스트 상자는 필기 위에
+    paintBoxes(ctx, page, doc.pages, doc.hidden, size);
+  }, [strokes, width, height, page, doc.pages, doc.hidden]);
 
   const grid = page.kind === "blank" && page.background === "grid";
   return (
@@ -73,12 +86,7 @@ export const PageThumb = memo(function PageThumb({ page, doc, strokes, width }: 
         <img src={mediaAsset(doc.assets, page.asset)!.url} alt="" draggable={false} decoding="async" />
       )}
       {page.kind === "video" && <VideoThumb page={page} doc={doc} />}
-      {page.kind === "html" && (
-        <span className="thumb-web">
-          <FileCode2 size={26} />
-          <span>{htmlAsset(doc.assets, page.asset)?.name ?? "HTML"}</span>
-        </span>
-      )}
+      {page.kind === "html" && <HtmlThumb page={page} doc={doc} width={width} run={live && inView} />}
       {page.kind === "youtube" && <YouTubeThumb page={page} />}
       {page.kind === "url" && (
         <span className="thumb-web">
@@ -90,6 +98,44 @@ export const PageThumb = memo(function PageThumb({ page, doc, strokes, width }: 
     </div>
   );
 });
+
+/**
+ * HTML 페이지: 실제 화면을 작게 실행해 보여 준다 (스크립트만 허용, 누름·소리·팝업 없음).
+ * 못 그리거나 보이지 않을 때는 아이콘 카드, 아래에 파일 이름.
+ */
+function HtmlThumb({ page, doc, width, run }: { page: Extract<Page, { kind: "html" }>; doc: DocState; width: number; run: boolean }) {
+  const asset = htmlAsset(doc.assets, page.asset);
+  const screen = VIRTUAL_SCREEN[page.aspect];
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    if (!run) setLoaded(false);
+  }, [run]);
+  return (
+    <span className={`thumb-html${loaded ? " loaded" : ""}`}>
+      {!loaded && (
+        <span className="thumb-web">
+          <FileCode2 size={22} />
+        </span>
+      )}
+      {run && asset && (
+        <iframe
+          className="thumb-frame"
+          title=""
+          aria-hidden="true"
+          tabIndex={-1}
+          srcDoc={asset.html}
+          sandbox="allow-scripts"
+          style={{ width: screen.width, height: screen.height, transform: `scale(${width / screen.width})` }}
+          onLoad={() => setLoaded(true)}
+        />
+      )}
+      <span className="thumb-label">
+        <FileCode2 size={10} />
+        {asset?.name ?? "HTML"}
+      </span>
+    </span>
+  );
+}
 
 function hostOf(url: string): string {
   try {

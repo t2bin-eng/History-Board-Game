@@ -261,7 +261,7 @@ export function PagePanel({
         <div className="pp-ghost" style={{ left: dragView.x - 44, top: dragView.y - 30 }} aria-hidden="true">
           {(() => {
             const page = doc.pages.find((p) => p.id === dragView.id);
-            return page ? <PageThumb page={page} doc={doc} strokes={ink[page.id]?.present ?? []} width={88} /> : null;
+            return page ? <PageThumb page={page} doc={doc} strokes={ink[page.id]?.present ?? []} width={88} live={false} /> : null;
           })()}
         </div>
       )}

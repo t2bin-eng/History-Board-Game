@@ -13,6 +13,7 @@ import {
   PenLine,
   Presentation,
   Redo2,
+  RotateCw,
   Share2,
   Trash2,
   Type,
@@ -133,6 +134,8 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   const [debugOpen, setDebugOpen] = usePersistentFlag("lessondeck.debugOpen", false);
   const [pagePanelOpen, setPagePanelOpen] = usePersistentFlag("lessondeck.pagePanel", true);
   const [paletteOpen, setPaletteOpen] = usePersistentFlag("lessondeck.penPalette", true);
+  /** 웹 페이지(HTML·주소·유튜브)별 새로고침 횟수 */
+  const [webReloads, setWebReloads] = useState<Record<string, number>>({});
   /** 텍스트 모드: 페이지를 누르면 글상자, 상자를 누르면 고르기·고치기·링크 */
   const [textMode, setTextMode] = useState(false);
   const [selectedBox, setSelectedBox] = useState<string | null>(null);
@@ -562,6 +565,14 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     setLinkDialog(null);
   };
 
+  /** 지금 웹 페이지를 처음 상태로 다시 불러오기 (퀴즈 진행 등은 사라진다) */
+  const reloadWebPage = () => {
+    if (!isWebPage(currentPage)) return;
+    const id = currentPage.id;
+    setWebReloads((m) => ({ ...m, [id]: (m[id] ?? 0) + 1 }));
+    showToast("페이지를 다시 불러왔습니다");
+  };
+
   const followLink = (link: BoxLink) => {
     if (link.type === "page" && docRef.current.pages.some((p) => p.id === link.pageId)) setCurrentId(link.pageId);
   };
@@ -770,6 +781,11 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
                 <PenLine size={18} /> 판서
               </button>
             </div>
+            {isWebPage(currentPage) && (
+              <IconButton label="페이지 새로고침" onClick={reloadWebPage}>
+                <RotateCw size={22} />
+              </IconButton>
+            )}
           </>
         )}
       </nav>
@@ -808,6 +824,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
           onPdfRendered={setPdfRenderMs}
           lecture={lecture}
           inkOff={textMode}
+          webReloads={webReloads}
           pageOverlay={(size) =>
             currentPage && (
               <BoxLayer
@@ -862,6 +879,11 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
                 >
                   <Eraser size={20} />
                 </button>
+                {isWebPage(currentPage) && (
+                  <button aria-label="페이지 새로고침" onClick={reloadWebPage}>
+                    <RotateCw size={20} />
+                  </button>
+                )}
                 {onInteractive && (
                   <button
                     aria-label={webMode === "ink" ? "조작 모드로" : "판서 모드로"}

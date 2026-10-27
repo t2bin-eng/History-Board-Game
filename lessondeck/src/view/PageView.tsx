@@ -29,6 +29,8 @@ interface Props {
   lecture?: boolean;
   /** 페이지 넘기기 바에 덧붙일 버튼 (강의 모드 도구) */
   navExtra?: ReactNode;
+  /** 웹 페이지별 새로고침 횟수 (바뀌면 다시 불러온다) */
+  webReloads?: Record<string, number>;
   /** 필기를 잠시 끈다 (텍스트 모드) */
   inkOff?: boolean;
   /** 페이지 위, 필기층 위에 그릴 것 (텍스트 상자·링크). 페이지 크기를 받는다 */
@@ -145,7 +147,7 @@ export function PageView(props: Props) {
           style={{ width: size.width, height: size.height }}
         >
           <PageBackground page={page} doc={doc} size={size} zoom={renderZoom} prefetch={prefetch} onRendered={props.onPdfRendered} />
-          <WebStage pages={alivePages} currentId={page.id} assets={doc.assets} size={size} />
+          <WebStage pages={alivePages} currentId={page.id} assets={doc.assets} size={size} reloads={props.webReloads} />
           <InkCanvas
             key={props.lowLatency ? "ll" : "std"}
             page={size}
