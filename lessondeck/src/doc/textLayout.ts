@@ -11,17 +11,26 @@ export const LINE_HEIGHT = 1.3;
 const MIN_FIT = 4;
 const MAX_FIT = 400;
 
-/** 상자 안쪽 여백·아이콘 자리 (글자 크기 대비 em). 링크는 버튼처럼 보이게 테두리 안에 아이콘과 글 */
+/**
+ * 상자 안쪽 여백·아이콘 자리 (글자 크기 대비 em). 링크는 버튼처럼 보이게 테두리 안에 아이콘과 글.
+ * 글자를 비워 둔 페이지 링크는 뒤에 화살표 아이콘(trail)도: 🔗 3P →, 돌아가기는 🔗 3P ↩
+ */
 export interface BoxChrome {
   padX: number;
   padY: number;
   icon: number;
+  trail: number;
 }
 
-export function boxChrome(box: Pick<TextBox, "link" | "role">): BoxChrome {
-  if (box.role === "back") return { padX: 0.45, padY: 0.12, icon: 0 };
-  if (box.link) return { padX: 0.4, padY: 0.12, icon: 1.15 };
-  return { padX: 0, padY: 0, icon: 0 };
+export function boxChrome(box: Pick<TextBox, "link" | "role" | "text">): BoxChrome {
+  if (!box.link) return { padX: 0, padY: 0, icon: 0, trail: 0 };
+  const trail = box.link.type === "page" && !box.text.trim() ? 1.1 : 0;
+  return { padX: box.role === "back" ? 0.45 : 0.4, padY: 0.12, icon: 1.15, trail };
+}
+
+/** 글자 밖 가로 자리 (여백 + 아이콘들, em) */
+export function chromeWidth(c: BoxChrome): number {
+  return c.padX * 2 + c.icon + c.trail;
 }
 
 /** 띄어쓰기 단위로 줄을 나눈다. 한 단어가 줄보다 길면 글자 단위로. 줄바꿈 문자는 그대로 */
@@ -63,7 +72,7 @@ export function wrapLines(text: string, maxWidth: number, size: number, measure:
 /** 상자(가로·세로) 안에 글이 다 들어가는 가장 큰 글자 크기 */
 export function fitSize(text: string, width: number, height: number, chrome: BoxChrome, measure: Measure): number {
   const fits = (s: number) => {
-    const inner = width - s * (chrome.padX * 2 + chrome.icon);
+    const inner = width - s * chromeWidth(chrome);
     if (inner <= 0) return false;
     const lines = wrapLines(text, inner, s, measure);
     return lines.length * s * LINE_HEIGHT + s * chrome.padY * 2 <= height + 1e-6 && lines.every((l) => measure(l, s) <= inner + 1e-6);
@@ -89,7 +98,7 @@ export interface BoxLayout {
 }
 
 /**
- * 상자 하나의 배치. label은 화면에 보일 글(비어 있는 링크는 "3쪽으로 가기 →" 등),
+ * 상자 하나의 배치. label은 화면에 보일 글(비어 있는 페이지 링크는 "3P" 등),
  * heightRatio는 페이지 세로/가로.
  */
 export function layoutBox(box: TextBox, label: string, heightRatio: number, measure: Measure): BoxLayout {
@@ -100,9 +109,9 @@ export function layoutBox(box: TextBox, label: string, heightRatio: number, meas
     const width = box.w * 1000 * 0.97;
     const height = box.h * 1000 * heightRatio * 0.97;
     const size = fitSize(text, width, height, chrome, measure);
-    return { size, lines: wrapLines(text, width - size * (chrome.padX * 2 + chrome.icon), size, measure), chrome, fitted: true };
+    return { size, lines: wrapLines(text, width - size * chromeWidth(chrome), size, measure), chrome, fitted: true };
   }
   const size = box.size;
-  const maxWidth = Math.max(size * 4, (1 - box.x) * 1000 - 4) - size * (chrome.padX * 2 + chrome.icon);
+  const maxWidth = Math.max(size * 4, (1 - box.x) * 1000 - 4) - size * chromeWidth(chrome);
   return { size, lines: wrapLines(text, maxWidth, size, measure), chrome, fitted: false };
 }

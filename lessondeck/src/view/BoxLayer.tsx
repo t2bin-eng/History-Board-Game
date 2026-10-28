@@ -1,6 +1,6 @@
-import { Copy, ExternalLink, Link2, Minus, Pencil, Plus, Scissors, Trash2 } from "lucide-react";
+import { ArrowRight, Copy, ExternalLink, Link2, Minus, Pencil, Plus, Scissors, Trash2, Undo2 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { BOX_COLORS, boxLabel, boxesOf, isDangling } from "../doc/boxes";
+import { BOX_COLORS, boxLabel, boxesOf, boxPlainLabel, isAutoPageLink, isDangling } from "../doc/boxes";
 import { layoutBox } from "../doc/textLayout";
 import type { BoxLink, Page, TextBox } from "../doc/types";
 import type { PageSize } from "../ink/geometry";
@@ -236,6 +236,11 @@ export function BoxLayer(props: Props) {
                 </span>
               ))}
             </span>
+            {layout.chrome.trail > 0 && (
+              <span className="text-box-trail" aria-hidden="true">
+                {b.role === "back" ? <Undo2 size="0.9em" strokeWidth={2.4} /> : <ArrowRight size="0.9em" strokeWidth={2.4} />}
+              </span>
+            )}
           </>
         );
         const handles =
@@ -284,6 +289,7 @@ export function BoxLayer(props: Props) {
             {...common}
             role={b.link && !editMode ? "link" : undefined}
             aria-disabled={dangling || undefined}
+            title={isAutoPageLink(b) ? boxPlainLabel(b, pages, hidden) : undefined}
             onClick={() => {
               if (!editMode && b.link && !dangling) props.onFollow(b.link);
             }}
@@ -354,12 +360,7 @@ function BoxToolbar({
         <Plus size={16} />
       </button>
       {BOX_COLORS.map((c) => (
-        <button
-          key={c}
-          className={`box-color${box.color === c ? " on" : ""}`}
-          aria-label={`글자색 ${c}`}
-          onClick={() => onColor(c)}
-        >
+        <button key={c} className={`box-color${box.color === c ? " on" : ""}`} aria-label={`글자색 ${c}`} onClick={() => onColor(c)}>
           <span style={{ background: c }} />
         </button>
       ))}

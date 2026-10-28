@@ -41,6 +41,7 @@ import {
   BOX_SIZES,
   boxesOf,
   boxLabel,
+  boxPlainLabel,
   copyBoxes,
   isDangling,
   DEFAULT_BOX_SIZE,
@@ -99,6 +100,7 @@ import { usePersistentFlag } from "./lib/usePersistentFlag";
 import { thumbnailFor } from "./pdf/thumbnails";
 import { collectAssets, importAssets } from "./store/assetTransfer";
 import { putAsset, saveInk, saveManifest, setThumb, toManifest, type OpenedDoc } from "./store/docStore";
+import { readSystemClipboard, type SystemClip } from "./lib/systemClipboard";
 import { exportProject, PROJECT_EXT } from "./store/projectFile";
 import { AddPageMenu, type LinkKind } from "./ui/AddPageMenu";
 import { onBackPress } from "./lib/nativeShell";
@@ -126,6 +128,12 @@ const NO_STROKES: Stroke[] = [];
 const MANIFEST_SAVE_DELAY = 400;
 /** 스티커 그림은 긴 변을 이만큼까지 줄여 보관한다 */
 const STICKER_MAX_SIDE = 2048;
+/** 다른 앱의 글로 새 페이지를 만들 때 담는 글 길이 */
+const NEW_PAGE_TEXT_MAX = 5000;
+
+/** 앱 안 클립보드에 담은 것과 다른 앱에서 복사했을 수 있는 때의 앞뒤를 가리는 순번 */
+let clipboardSeq = 0;
+const nextSeq = () => ++clipboardSeq;
 
 const ACCEPT: Record<FileTarget["kind"], string> = {
   pdf: "application/pdf,.pdf",
@@ -214,9 +222,9 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   /** 복사·잘라낸 글상자·스티커·페이지 (문서를 바꿔도 남음) */
   const [clip, setClipState] = useState<AppClip | null>(getClip);
   const boxClip = clip?.kind === "boxes" ? clip.clip : null;
-  /** 앱 안 클립보드에 담은 시각과, 앱을 떠난(다른 앱에서 복사했을 수 있는) 시각 */
-  const clipAt = useRef(0);
-  const blurAt = useRef(0);
+  /** 앱 안 클립보드에 담은 때와, 앱을 떠났거나(다른 앱에서 복사했을 수 있음) 앱 안 입력칸에서 복사한 때 (순번) */
+  const clipSeq = useRef(0);
+  const leaveSeq = useRef(0);
   /** 고른 이미지 스티커, 자르는 중인지, 끄는 중의 모양 */
   const [selectedSticker, setSelectedSticker] = useState<string | null>(null);
   const [cropping, setCropping] = useState(false);
@@ -466,7 +474,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   const putClip = (next: AppClip) => {
     setClip(next);
     setClipState(next);
-    clipAt.current = Date.now();
+    clipSeq.current = nextSeq();
   };
 
   /** 페이지 + 필기 + 글상자·스티커 + 쓰는 원본을 담는다 */
@@ -478,7 +486,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     for (const p of pages) {
       const strokes = inkRef.current[p.id]?.present;
       if (strokes?.length) ink[p.id] = strokes;
-      for (const b of p.boxes ?? []) if (b.link?.type === "page") labels[b.id] = boxLabel(b, d.pages, d.hidden);
+      for (const b of p.boxes ?? []) if (b.link?.type === "page") labels[b.id] = boxPlainLabel(b, d.pages, d.hidden);
     }
     const assets = await collectAssets(d.id, [...new Set(pages.flatMap(pageAssetIds))], d.assets);
     return { docId: d.id, pages, ink, labels, assets };
@@ -718,16 +726,13 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   };
 
   /** 다른 앱에서 복사한 글: 새 글상자로 (웹 주소 하나면 링크 상자로) */
-  const pasteText = (text: string) => {
+  const pasteText = (text: string, at?: { x: number; y: number }) => {
     if (!currentPage) return;
     const trimmed = text.trim().slice(0, 2000);
     if (!trimmed) return;
-    const url = !/\s/.test(trimmed) ? normalizeUrl(trimmed) : null;
-    const box: TextBox = url
-      ? { id: newId("b"), x: 0.08, y: 0.08, text: "", size: DEFAULT_BOX_SIZE, color: LINK_COLOR, link: { type: "url", url } }
-      : { id: newId("b"), x: 0.08, y: 0.08, text: trimmed, size: DEFAULT_BOX_SIZE, color: textColor };
+    const box = textToBox(trimmed, textColor);
     const clip: BoxClip = { docId: docRef.current.id, boxes: [box], labels: [trimmed] };
-    pasteClip(clip);
+    pasteClip(clip, at);
   };
 
   /** 상자를 그 자리 옆에 하나 더 (클립보드는 그대로) */
@@ -912,6 +917,85 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     else if (c?.kind === "pages") void pastePages(docRef.current.pages.findIndex((p) => p.id === currentIdRef.current) + 1);
   };
 
+  // ── 다른 앱에서 복사한 것 (SPEC 5장): 앱 안 클립보드와 둘 중 나중에 복사한 쪽 ──────────
+  /** 앱 안 클립보드에 담은 뒤 앱을 떠났거나 입력칸에서 복사했으면(또는 앱 안 클립보드가 비었으면) 기기 클립보드 먼저 */
+  const preferSystem = () => !getClip() || leaveSeq.current > clipSeq.current;
+
+  const nothingToPaste = (sys: SystemClip) =>
+    showToast(sys.kind === "denied" ? sys.message : "붙여넣을 것이 없습니다. 다른 앱에서 그림·링크·글을 복사해 오세요");
+
+  /** 페이지 안에 붙이기: 그림 → 스티커, 웹 주소 → 링크 상자, 글 → 글상자 */
+  const pasteHere = async (at?: { x: number; y: number }) => {
+    if (!preferSystem()) {
+      pasteAny(at);
+      return;
+    }
+    const sys = await readSystemClipboard();
+    if (sys.kind === "image") await insertStickers([sys.file], at);
+    else if (sys.kind === "text") pasteText(sys.text, at);
+    else if (getClip()) pasteAny(at);
+    else nothingToPaste(sys);
+  };
+
+  /** 옆 페이지와 같은 비율의 빈 페이지 */
+  const blankPage = (index: number): Extract<Page, { kind: "blank" }> => {
+    const { pages, assets } = docRef.current;
+    const neighbor = pages[index - 1] ?? pages[index];
+    return { id: newPageId(), kind: "blank", background: "plain", aspect: neighbor ? pageAspect(neighbor, assets) : A4_PORTRAIT };
+  };
+
+  /** 다른 앱의 글로 새 페이지: 유튜브·웹 주소 하나면 그 페이지, 아니면 빈 페이지 위 글상자 */
+  const newPageFromText = (index: number, text: string) => {
+    const trimmed = text.trim().slice(0, NEW_PAGE_TEXT_MAX);
+    if (!/\s/.test(trimmed) && (parseYouTube(trimmed) || normalizeUrl(trimmed))) {
+      addLink(index, trimmed, "url");
+      return;
+    }
+    const page = { ...blankPage(index), boxes: [textToBox(trimmed, textColor, { x: 0.06, y: 0.05 })] };
+    addAssetAndPages(null, index, [page]);
+    showToast("복사한 글로 새 페이지를 만들었습니다");
+  };
+
+  /** 앱 안 클립보드를 새 페이지로: 페이지는 그대로, 글상자·스티커는 그것을 담은 빈 페이지 */
+  const pasteClipAsPages = async (c: AppClip, index: number) => {
+    if (c.kind === "pages") {
+      await pastePages(index);
+      return;
+    }
+    const blank = blankPage(index);
+    if (c.kind === "boxes") {
+      setDoc((d) => ({ ...d, pages: pasteBoxes(insertPages(d.pages, index, [blank]), blank.id, c.clip, d.id).pages }));
+    } else {
+      const imported = await importAssets(docRef.current, c.clip.docId, c.clip.assets);
+      const page = { ...blank, stickers: placePasted([], c.clip.stickers, imported.assetMap) };
+      setDoc((d) => ({ ...d, assets: { ...d.assets, ...imported.added }, pages: insertPages(d.pages, index, [page]) }));
+    }
+    setCurrentId(blank.id);
+  };
+
+  /** 페이지 바에서 붙이기: 새 페이지로 (그림 → 이미지 페이지, 링크 → 웹 주소·유튜브 페이지, 글 → 글상자 페이지) */
+  const pasteAsNewPage = async (index: number) => {
+    const app = getClip();
+    if (app && !preferSystem()) {
+      await pasteClipAsPages(app, index);
+      return;
+    }
+    const sys = await readSystemClipboard();
+    if (sys.kind === "image") await insertMedia([sys.file], index);
+    else if (sys.kind === "text") newPageFromText(index, sys.text);
+    else if (app) await pasteClipAsPages(app, index);
+    else nothingToPaste(sys);
+  };
+
+  /** 메뉴 이름: 무엇을 붙일지 (기기 클립보드는 읽기 전에는 모르므로 "복사한 그림·링크·글") */
+  const pasteHereLabel = (here: boolean): string => (preferSystem() ? `${here ? "여기에 " : ""}붙여넣기 (복사한 그림·링크·글)` : pasteLabel(here));
+  const pastePageLabel = (where: string): string => {
+    const c = getClip();
+    if (!c || preferSystem()) return `${where}붙여넣기 (복사한 그림·링크·글 → 새 페이지)`;
+    if (c.kind === "pages") return `${where}붙여넣기 (복사한 ${c.clip.pages.length}쪽)`;
+    return `${where}붙여넣기 (${c.kind === "stickers" ? "스티커" : "글상자"} → 새 페이지)`;
+  };
+
   const pasteLabel = (here: boolean): string => {
     if (clip?.kind === "pages") return `페이지 붙여넣기 (${clip.clip.pages.length}쪽, 이 페이지 뒤에)`;
     if (clip?.kind === "stickers") return here ? "여기에 스티커 붙여넣기" : "스티커 붙여넣기";
@@ -1003,7 +1087,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
             },
             { label: "잘라내기", icon: <Scissors size={18} />, hint: "Ctrl+X", onSelect: () => cutBox(id) },
             { label: "복제", icon: <CopyPlus size={18} />, onSelect: () => duplicateBox(id) },
-            clip && { label: pasteLabel(false), icon: <ClipboardPaste size={18} />, hint: "Ctrl+V", onSelect: () => pasteAny() },
+            { label: pasteHereLabel(false), icon: <ClipboardPaste size={18} />, hint: "Ctrl+V", onSelect: () => void pasteHere() },
           ],
           [{ label: "지우기", icon: <Trash2 size={18} />, danger: true, onSelect: () => deleteBox(id) }],
         ],
@@ -1031,8 +1115,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
             { label: "복사", icon: <Copy size={18} />, hint: "Ctrl+C", onSelect: () => void copySticker(id) },
             { label: "잘라내기", icon: <Scissors size={18} />, hint: "Ctrl+X", onSelect: () => void copySticker(id, true) },
             { label: "복제", icon: <CopyPlus size={18} />, onSelect: () => void duplicateSticker(id) },
-            clip &&
-              clip.kind !== "pages" && { label: pasteLabel(false), icon: <ClipboardPaste size={18} />, hint: "Ctrl+V", onSelect: () => pasteAny() },
+            { label: pasteHereLabel(false), icon: <ClipboardPaste size={18} />, hint: "Ctrl+V", onSelect: () => void pasteHere() },
           ],
           [
             {
@@ -1054,7 +1137,6 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
       const id = menu.pageId;
       const i = doc.pages.findIndex((p) => p.id === id);
       if (i < 0) return { groups: [] };
-      const pc = clip?.kind === "pages" ? clip.clip : null;
       const isHidden = doc.hidden.includes(id);
       return {
         title: `${i + 1}쪽`,
@@ -1065,8 +1147,8 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
             { label: "복제", icon: <CopyPlus size={18} />, onSelect: () => duplicatePage(id) },
           ],
           [
-            pc && { label: `앞에 붙여넣기 (${pc.pages.length}쪽)`, icon: <ClipboardPaste size={18} />, onSelect: () => void pastePages(i) },
-            pc && { label: `뒤에 붙여넣기 (${pc.pages.length}쪽)`, icon: <ClipboardPaste size={18} />, onSelect: () => void pastePages(i + 1) },
+            { label: pastePageLabel("앞에 "), icon: <ClipboardPaste size={18} />, onSelect: () => void pasteAsNewPage(i) },
+            { label: pastePageLabel("뒤에 "), icon: <ClipboardPaste size={18} />, onSelect: () => void pasteAsNewPage(i + 1) },
           ],
           [
             { label: isHidden ? "보이기" : "숨기기", icon: isHidden ? <Eye size={18} /> : <EyeOff size={18} />, onSelect: () => toggleHidden(id) },
@@ -1081,7 +1163,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
         title: currentPage ? `${pageNumberLabel(doc.pages, doc.hidden, currentPage.id) ?? ""} 페이지` : undefined,
         groups: [
           [
-            clip && { label: pasteLabel(!!at), icon: <ClipboardPaste size={18} />, hint: "Ctrl+V", onSelect: () => pasteAny(at) },
+            { label: pasteHereLabel(!!at), icon: <ClipboardPaste size={18} />, hint: "Ctrl+V", onSelect: () => void pasteHere(at) },
             at && {
               label: "여기에 글상자",
               icon: <Type size={18} />,
@@ -1319,22 +1401,35 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
         if (!text || text === app.clip.labels.join("\n")) c.pasteClip();
         else if (text.trim()) c.pasteText(text);
         else return;
-      } else if (app && (!text.trim() || blurAt.current < clipAt.current)) {
+      } else if (app && (!text.trim() || leaveSeq.current < clipSeq.current)) {
         // 스티커·페이지: 그 뒤에 다른 앱에서 글을 복사해 온 게 아니면 앱 안 클립보드를
         c.pasteAny();
       } else if (text.trim()) c.pasteText(text);
       else return;
       e.preventDefault();
     };
-    const onBlur = () => (blurAt.current = Date.now());
+    // 다른 앱으로 갔다 오면(분할 화면 포함) 그쪽에서 복사했을 수 있다. 웹 페이지(iframe)를 누른 것은 앱을 떠난 게 아니다
+    const onBlur = () =>
+      setTimeout(() => {
+        if (document.activeElement?.tagName !== "IFRAME") leaveSeq.current = nextSeq();
+      });
+    const onHidden = () => document.visibilityState === "hidden" && (leaveSeq.current = nextSeq());
+    // 입력칸 등에서 글을 복사한 것도 기기 클립보드 쪽 (상자·스티커 복사는 뒤이어 앱 안 클립보드에 담겨 더 나중이 된다)
+    const onAnyCopy = () => (leaveSeq.current = nextSeq());
+    document.addEventListener("copy", onAnyCopy, true);
+    document.addEventListener("cut", onAnyCopy, true);
     document.addEventListener("copy", onCopyCut);
     document.addEventListener("cut", onCopyCut);
     document.addEventListener("paste", onPaste);
+    document.addEventListener("visibilitychange", onHidden);
     window.addEventListener("blur", onBlur);
     return () => {
+      document.removeEventListener("copy", onAnyCopy, true);
+      document.removeEventListener("cut", onAnyCopy, true);
       document.removeEventListener("copy", onCopyCut);
       document.removeEventListener("cut", onCopyCut);
       document.removeEventListener("paste", onPaste);
+      document.removeEventListener("visibilitychange", onHidden);
       window.removeEventListener("blur", onBlur);
     };
   }, []);
@@ -1489,11 +1584,9 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
         <IconButton label="이미지 스티커" disabled={!currentPage} onClick={() => pickFile("sticker", pageIndex)}>
           <ImagePlus size={23} />
         </IconButton>
-        {clip && (
-          <IconButton label={pasteLabel(false)} disabled={!currentPage} onClick={() => pasteAny()}>
-            <ClipboardPaste size={22} />
-          </IconButton>
-        )}
+        <IconButton label={pasteHereLabel(false)} disabled={!currentPage} onClick={() => void pasteHere()}>
+          <ClipboardPaste size={22} />
+        </IconButton>
         <span className="toolrow-sep" />
         <IconButton label="이 페이지 필기 지우기" disabled={strokes.length === 0} onClick={() => inkAction({ type: "clear" })}>
           <Trash2 size={22} />
@@ -1777,22 +1870,26 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
             if (!error) setAddMenu(null);
             return error;
           }}
-          paste={
-            clip?.kind === "pages"
-              ? {
-                  label: `여기에 붙여넣기 (복사한 ${clip.clip.pages.length}쪽)`,
-                  run: () => {
-                    void pastePages(addMenu.index);
-                    setAddMenu(null);
-                  },
-                }
-              : undefined
-          }
+          paste={{
+            label: pastePageLabel("여기에 "),
+            run: () => {
+              void pasteAsNewPage(addMenu.index);
+              setAddMenu(null);
+            },
+          }}
           onClose={closeAddMenu}
         />
       )}
     </div>
   );
+}
+
+/** 붙인 글 → 글상자 (웹 주소 하나면 웹 주소 링크 상자) */
+function textToBox(text: string, color: string, at = { x: 0.08, y: 0.08 }): TextBox {
+  const url = !/\s/.test(text) ? normalizeUrl(text) : null;
+  return url
+    ? { id: newId("b"), ...at, text: "", size: DEFAULT_BOX_SIZE, color: LINK_COLOR, link: { type: "url", url } }
+    : { id: newId("b"), ...at, text, size: DEFAULT_BOX_SIZE, color };
 }
 
 function missingNotice(count: number): string | null {

@@ -35,9 +35,7 @@ export function removeBox(pages: Page[], pageId: string, boxId: string): Page[] 
 }
 
 function removeBackLinks(pages: Page[], sourceBoxId: string): Page[] {
-  return pages.map((p) =>
-    p.boxes?.some((b) => b.backOf === sourceBoxId) ? { ...p, boxes: p.boxes.filter((b) => b.backOf !== sourceBoxId) } : p,
-  );
+  return pages.map((p) => (p.boxes?.some((b) => b.backOf === sourceBoxId) ? { ...p, boxes: p.boxes.filter((b) => b.backOf !== sourceBoxId) } : p));
 }
 
 /**
@@ -95,14 +93,19 @@ export function pageNumberLabel(pages: Page[], hidden: string[], pageId: string)
   return pos.index >= 0 ? `${pos.index + 1}쪽` : "숨긴 쪽";
 }
 
-/** 화면에 보일 글자. 비어 있는 링크는 그때의 쪽 번호·사이트 이름으로 */
+/** 글자를 비워 둔 페이지 링크: 화면에는 링크 아이콘 + "3P" + 화살표 아이콘 (돌아가기는 ↩ 아이콘) */
+export function isAutoPageLink(box: Pick<TextBox, "link" | "text">): boolean {
+  return box.link?.type === "page" && !box.text.trim();
+}
+
+/** 화면에 보일 글자. 비어 있는 링크는 그때의 쪽 번호("3P")·사이트 이름으로 */
 export function boxLabel(box: TextBox, pages: Page[], hidden: string[]): string {
   if (box.text.trim()) return box.text;
   const link = box.link;
   if (link?.type === "page") {
-    const n = pageNumberLabel(pages, hidden, link.pageId);
-    if (!n) return "연결된 페이지 없음";
-    return box.role === "back" ? `↩ ${n}으로 돌아가기` : `${n}으로 가기 →`;
+    if (!pages.some((p) => p.id === link.pageId)) return "연결된 페이지 없음";
+    const pos = visiblePosition(pages, hidden, link.pageId);
+    return pos.index >= 0 ? `${pos.index + 1}P` : "숨김";
   }
   if (link?.type === "url") {
     try {
@@ -122,8 +125,19 @@ export interface BoxClip {
   labels: string[];
 }
 
+/**
+ * 아이콘 없이 글자만으로 뜻이 통하는 이름 ("3쪽으로 가기 →"). 링크를 풀고 글자만 남길 때(다른 문서에 붙이기)와
+ * 시스템 클립보드에 넣을 때 쓴다
+ */
+export function boxPlainLabel(box: TextBox, pages: Page[], hidden: string[]): string {
+  if (!isAutoPageLink(box) || !box.link || box.link.type !== "page") return boxLabel(box, pages, hidden);
+  const n = pageNumberLabel(pages, hidden, box.link.pageId);
+  if (!n) return "연결된 페이지 없음";
+  return box.role === "back" ? `↩ ${n}으로 돌아가기` : `${n}으로 가기 →`;
+}
+
 export function makeClip(docId: string, boxes: TextBox[], pages: Page[], hidden: string[]): BoxClip {
-  return { docId, boxes: boxes.map((b) => ({ ...b })), labels: boxes.map((b) => boxLabel(b, pages, hidden)) };
+  return { docId, boxes: boxes.map((b) => ({ ...b })), labels: boxes.map((b) => boxPlainLabel(b, pages, hidden)) };
 }
 
 /**

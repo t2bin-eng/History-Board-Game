@@ -13,9 +13,10 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        // 앱 안에 들어 있는 플러그인 (구글 드라이브 권한, 웹 주소 페이지 사이트 목록)
+        // 앱 안에 들어 있는 플러그인 (구글 드라이브 권한, 웹 주소 페이지 사이트 목록, 다른 앱에서 복사한 것 읽기)
         registerPlugin(GoogleDrivePlugin.class);
         registerPlugin(WebFramesPlugin.class);
+        registerPlugin(SystemClipboardPlugin.class);
         super.onCreate(savedInstanceState);
         // 웹 주소 페이지(iframe)가 하얗게 남지 않게: iframe 안의 이동은 그 안에서, 띄우기 거부 머리글 처리
         getBridge().setWebViewClient(new LessonDeckWebViewClient(getBridge()));

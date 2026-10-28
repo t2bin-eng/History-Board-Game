@@ -1,5 +1,5 @@
 import { boxLabel, boxesOf, isDangling } from "../doc/boxes";
-import { layoutBox, LINE_HEIGHT } from "../doc/textLayout";
+import { chromeWidth, layoutBox, LINE_HEIGHT } from "../doc/textLayout";
 import type { Page } from "../doc/types";
 import type { PageSize } from "../ink/geometry";
 import { BOX_FONT, measureText } from "./textMeasure";
@@ -18,11 +18,11 @@ export function paintBoxes(ctx: CanvasRenderingContext2D, page: Page, pages: Pag
     const layout = layoutBox(b, label, heightRatio, measureText);
     const fs = layout.size * scale;
     const lh = fs * LINE_HEIGHT;
-    const { padX, padY, icon } = layout.chrome;
+    const { padX, padY, icon, trail } = layout.chrome;
     const x = b.x * size.width;
     const y = b.y * size.height;
     const textWidth = Math.max(...layout.lines.map((l) => measureText(l, layout.size))) * scale;
-    const boxW = layout.fitted ? b.w! * size.width : textWidth + fs * (padX * 2 + icon);
+    const boxW = layout.fitted ? b.w! * size.width : textWidth + fs * chromeWidth(layout.chrome);
     const boxH = layout.fitted ? b.h! * size.height : lh * layout.lines.length + fs * padY * 2;
     ctx.globalAlpha = dangling ? 0.45 : 1;
     if (b.link) {
@@ -39,6 +39,22 @@ export function paintBoxes(ctx: CanvasRenderingContext2D, page: Page, pages: Pag
         ctx.beginPath();
         ctx.arc(x + fs * (padX + 0.45), y + fs * padY + lh / 2, fs * 0.3, 0, Math.PI * 2);
         ctx.fill();
+      }
+      if (trail) {
+        // 뒤 화살표: 가기 →, 돌아가기 ←
+        const cx = x + boxW - fs * (padX + 0.45);
+        const cy = y + fs * padY + lh / 2;
+        const d = b.role === "back" ? -1 : 1;
+        ctx.strokeStyle = "#1565c0";
+        ctx.lineWidth = Math.max(0.6, fs * 0.13);
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(cx - d * fs * 0.32, cy);
+        ctx.lineTo(cx + d * fs * 0.32, cy);
+        ctx.moveTo(cx + d * fs * 0.1, cy - fs * 0.22);
+        ctx.lineTo(cx + d * fs * 0.32, cy);
+        ctx.lineTo(cx + d * fs * 0.1, cy + fs * 0.22);
+        ctx.stroke();
       }
     }
     ctx.font = `500 ${fs}px ${BOX_FONT}`;

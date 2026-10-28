@@ -4,7 +4,7 @@ import type { TextBox } from "./types";
 
 // 고정폭: 글자 하나 = 글자 크기만큼
 const mono: Measure = (text, size) => [...text].length * size;
-const plain = boxChrome({});
+const plain = boxChrome({ text: "" });
 
 describe("줄바꿈", () => {
   it("띄어쓰기 단위로 나누고 줄바꿈 문자는 그대로", () => {
@@ -40,7 +40,7 @@ describe("상자에 맞춘 글자 크기", () => {
   });
 
   it("링크는 테두리 여백과 아이콘 자리를 빼고 맞춘다", () => {
-    const chrome = boxChrome({ link: { type: "url", url: "https://example.com" } });
+    const chrome = boxChrome({ link: { type: "url", url: "https://example.com" }, text: "자료" });
     expect(fitSize("자료", 100, 100, chrome, mono)).toBeLessThan(fitSize("자료", 100, 100, plain, mono));
   });
 });

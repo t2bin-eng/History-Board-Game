@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { addBox, boxesOf, boxLabel, copyBoxes, isDangling, makeClip, pasteBoxes, removeBox, setBoxLink } from "./boxes";
+import { addBox, boxesOf, boxLabel,
+  boxPlainLabel, copyBoxes, isDangling, makeClip, pasteBoxes, removeBox, setBoxLink } from "./boxes";
 import { movePageTo, removePage } from "./pages";
 import type { Page, TextBox } from "./types";
 
@@ -21,7 +22,8 @@ describe("페이지 링크와 돌아가기 링크", () => {
     const back = boxesOf(page(pages, "c"));
     expect(back).toHaveLength(1);
     expect(back[0]).toMatchObject({ role: "back", backOf: "link1", link: { type: "page", pageId: "a" }, text: "" });
-    expect(boxLabel(back[0], pages, [])).toBe("↩ 1쪽으로 돌아가기");
+    expect(boxLabel(back[0], pages, [])).toBe("1P");
+    expect(boxPlainLabel(back[0], pages, [])).toBe("↩ 1쪽으로 돌아가기");
   });
 
   it("연결한 페이지에 이미 돌아오는 링크가 있으면 또 만들지 않는다", () => {
@@ -59,10 +61,11 @@ describe("페이지 링크와 돌아가기 링크", () => {
     let pages = addBox([blank("a"), blank("b"), blank("c")], "a", box("l"));
     pages = setBoxLink(pages, "a", "l", { type: "page", pageId: "c" }, false);
     const l = boxesOf(page(pages, "a"))[0];
-    expect(boxLabel(l, pages, [])).toBe("3쪽으로 가기 →");
+    expect(boxLabel(l, pages, [])).toBe("3P");
     pages = movePageTo(pages, "c", 0);
-    expect(boxLabel(l, pages, [])).toBe("1쪽으로 가기 →");
-    expect(boxLabel(l, pages, ["c"])).toBe("숨긴 쪽으로 가기 →");
+    expect(boxLabel(l, pages, [])).toBe("1P");
+    expect(boxLabel(l, pages, ["c"])).toBe("숨김");
+    expect(boxPlainLabel(l, pages, [])).toBe("1쪽으로 가기 →");
   });
 
   it("연결한 페이지를 지우면 링크가 끊긴 것으로 본다", () => {
