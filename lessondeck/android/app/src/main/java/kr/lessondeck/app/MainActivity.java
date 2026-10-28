@@ -12,13 +12,7 @@ import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
 
-    /** S펜 버튼(옆 버튼)으로 여기는 버튼 상태 */
-    private static final int PEN_BUTTONS =
-        MotionEvent.BUTTON_STYLUS_PRIMARY | MotionEvent.BUTTON_STYLUS_SECONDARY | MotionEvent.BUTTON_SECONDARY;
-
-    /** 지금 획이 버튼을 누른 채 시작해 지우개로 넘기는 중인지 (뗄 때까지) */
-    private boolean erasingStroke = false;
-    /** 마지막으로 화면에 알린 버튼 상태 */
+    /** 마지막으로 화면에 알린 S펜 버튼 상태 */
     private boolean sideButtonShown = false;
 
     @Override
@@ -46,84 +40,32 @@ public class MainActivity extends BridgeActivity {
         hideSystemBars();
     }
 
-    /**
-     * S펜 버튼을 누른 채 쓰면 지우개 (SPEC 6장).
-     * 웹뷰(크로미움)는 버튼을 누른 채 끄는 펜을 글자 고르기 동작으로 가로채서 웹 화면이 버튼을 모른다.
-     * 그래서 펜을 댈 때 버튼이 눌려 있으면 그 획 전체를 "지우개 끝" 입력으로 바꿔 넘긴다
-     * (웹 화면에는 지우개 버튼(32)이 눌린 펜으로 온다).
-     */
+    /** S펜 버튼을 누른 채 쓰면 지우개: 펜 이벤트를 웹뷰가 알아듣는 모양으로 다듬어 넘긴다 (PenInput) */
     @Override
     public boolean dispatchTouchEvent(MotionEvent ev) {
-        int action = ev.getActionMasked();
-        boolean stylus = hasStylus(ev);
-        boolean pressed = stylus && (ev.getButtonState() & PEN_BUTTONS) != 0;
-        if (action == MotionEvent.ACTION_DOWN) erasingStroke = pressed;
-        showSideButton(pressed || erasingStroke);
-        if (!erasingStroke) return super.dispatchTouchEvent(ev);
-        MotionEvent converted = asEraser(ev);
+        MotionEvent clean = PenInput.normalizeTouch(ev);
+        showSideButton(PenInput.buttonDown);
+        if (clean == null) return super.dispatchTouchEvent(ev);
         try {
-            return super.dispatchTouchEvent(converted);
+            return super.dispatchTouchEvent(clean);
         } finally {
-            converted.recycle();
-            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-                erasingStroke = false;
-                showSideButton(pressed);
-            }
+            clean.recycle();
         }
     }
 
     /** 펜을 띄운 채(호버) 버튼을 누르고 떼는 것도 알려 지우개 표시를 바꾼다 */
     @Override
     public boolean dispatchGenericMotionEvent(MotionEvent ev) {
-        if (hasStylus(ev)) {
-            int action = ev.getActionMasked();
-            if (action == MotionEvent.ACTION_HOVER_EXIT) showSideButton(false);
-            else showSideButton((ev.getButtonState() & PEN_BUTTONS) != 0);
-        }
+        PenInput.trackHover(ev);
+        showSideButton(PenInput.buttonDown);
         return super.dispatchGenericMotionEvent(ev);
-    }
-
-    private static boolean hasStylus(MotionEvent ev) {
-        for (int i = 0; i < ev.getPointerCount(); i++) {
-            if (ev.getToolType(i) == MotionEvent.TOOL_TYPE_STYLUS) return true;
-        }
-        return false;
-    }
-
-    /** 같은 이벤트를 펜 대신 지우개 끝으로, 버튼 상태 없이 (손가락 등 다른 포인터는 그대로) */
-    private static MotionEvent asEraser(MotionEvent ev) {
-        int n = ev.getPointerCount();
-        MotionEvent.PointerProperties[] props = new MotionEvent.PointerProperties[n];
-        MotionEvent.PointerCoords[] coords = new MotionEvent.PointerCoords[n];
-        for (int i = 0; i < n; i++) {
-            props[i] = new MotionEvent.PointerProperties();
-            ev.getPointerProperties(i, props[i]);
-            if (props[i].toolType == MotionEvent.TOOL_TYPE_STYLUS) props[i].toolType = MotionEvent.TOOL_TYPE_ERASER;
-            coords[i] = new MotionEvent.PointerCoords();
-            ev.getPointerCoords(i, coords[i]);
-        }
-        return MotionEvent.obtain(
-            ev.getDownTime(),
-            ev.getEventTime(),
-            ev.getAction(),
-            n,
-            props,
-            coords,
-            ev.getMetaState(),
-            0,
-            ev.getXPrecision(),
-            ev.getYPrecision(),
-            ev.getDeviceId(),
-            ev.getEdgeFlags(),
-            ev.getSource(),
-            ev.getFlags()
-        );
     }
 
     private void showSideButton(boolean down) {
         if (down == sideButtonShown || getBridge() == null) return;
         sideButtonShown = down;
-        getBridge().triggerWindowJSEvent("lessondecksidebutton", "{\"down\":" + down + "}");
+        String info = PenInput.lastInfo.replace("\"", "");
+        getBridge().triggerWindowJSEvent("lessondecksidebutton", "{\"down\":" + down + ",\"info\":\"" + info + "\"}");
     }
 
     @Override

@@ -22,6 +22,8 @@ export interface DebugStats {
   penPressureMax: number;
   penPressureSamples: number;
   sideButtonSeen: boolean;
+  /** 안드로이드 앱이 S펜 버튼 신호를 직접 보냈는지 (PenInput.java) */
+  nativeSideSeen: boolean;
   eraserTipSeen: boolean;
   penHoverSeen: boolean;
   /** 펜을 쓰는 중(또는 직후) 손바닥으로 보고 무시한 터치 수 */
@@ -45,6 +47,7 @@ export const debugStats: DebugStats = {
   penPressureMax: -Infinity,
   penPressureSamples: 0,
   sideButtonSeen: false,
+  nativeSideSeen: false,
   eraserTipSeen: false,
   penHoverSeen: false,
   rejectedTouches: 0,
@@ -105,6 +108,13 @@ export function recordPointer(e: PointerEvent, coalesced = 0, predicted = 0) {
   } else {
     pushLog(`${e.type.replace("pointer", "")} ${e.pointerType} b=${e.buttons} btn=${e.button} p=${e.pressure.toFixed(2)}`);
   }
+}
+
+/** 앱이 알려 준 S펜 버튼 (누름·뗌과 원래 동작 번호·버튼·도구) */
+export function recordNativePen(line: string) {
+  debugStats.nativeSideSeen = true;
+  if (line.startsWith("버튼 누름")) debugStats.sideButtonSeen = true;
+  pushLog(`앱 S펜 ${line}`);
 }
 
 export function recordRender(ms: number) {

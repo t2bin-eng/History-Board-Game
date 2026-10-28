@@ -86,7 +86,7 @@ export function DebugPanel({ lowLatency, onLowLatency, pdfRenderMs, onClose }: P
     {
       label: "S펜 사이드 버튼 신호가 들어오는가",
       ok: s.sideButtonSeen,
-      hint: s.sideButtonSeen ? "buttons & 2 감지" : "버튼을 누른 채 화면에 대 보세요",
+      hint: s.sideButtonSeen ? (s.nativeSideSeen ? "앱이 버튼 신호를 받음" : "buttons & 2 감지") : "버튼을 누른 채 화면에 대 보세요",
     },
     {
       label: isNativeApp ? "APK 앱이 전체 화면으로 열리는가" : "홈 화면 PWA가 전체 화면으로 열리는가",

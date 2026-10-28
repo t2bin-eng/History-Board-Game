@@ -9,6 +9,7 @@ import type { Stroke, Tool } from "../ink/types";
 import { PdfPageView } from "../pdf/PdfPageView";
 import { PageNav } from "./PageNav";
 import { useViewportGestures } from "./useViewportGestures";
+import { penStrokeErasing } from "../lib/inputState";
 import { WebStage } from "./WebStage";
 
 interface Props {
@@ -138,7 +139,7 @@ export function PageView(props: Props) {
         return;
       }
       if (!longPressRef.current || e.pointerType === "mouse") return;
-      if (e.pointerType === "pen" && !penLongPressRef.current) return;
+      if (e.pointerType === "pen" && (!penLongPressRef.current || penStrokeErasing(e))) return;
       const target = e.target as Element;
       if (!eligible(target)) return;
       const ms = e.pointerType === "pen" ? LONG_PRESS_MS.pen : LONG_PRESS_MS.touch;

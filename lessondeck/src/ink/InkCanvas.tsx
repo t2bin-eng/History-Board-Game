@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { debugStats, recordPointer, recordRender } from "../lib/debugStore";
-import { activeTouchCount, hasSideButton, isSideButtonDown, onSideButtonChange, penRecentlyActive } from "../lib/inputState";
+import { activeTouchCount, isSideButtonDown, onSideButtonChange, penRecentlyActive, penStrokeErasing } from "../lib/inputState";
 import { averagePressure, beautifyStroke, linePoints, pathLengthPx } from "./beautify";
 import { strokeHitsCircle, strokeToSvgPath, unitsToPx, type PageSize } from "./geometry";
 import { HIGHLIGHTER_ALPHA } from "./palette";
@@ -36,6 +36,8 @@ interface Gesture {
   stroke: Stroke | null;
   working: Stroke[];
   erased: boolean;
+  /** 지우개가 마지막으로 지나간 자리 (페이지 px). 빠르게 쓸어도 사이를 빠뜨리지 않게 이어서 지운다 */
+  lastErase: { x: number; y: number } | null;
   /** 직선 보정: 멈춘 자리(화면 px)와 타이머, 직선이 된 뒤의 시작점·필압 */
   holdAt: { x: number; y: number };
   holdTimer: number;
@@ -187,13 +189,23 @@ export function InkCanvas(props: Props) {
       const p = page();
       const r = unitsToPx(propsRef.current.eraserSize, p);
       let changed = false;
-      for (const ev of events) {
-        const { x, y } = toPagePx(ev, g.rect);
+      const hitAt = (x: number, y: number) => {
         const next = g.working.filter((st) => !strokeHitsCircle(st, x, y, r, p));
         if (next.length !== g.working.length) {
           g.working = next;
           changed = true;
         }
+      };
+      for (const ev of events) {
+        const { x, y } = toPagePx(ev, g.rect);
+        // 지난 자리에서 여기까지 지우개 반지름 간격으로 (이벤트 사이가 멀어도 가는 획을 빠뜨리지 않게)
+        const from = g.lastErase;
+        if (from) {
+          const steps = Math.min(200, Math.floor(Math.hypot(x - from.x, y - from.y) / Math.max(1, r * 0.8)));
+          for (let i = 1; i <= steps; i++) hitAt(from.x + ((x - from.x) * i) / (steps + 1), from.y + ((y - from.y) * i) / (steps + 1));
+        }
+        hitAt(x, y);
+        g.lastErase = { x, y };
       }
       if (changed) {
         g.erased = true;
@@ -219,7 +231,8 @@ export function InkCanvas(props: Props) {
       }
       const rect = live.getBoundingClientRect();
       // 사이드 버튼을 누르고 있으면 도구와 상관없이 지우개
-      const mode = tool === "eraser" || hasSideButton(e) || (e.pointerType !== "touch" && isSideButtonDown()) ? "erase" : "draw";
+      // (안드로이드 앱: 펜이 닿는 순간 버튼이 눌려 있었는지 앱에 물어 획 전체를 정한다. 중간에 버튼을 떼도 지우개)
+      const mode = tool === "eraser" || penStrokeErasing(e) ? "erase" : "draw";
       gesture = {
         pointerId: e.pointerId,
         pointerType: e.pointerType,
@@ -231,6 +244,7 @@ export function InkCanvas(props: Props) {
         holdAt: { x: e.clientX, y: e.clientY },
         holdTimer: 0,
         straight: null,
+        lastErase: null,
       };
       if (mode === "erase") {
         eraseAt([e], gesture);
