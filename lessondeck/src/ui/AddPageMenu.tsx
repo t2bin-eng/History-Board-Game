@@ -1,4 +1,4 @@
-import { File, FileCode2, FileText, Film, Globe, Grid3x3, Image, SquarePlay } from "lucide-react";
+import { ClipboardPaste, File, FileCode2, FileText, Film, Globe, Grid3x3, Image, SquarePlay } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { BlankBackground } from "../doc/types";
 
@@ -12,6 +12,8 @@ interface Props {
   onFile: (kind: "pdf" | "html" | "image" | "video") => void;
   /** 링크로 페이지 추가. 잘못된 링크면 안내 문구를 돌려준다 */
   onLink: (text: string, kind: LinkKind) => string | null;
+  /** 복사한 페이지가 있으면: 이 자리에 붙여넣기 */
+  paste?: { label: string; run: () => void };
   onClose: () => void;
 }
 
@@ -21,7 +23,7 @@ const PLACEHOLDER: Record<LinkKind, string> = {
 };
 
 // 페이지 추가 메뉴: 빈 페이지·모눈 페이지·PDF·이미지·동영상·HTML 파일·웹 주소·유튜브
-export function AddPageMenu({ left, top, onBlank, onFile, onLink, onClose }: Props) {
+export function AddPageMenu({ left, top, onBlank, onFile, onLink, paste, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [linkKind, setLinkKind] = useState<LinkKind | null>(null);
   const [url, setUrl] = useState("");
@@ -53,7 +55,7 @@ export function AddPageMenu({ left, top, onBlank, onFile, onLink, onClose }: Pro
   };
 
   // 화면 밖으로 넘치지 않게 (상단 오른쪽 버튼에서 열 때 등)
-  const maxTop = window.innerHeight - (linkKind ? 520 : 470);
+  const maxTop = window.innerHeight - (linkKind ? 520 : 470) - (paste ? 50 : 0);
   const maxLeft = window.innerWidth - 276;
   return (
     <div
@@ -64,6 +66,11 @@ export function AddPageMenu({ left, top, onBlank, onFile, onLink, onClose }: Pro
       data-no-gesture
     >
       <div className="ts-title">페이지 추가</div>
+      {paste && (
+        <button role="menuitem" className="add-paste" onClick={paste.run}>
+          <ClipboardPaste size={20} /> {paste.label}
+        </button>
+      )}
       <button role="menuitem" onClick={() => onBlank("plain")}>
         <File size={20} /> 빈 페이지
       </button>

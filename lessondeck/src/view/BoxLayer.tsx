@@ -30,6 +30,8 @@ interface Props {
   onCopy: (id: string) => void;
   onCut: (id: string) => void;
   onDelete: (id: string) => void;
+  /** 텍스트 모드에서 빈 곳을 누름: 그 자리의 이미지 스티커를 골랐으면 true (글상자를 만들지 않음) */
+  onPickAt?: (clientX: number, clientY: number) => boolean;
 }
 
 const DRAG_SLOP = 5;
@@ -74,6 +76,7 @@ export function BoxLayer(props: Props) {
       props.onSelect(null);
       return;
     }
+    if (props.onPickAt?.(e.clientX, e.clientY)) return;
     const p = toRatio(e.clientX, e.clientY);
     // 누른 곳이 첫 줄 가운데쯤 오도록
     const lineRatio = (props.size.width * 0.024 * 1.3) / Math.max(1, props.size.height);

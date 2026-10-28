@@ -34,6 +34,8 @@ interface Props {
   webReloads?: Record<string, number>;
   /** 필기를 잠시 끈다 (텍스트 모드) */
   inkOff?: boolean;
+  /** 페이지 위, 필기층 아래에 그릴 것 (이미지 스티커). 페이지 크기를 받는다 */
+  pageUnderlay?: (size: PageSize) => ReactNode;
   /** 페이지 위, 필기층 위에 그릴 것 (텍스트 상자·링크). 페이지 크기를 받는다 */
   pageOverlay?: (size: PageSize) => ReactNode;
   /** 펜·손가락으로 길게 누르기, 마우스 오른쪽 클릭 → 메뉴 */
@@ -285,6 +287,7 @@ export function PageView(props: Props) {
         >
           <PageBackground page={page} doc={doc} size={size} zoom={renderZoom} prefetch={prefetch} onRendered={props.onPdfRendered} />
           <WebStage pages={alivePages} currentId={page.id} assets={doc.assets} size={size} reloads={props.webReloads} frameUrls={frameUrls} docId={doc.id} />
+          {props.pageUnderlay?.(size)}
           <InkCanvas
             key={props.lowLatency ? "ll" : "std"}
             page={size}

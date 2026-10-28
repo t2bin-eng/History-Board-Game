@@ -75,7 +75,7 @@ async function heicToJpeg(file: File): Promise<Blob> {
 }
 
 /** 이미지 파일 → 페이지 원본 (HEIC·TIFF 변환, 큰 사진 줄이기) */
-export async function prepareImage(file: File): Promise<PreparedMedia> {
+export async function prepareImage(file: File, maxSide = MAX_IMAGE_SIDE): Promise<PreparedMedia> {
   let blob: Blob = file;
   if (isHeic(file)) blob = await heicToJpeg(file);
   else if (isTiff(file)) blob = await tiffToPng(file);
@@ -91,8 +91,8 @@ export async function prepareImage(file: File): Promise<PreparedMedia> {
       // 크기 정보가 없는 SVG
       width = 1200;
       height = 900;
-    } else if (!keepAsIs && Math.max(width, height) > MAX_IMAGE_SIDE) {
-      const scale = MAX_IMAGE_SIDE / Math.max(width, height);
+    } else if (!keepAsIs && Math.max(width, height) > maxSide) {
+      const scale = maxSide / Math.max(width, height);
       const canvas = document.createElement("canvas");
       canvas.width = Math.round(width * scale);
       canvas.height = Math.round(height * scale);

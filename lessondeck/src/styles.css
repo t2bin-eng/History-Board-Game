@@ -2334,6 +2334,8 @@ button.doc-title:hover {
 }
 
 /* 미리보기를 찍는 순간: 웹 페이지 위에 떠 있는 것들을 잠깐 감춘다 (src/lib/framePreviews.ts) */
+.snapshotting .sticker-layer,
+.snapshotting .sticker-edit,
 .snapshotting .ink-layer,
 .snapshotting .box-layer,
 .snapshotting .web-mode-chip,
@@ -2947,5 +2949,376 @@ body:has(.select-bar) .toast {
   .home-tools {
     width: 100%;
   }
+}
+
+/* ── 이미지 스티커 (v0.14) ───────────────────────────── */
+/* 페이지 위, 필기 아래. 누름은 늘 지나간다 (고치기는 위의 .sticker-edit) */
+.sticker-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.sticker {
+  position: absolute;
+  transform-origin: center;
+}
+
+.sticker-clip {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.sticker-clip img {
+  position: absolute;
+  max-width: none;
+  user-select: none;
+}
+
+.sticker.missing {
+  display: grid;
+  place-items: center;
+  min-height: 24px;
+  border: 2px dashed rgba(120, 120, 120, 0.7);
+  background: rgba(240, 240, 240, 0.7);
+  color: #777;
+}
+
+/* 고른 스티커 고치기: 페이지 전체를 덮고 빈 곳을 누르면 고르기 끝 */
+.sticker-edit {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  touch-action: none;
+  cursor: default;
+}
+
+.sticker-frame {
+  position: absolute;
+  box-sizing: border-box;
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  cursor: move;
+  touch-action: none;
+}
+
+.sf-handle {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  background: #fff;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  touch-action: none;
+}
+
+/* 손가락으로 잡기 쉽게 누를 수 있는 곳을 넓힌다 */
+.sf-handle::before,
+.sf-rotate::before {
+  content: "";
+  position: absolute;
+  inset: -12px;
+}
+
+.sf-handle.nw {
+  left: -9px;
+  top: -9px;
+  cursor: nwse-resize;
+}
+
+.sf-handle.ne {
+  right: -9px;
+  top: -9px;
+  cursor: nesw-resize;
+}
+
+.sf-handle.sw {
+  left: -9px;
+  bottom: -9px;
+  cursor: nesw-resize;
+}
+
+.sf-handle.se {
+  right: -9px;
+  bottom: -9px;
+  cursor: nwse-resize;
+}
+
+.sf-stem {
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  width: 2px;
+  height: 22px;
+  margin-left: -1px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.sf-rotate {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 20px);
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-left: -13px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #062a33;
+  cursor: grab;
+  touch-action: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+/* 자르기: 그림 전체는 흐리게, 보일 부분은 그대로 */
+.crop-stage {
+  position: absolute;
+  transform-origin: center;
+}
+
+.crop-stage img {
+  position: absolute;
+  max-width: none;
+  user-select: none;
+  pointer-events: none;
+}
+
+.crop-full {
+  opacity: 0.35;
+  outline: 1px dashed rgba(0, 0, 0, 0.35);
+}
+
+.crop-window {
+  position: absolute;
+  outline: 2px solid var(--accent);
+  cursor: move;
+  touch-action: none;
+}
+
+/* 보일 부분만 선명하게 (손잡이는 가장자리 밖으로 나와 잡기 쉽게) */
+.crop-view {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.crop-handle {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  box-sizing: border-box;
+  background: #fff;
+  border: 2px solid var(--accent);
+  border-radius: 4px;
+  touch-action: none;
+  z-index: 1;
+}
+
+.crop-handle::before {
+  content: "";
+  position: absolute;
+  inset: -12px;
+}
+
+.crop-handle.n,
+.crop-handle.s {
+  left: 50%;
+  margin-left: -9px;
+  cursor: ns-resize;
+}
+
+.crop-handle.e,
+.crop-handle.w {
+  top: 50%;
+  margin-top: -9px;
+  cursor: ew-resize;
+}
+
+.crop-handle.n,
+.crop-handle.ne,
+.crop-handle.nw {
+  top: -9px;
+}
+
+.crop-handle.s,
+.crop-handle.se,
+.crop-handle.sw {
+  bottom: -9px;
+}
+
+.crop-handle.e,
+.crop-handle.ne,
+.crop-handle.se {
+  right: -9px;
+}
+
+.crop-handle.w,
+.crop-handle.nw,
+.crop-handle.sw {
+  left: -9px;
+}
+
+.crop-handle.ne,
+.crop-handle.sw {
+  cursor: nesw-resize;
+}
+
+.crop-handle.nw,
+.crop-handle.se {
+  cursor: nwse-resize;
+}
+
+.sticker-toolbar {
+  position: absolute;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  width: max-content;
+  padding: 4px;
+  background: rgba(24, 24, 24, 0.95);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  font-size: 14px;
+  z-index: 2;
+}
+
+.sticker-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--icon);
+  font-size: 14px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.sticker-toolbar button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.sticker-toolbar button.on {
+  background: var(--active-bg);
+  color: var(--accent);
+}
+
+.sticker-toolbar button.primary,
+.sticker-toolbar button.primary:hover {
+  padding: 0 12px;
+  background: var(--accent);
+  color: #062a33;
+  font-weight: 700;
+}
+
+.sticker-toolbar button:disabled {
+  color: var(--icon-disabled);
+  cursor: default;
+}
+
+.st-sep {
+  width: 1px;
+  height: 22px;
+  margin: 0 3px;
+  background: var(--panel-border);
+}
+
+/* 꾸미기 창 (도구 막대에 붙어서) */
+.sticker-style {
+  position: absolute;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 300px;
+  padding: 10px 12px;
+  background: rgba(24, 24, 24, 0.97);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+  color: var(--text);
+}
+
+.sticker-style.below {
+  top: calc(100% + 6px);
+}
+
+.sticker-style.above {
+  bottom: calc(100% + 6px);
+}
+
+.ss-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.ss-label {
+  width: 46px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.ss-row .ss-label + * {
+  margin-left: 0;
+}
+
+.ss-row button {
+  min-width: 34px;
+  height: 34px;
+}
+
+.ss-row .ss-label:not(:first-child) {
+  margin-left: 10px;
+}
+
+.ss-none,
+.ss-text {
+  padding: 0 10px !important;
+  font-size: 13px !important;
+}
+
+.ss-color span {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+}
+
+.ss-color.on span {
+  border-color: var(--accent);
+}
+
+.ss-row input[type="range"] {
+  flex: 1;
+  min-width: 140px;
+  accent-color: var(--accent);
+}
+
+.ss-value {
+  width: 40px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+/* 페이지 추가 메뉴의 "여기에 붙여넣기" */
+.add-menu button.add-paste {
+  color: var(--accent);
+  font-weight: 700;
 }
 

@@ -1,6 +1,12 @@
 import {
   Activity,
+  BringToFront,
   ChevronLeft,
+  Crop,
+  ImagePlus,
+  Move,
+  Paintbrush,
+  SendToBack,
   Copy,
   CopyPlus,
   EllipsisVertical,
@@ -9,6 +15,8 @@ import {
   Scissors,
   ClipboardPaste,
   Eraser,
+  Eye,
+  EyeOff,
   FilePlus2,
   Hand,
   Highlighter,
@@ -45,7 +53,19 @@ import {
   setBoxLink,
   type BoxClip,
 } from "./doc/boxes";
-import { getBoxClip, setBoxClip } from "./doc/boxClipboard";
+import { getClip, setClip, type AppClip, type PageClip, type StickerClip } from "./doc/clipboard";
+import { pageAssetIds, pdfPagesUsed, planPaste } from "./doc/pageClip";
+import {
+  addStickers,
+  copyStickers,
+  newSticker,
+  patchSticker,
+  placePasted,
+  removeSticker,
+  reorderSticker,
+  stickerHeight,
+  stickersOf,
+} from "./doc/stickers";
 import { normalizeUrl } from "./doc/html";
 import { loadHtmlAsset, loadPdfAsset, pagesForAsset } from "./doc/load";
 import { IMAGE_ACCEPT, isVideoFile, prepareImage, prepareVideo, VIDEO_ACCEPT } from "./doc/media";
@@ -65,6 +85,7 @@ import {
   type BoxLink,
   type DocState,
   type Page,
+  type Sticker,
   type TextBox,
 } from "./doc/types";
 import { parseYouTube } from "./doc/youtube";
@@ -76,6 +97,7 @@ import { onSideButtonChange } from "./lib/inputState";
 import { isNativeApp, showToast } from "./lib/platform";
 import { usePersistentFlag } from "./lib/usePersistentFlag";
 import { thumbnailFor } from "./pdf/thumbnails";
+import { collectAssets, importAssets } from "./store/assetTransfer";
 import { putAsset, saveInk, saveManifest, setThumb, toManifest, type OpenedDoc } from "./store/docStore";
 import { exportProject, PROJECT_EXT } from "./store/projectFile";
 import { AddPageMenu, type LinkKind } from "./ui/AddPageMenu";
@@ -91,20 +113,26 @@ import { ToolSettings } from "./ui/ToolSettings";
 import { BoxLayer } from "./view/BoxLayer";
 import type { LongPress } from "./view/PageView";
 import { PageView } from "./view/PageView";
+import { StickerEditor } from "./view/StickerEditor";
+import { stickerBox } from "./view/stickerGeometry";
+import { StickerLayer } from "./view/StickerLayer";
 import { fittedSize } from "./view/textMeasure";
 
 type Popover = { kind: "preset"; id: string; left: number; top: number } | { kind: "eraser"; left: number; top: number } | null;
-type FileTarget = { kind: "pdf" | "html" | "image" | "video"; index: number };
+type FileTarget = { kind: "pdf" | "html" | "image" | "video" | "sticker"; index: number; at?: { x: number; y: number } };
 
 const NO_STROKES: Stroke[] = [];
 /** 페이지 구성 저장을 이만큼 모았다가 한 번에 쓴다 */
 const MANIFEST_SAVE_DELAY = 400;
+/** 스티커 그림은 긴 변을 이만큼까지 줄여 보관한다 */
+const STICKER_MAX_SIDE = 2048;
 
 const ACCEPT: Record<FileTarget["kind"], string> = {
   pdf: "application/pdf,.pdf",
   html: "text/html,.html,.htm",
   image: IMAGE_ACCEPT,
   video: VIDEO_ACCEPT,
+  sticker: IMAGE_ACCEPT,
 };
 
 interface Props {
@@ -141,6 +169,8 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   const [pdfRenderMs, setPdfRenderMs] = useState<number | null>(null);
   const docRef = useRef(doc);
   docRef.current = doc;
+  const inkRef = useRef(ink);
+  inkRef.current = ink;
   const currentIdRef = useRef(currentId);
   currentIdRef.current = currentId;
 
@@ -175,12 +205,24 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   /** 길게 누르기·더보기 메뉴 */
   const [menu, setMenu] = useState<
     | { kind: "box"; x: number; y: number; boxId: string }
+    | { kind: "sticker"; x: number; y: number; stickerId: string }
     | { kind: "page"; x: number; y: number; at?: { x: number; y: number } }
+    | { kind: "pageItem"; x: number; y: number; pageId: string }
     | { kind: "more"; x: number; y: number }
     | null
   >(null);
-  /** 복사·잘라낸 상자 (문서를 바꿔도 남음) */
-  const [boxClip, setClipState] = useState<BoxClip | null>(getBoxClip);
+  /** 복사·잘라낸 글상자·스티커·페이지 (문서를 바꿔도 남음) */
+  const [clip, setClipState] = useState<AppClip | null>(getClip);
+  const boxClip = clip?.kind === "boxes" ? clip.clip : null;
+  /** 앱 안 클립보드에 담은 시각과, 앱을 떠난(다른 앱에서 복사했을 수 있는) 시각 */
+  const clipAt = useRef(0);
+  const blurAt = useRef(0);
+  /** 고른 이미지 스티커, 자르는 중인지, 끄는 중의 모양 */
+  const [selectedSticker, setSelectedSticker] = useState<string | null>(null);
+  const [cropping, setCropping] = useState(false);
+  const [liveSticker, setLiveSticker] = useState<Sticker | null>(null);
+  /** 메뉴의 "꾸미기"로 골랐을 때 꾸미기 창을 바로 연다 */
+  const [stickerStyleReq, setStickerStyleReq] = useState(0);
   /** 강의 모드: 도구 막대·페이지 바를 숨기고 페이지를 화면 가득 */
   const [lecture, setLecture] = useState(false);
   /** 강의 모드에 들어가며 브라우저 전체 화면을 켰는지 (나올 때 같이 끈다) */
@@ -191,7 +233,10 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   const [fileAccept, setFileAccept] = useState(ACCEPT.pdf);
 
   const activePreset = presets.find((p) => p.id === activePresetId) ?? presets[0];
-  const pageIndex = Math.max(0, doc.pages.findIndex((p) => p.id === currentId));
+  const pageIndex = Math.max(
+    0,
+    doc.pages.findIndex((p) => p.id === currentId),
+  );
   const currentPage: Page | undefined = doc.pages[pageIndex];
   const pageInk = currentPage ? ink[currentPage.id] : undefined;
   const strokes = pageInk?.present ?? NO_STROKES;
@@ -347,8 +392,8 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     }
   };
 
-  const pickFile = (kind: FileTarget["kind"], index: number) => {
-    fileTarget.current = { kind, index };
+  const pickFile = (kind: FileTarget["kind"], index: number, at?: { x: number; y: number }) => {
+    fileTarget.current = { kind, index, at };
     setFileAccept(ACCEPT[kind]);
     // accept가 바뀐 뒤에 열어야 파일 종류가 맞게 걸린다
     setTimeout(() => fileRef.current?.click());
@@ -357,8 +402,9 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   const onPickFiles = async (list: FileList | null) => {
     const files = list ? Array.from(list) : [];
     if (!files.length) return;
-    const { kind, index } = fileTarget.current;
-    if (kind === "pdf") await insertPdf(files[0], index);
+    const { kind, index, at } = fileTarget.current;
+    if (kind === "sticker") await insertStickers(files, at);
+    else if (kind === "pdf") await insertPdf(files[0], index);
     else if (kind === "html") await insertHtml(files[0], index);
     else await insertMedia(files, index);
   };
@@ -373,10 +419,12 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
 
   // 다른 페이지로 넘어가면 웹앱·동영상 페이지는 다시 조작 모드로
   useEffect(() => setWebMode("interact"), [currentId]);
-  // 페이지를 넘기면 고른 상자를 놓는다
+  // 페이지를 넘기면 고른 상자·스티커를 놓는다
   useEffect(() => {
     setSelectedBox(null);
     setEditingBox(null);
+    setSelectedSticker(null);
+    setCropping(false);
   }, [currentId]);
 
   const addBlank = (index: number, background: BlankBackground) => {
@@ -386,15 +434,16 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     addAssetAndPages(null, index, [{ id: newPageId(), kind: "blank", background, aspect }]);
   };
 
-  const deletePage = (id: string) => {
-    const index = doc.pages.findIndex((p) => p.id === id);
-    const page = doc.pages[index];
-    if (!page || doc.pages.length <= 1) return;
-    const nextId = pageAfterRemoval(doc.pages, id);
+  const deletePage = (id: string, message?: string) => {
+    const { pages } = docRef.current;
+    const index = pages.findIndex((p) => p.id === id);
+    const page = pages[index];
+    if (!page || pages.length <= 1) return;
+    const nextId = pageAfterRemoval(pages, id);
     setDoc((d) => ({ ...d, pages: removePage(d.pages, id) }));
-    if (currentId === id && nextId) setCurrentId(nextId);
+    if (currentIdRef.current === id && nextId) setCurrentId(nextId);
     // 필기 기록은 남겨 두었다가 되돌리기 때 그대로 살린다
-    showToast(`${index + 1}쪽을 삭제했습니다`, {
+    showToast(message ?? `${index + 1}쪽을 삭제했습니다`, {
       label: "되돌리기",
       run: () => {
         setDoc((d) => ({ ...d, pages: insertPages(d.pages, index, [page]) }));
@@ -407,10 +456,76 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     const index = doc.pages.findIndex((p) => p.id === id);
     const page = doc.pages[index];
     if (!page) return;
-    const copy: Page = { ...page, id: newPageId(), boxes: copyBoxes(page.boxes) };
+    const copy: Page = { ...page, id: newPageId(), boxes: copyBoxes(page.boxes), stickers: copyStickers(page.stickers) };
     setDoc((d) => ({ ...d, pages: insertPages(d.pages, index + 1, [copy]) }));
     setInk((b) => (b[id] ? { ...b, [copy.id]: { past: [], present: b[id].present, future: [] } } : b));
     setCurrentId(copy.id);
+  };
+
+  // ── 페이지 복사·잘라내기·붙여넣기 (다른 문서에도) ──────────
+  const putClip = (next: AppClip) => {
+    setClip(next);
+    setClipState(next);
+    clipAt.current = Date.now();
+  };
+
+  /** 페이지 + 필기 + 글상자·스티커 + 쓰는 원본을 담는다 */
+  const makePageClip = async (ids: string[]): Promise<PageClip> => {
+    const d = docRef.current;
+    const pages = ids.map((id) => d.pages.find((p) => p.id === id)).filter((p): p is Page => !!p);
+    const ink: PageClip["ink"] = {};
+    const labels: PageClip["labels"] = {};
+    for (const p of pages) {
+      const strokes = inkRef.current[p.id]?.present;
+      if (strokes?.length) ink[p.id] = strokes;
+      for (const b of p.boxes ?? []) if (b.link?.type === "page") labels[b.id] = boxLabel(b, d.pages, d.hidden);
+    }
+    const assets = await collectAssets(d.id, [...new Set(pages.flatMap(pageAssetIds))], d.assets);
+    return { docId: d.id, pages, ink, labels, assets };
+  };
+
+  const copyPage = async (id: string, cut = false) => {
+    const { pages } = docRef.current;
+    if (cut && pages.length <= 1) {
+      showToast("마지막 한 장은 잘라낼 수 없습니다. 복사를 쓰세요");
+      return;
+    }
+    const n = pages.findIndex((p) => p.id === id) + 1;
+    try {
+      putClip({ kind: "pages", clip: await makePageClip([id]) });
+    } catch (err) {
+      console.error(err);
+      showToast("페이지를 복사하지 못했습니다");
+      return;
+    }
+    if (cut) deletePage(id, `${n}쪽을 잘라냈습니다. 붙일 곳(다른 문서도)의 + 메뉴에서 붙여넣기`);
+    else showToast(`${n}쪽을 복사했습니다. 붙일 곳(다른 문서도)의 + 메뉴나 길게 누르기 메뉴에서 붙여넣기`);
+  };
+
+  /** 복사한 페이지를 index 자리에 붙인다. 다른 문서의 페이지면 원본도 이 문서에 넣는다 */
+  const pastePages = async (index: number) => {
+    const c = getClip();
+    if (c?.kind !== "pages") return;
+    const pc = c.clip;
+    const d0 = docRef.current;
+    const other = pc.docId !== d0.id;
+    if (other) showToast("페이지를 붙이는 중…");
+    try {
+      const imported = await importAssets(d0, pc.docId, pc.assets, other ? pdfPagesUsed(pc.pages) : {});
+      const plan = planPaste(pc, d0.id, docRef.current.pages, imported.assetMap, imported.pdfIndexMap);
+      setDoc((d) => ({ ...d, assets: { ...d.assets, ...imported.added }, pages: insertPages(d.pages, index, plan.pages) }));
+      if (Object.keys(plan.ink).length) {
+        setInk((b) => ({
+          ...b,
+          ...Object.fromEntries(Object.entries(plan.ink).map(([id, strokes]) => [id, { past: [], present: strokes, future: [] }])),
+        }));
+      }
+      if (plan.pages[0]) setCurrentId(plan.pages[0].id);
+      showToast(`${plan.pages.length}쪽을 붙였습니다${plan.unlinked ? " (다른 문서로 가던 링크는 글자만 남김)" : ""}`);
+    } catch (err) {
+      console.error(err);
+      showToast("페이지를 붙이지 못했습니다");
+    }
   };
 
   /** 링크로 페이지 추가. 유튜브 링크는 웹 주소 칸에 붙여넣어도 동영상 페이지로 만든다. 실패하면 안내 문구 */
@@ -471,6 +586,8 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     setTextMode(false);
     setSelectedBox(null);
     setEditingBox(null);
+    setSelectedSticker(null);
+    setCropping(false);
     setLecture(true);
     // APK는 처음부터 상태 표시줄 없는 전체 화면이다. 브라우저에서는 전체 화면도 켠다
     if (!isNativeApp && !document.fullscreenElement && document.documentElement.requestFullscreen) {
@@ -578,8 +695,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     const box = findBox(id);
     if (!box) return null;
     const clip = makeClip(docRef.current.id, [box], docRef.current.pages, docRef.current.hidden);
-    setBoxClip(clip);
-    setClipState(clip);
+    putClip({ kind: "boxes", clip });
     if (systemText) navigator.clipboard?.writeText(clip.labels.join("\n")).catch(() => {});
     return clip;
   };
@@ -622,6 +738,185 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     pasteClip(clip);
   };
 
+  // ── 이미지 스티커 ───────────────────────────────────────
+  const findSticker = (id: string) => {
+    for (const page of docRef.current.pages) {
+      const sticker = page.stickers?.find((s) => s.id === id);
+      if (sticker) return { page, sticker };
+    }
+    return null;
+  };
+
+  /** 스티커가 들어 있는 페이지를 찾아 목록을 바꾼다 */
+  const editSticker = (id: string, fn: (pages: Page[], pageId: string) => Page[]) =>
+    setDoc((d) => {
+      const owner = d.pages.find((p) => p.stickers?.some((s) => s.id === id));
+      return owner ? { ...d, pages: fn(d.pages, owner.id) } : d;
+    });
+
+  const selectSticker = (id: string, style = false) => {
+    setSelectedSticker(id);
+    setCropping(false);
+    setSelectedBox(null);
+    setEditingBox(null);
+    setPopover(null);
+    if (style) setStickerStyleReq((n) => n + 1);
+  };
+
+  const deselectSticker = () => {
+    setSelectedSticker(null);
+    setCropping(false);
+  };
+
+  /** 그림 파일을 지금 페이지에 스티커로 붙인다 (at: 가운데로 둘 자리, 페이지 대비) */
+  const insertStickers = async (files: File[], at?: { x: number; y: number }) => {
+    const pageId = currentIdRef.current;
+    let last: string | null = null;
+    let i = 0;
+    for (const file of files) {
+      if (isVideoFile(file)) {
+        showToast(`${file.name}: 그림 파일만 스티커로 붙일 수 있습니다`);
+        continue;
+      }
+      try {
+        if (/hei[cf]|tiff?$/i.test(file.name)) showToast(`${file.name} 변환 중…`);
+        const prep = await prepareImage(file, STICKER_MAX_SIDE);
+        const id = newId("img");
+        await putAsset(docRef.current.id, id, prep.blob);
+        const asset: Asset = {
+          kind: "image",
+          id,
+          name: prep.name,
+          mime: prep.mime,
+          width: prep.width,
+          height: prep.height,
+          url: URL.createObjectURL(prep.blob),
+        };
+        const page = docRef.current.pages.find((p) => p.id === pageId);
+        if (!page) return;
+        const sticker = newSticker(id, prep.width, prep.height, pageAspect(page, docRef.current.assets), at, i++);
+        setDoc((d) => ({ ...d, assets: { ...d.assets, [id]: asset }, pages: addStickers(d.pages, pageId, [sticker]) }));
+        last = sticker.id;
+      } catch (err) {
+        console.error(err);
+        showToast(`${file.name}: ${err instanceof Error ? err.message : "붙이지 못했습니다"}`);
+      }
+    }
+    if (last) {
+      selectSticker(last);
+      showToast("스티커를 붙였습니다. 끌어서 옮기고, 모서리로 크기, 위 손잡이로 돌리기");
+    }
+  };
+
+  const deleteSticker = (id: string, message = "스티커를 지웠습니다") => {
+    const found = findSticker(id);
+    if (!found) return;
+    const { page, sticker } = found;
+    const index = stickersOf(page).findIndex((s) => s.id === id);
+    editSticker(id, (pages, pageId) => removeSticker(pages, pageId, id));
+    deselectSticker();
+    showToast(message, {
+      label: "되돌리기",
+      run: () =>
+        setDoc((d) => ({
+          ...d,
+          pages: d.pages.map((p) => {
+            if (p.id !== page.id) return p;
+            const list = [...(p.stickers ?? [])];
+            list.splice(index, 0, sticker);
+            return { ...p, stickers: list };
+          }),
+        })),
+    });
+  };
+
+  const makeStickerClip = async (id: string): Promise<StickerClip | null> => {
+    const found = findSticker(id);
+    if (!found) return null;
+    const { page, sticker } = found;
+    const d = docRef.current;
+    const asset = mediaAsset(d.assets, sticker.asset);
+    const aspect = pageAspect(page, d.assets);
+    return {
+      docId: d.id,
+      stickers: [sticker],
+      assets: await collectAssets(d.id, [sticker.asset], d.assets),
+      heights: [asset ? stickerHeight(sticker, asset.width, asset.height, aspect) : sticker.w * aspect],
+    };
+  };
+
+  const copySticker = async (id: string, cut = false) => {
+    const c = await makeStickerClip(id);
+    if (!c) return;
+    putClip({ kind: "stickers", clip: c });
+    if (cut) deleteSticker(id, "스티커를 잘라냈습니다. 붙일 곳(다른 문서도)에서 붙여넣기");
+    else showToast("스티커를 복사했습니다. 붙일 곳(다른 문서도)을 길게 눌러 붙여넣기");
+  };
+
+  /** 스티커 붙이기: 다른 문서의 스티커면 그림 원본도 이 문서에 넣는다 */
+  const pasteStickers = async (c: StickerClip, at?: { x: number; y: number }) => {
+    const pageId = currentIdRef.current;
+    try {
+      const imported = await importAssets(docRef.current, c.docId, c.assets);
+      const page = docRef.current.pages.find((p) => p.id === pageId);
+      if (!page) return;
+      const placed = placePasted(stickersOf(page), c.stickers, imported.assetMap, at, c.heights);
+      setDoc((d) => ({ ...d, assets: { ...d.assets, ...imported.added }, pages: addStickers(d.pages, pageId, placed) }));
+      const last = placed.at(-1);
+      if (last) selectSticker(last.id);
+    } catch (err) {
+      console.error(err);
+      showToast("스티커를 붙이지 못했습니다");
+    }
+  };
+
+  const duplicateSticker = async (id: string) => {
+    const c = await makeStickerClip(id);
+    if (c) await pasteStickers(c);
+  };
+
+  /** 화면 좌표의 스티커 (위에 있는 것부터, 돌린 모양 그대로) */
+  const stickerAt = (clientX: number, clientY: number): string | null => {
+    const pageEl = document.querySelector<HTMLElement>(".page");
+    const page = docRef.current.pages.find((p) => p.id === currentIdRef.current);
+    if (!pageEl || !page?.stickers?.length) return null;
+    const r = pageEl.getBoundingClientRect();
+    const size = { width: pageEl.offsetWidth, height: pageEl.offsetHeight };
+    const px = ((clientX - r.left) * size.width) / Math.max(1, r.width);
+    const py = ((clientY - r.top) * size.height) / Math.max(1, r.height);
+    for (const s of [...page.stickers].reverse()) {
+      const b = stickerBox(s, mediaAsset(docRef.current.assets, s.asset), size);
+      const dx = px - b.cx;
+      const dy = py - b.cy;
+      const lx = dx * Math.cos(b.angle) + dy * Math.sin(b.angle);
+      const ly = -dx * Math.sin(b.angle) + dy * Math.cos(b.angle);
+      const pad = 6;
+      if (Math.abs(lx) <= b.width / 2 + pad && Math.abs(ly) <= b.height / 2 + pad) return s.id;
+    }
+    return null;
+  };
+
+  /** 그 자리의 스티커를 고른다 (텍스트 모드에서 누르기, 고른 스티커 밖 누르기). 골랐으면 true */
+  const pickStickerAt = (clientX: number, clientY: number): boolean => {
+    const id = stickerAt(clientX, clientY);
+    if (!id) return false;
+    if (id !== selectedSticker) selectSticker(id);
+    return true;
+  };
+
+  /** 클립보드에 든 것을 지금 페이지에 붙인다 (페이지면 지금 페이지 뒤에) */
+  const pasteAny = (at?: { x: number; y: number }) => {
+    const c = getClip();
+    if (c?.kind === "boxes") pasteClip(c.clip, at);
+    else if (c?.kind === "stickers") void pasteStickers(c.clip, at);
+    else if (c?.kind === "pages") void pastePages(docRef.current.pages.findIndex((p) => p.id === currentIdRef.current) + 1);
+  };
+
+  const pasteLabel = (here: boolean): string => {
+    if (clip?.kind === "pages") return `페이지 붙여넣기 (${clip.clip.pages.length}쪽, 이 페이지 뒤에)`;
+    if (clip?.kind === "stickers") return here ? "여기에 스티커 붙여넣기" : "스티커 붙여넣기";
+    return here ? "여기에 붙여넣기" : "상자 붙여넣기";
+  };
 
   // 길게 누르기(펜·손가락)·오른쪽 클릭: 글상자 위면 상자 메뉴, 아니면 페이지 메뉴
   const onLongPress = (p: LongPress) => {
@@ -638,6 +933,12 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     if (hit) {
       setEditingBox(null);
       setMenu({ kind: "box", ...menuAt, boxId: hit.dataset.boxId! });
+      return;
+    }
+    const sticker = stickerAt(p.clientX, p.clientY);
+    if (sticker) {
+      setEditingBox(null);
+      setMenu({ kind: "sticker", ...menuAt, stickerId: sticker });
       return;
     }
     const pageEl = document.querySelector(".page");
@@ -676,7 +977,11 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
                 setEditingBox(id);
               },
             },
-            { label: box.link ? "링크 바꾸기" : "링크 걸기", icon: <Link2 size={18} />, onSelect: () => setLinkDialog({ boxId: id, created: false }) },
+            {
+              label: box.link ? "링크 바꾸기" : "링크 걸기",
+              icon: <Link2 size={18} />,
+              onSelect: () => setLinkDialog({ boxId: id, created: false }),
+            },
             {
               label: "크기·위치 조절",
               icon: <Type size={18} />,
@@ -698,9 +1003,75 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
             },
             { label: "잘라내기", icon: <Scissors size={18} />, hint: "Ctrl+X", onSelect: () => cutBox(id) },
             { label: "복제", icon: <CopyPlus size={18} />, onSelect: () => duplicateBox(id) },
-            boxClip && { label: "붙여넣기", icon: <ClipboardPaste size={18} />, hint: "Ctrl+V", onSelect: () => pasteClip() },
+            clip && { label: pasteLabel(false), icon: <ClipboardPaste size={18} />, hint: "Ctrl+V", onSelect: () => pasteAny() },
           ],
           [{ label: "지우기", icon: <Trash2 size={18} />, danger: true, onSelect: () => deleteBox(id) }],
+        ],
+      };
+    }
+    if (menu.kind === "sticker") {
+      const id = menu.stickerId;
+      if (!findSticker(id)) return { groups: [] };
+      return {
+        title: "이미지 스티커",
+        groups: [
+          [
+            { label: "옮기기·크기·돌리기", icon: <Move size={18} />, onSelect: () => selectSticker(id) },
+            {
+              label: "자르기",
+              icon: <Crop size={18} />,
+              onSelect: () => {
+                selectSticker(id);
+                setCropping(true);
+              },
+            },
+            { label: "꾸미기 (모양·테두리·그림자·투명도)", icon: <Paintbrush size={18} />, onSelect: () => selectSticker(id, true) },
+          ],
+          [
+            { label: "복사", icon: <Copy size={18} />, hint: "Ctrl+C", onSelect: () => void copySticker(id) },
+            { label: "잘라내기", icon: <Scissors size={18} />, hint: "Ctrl+X", onSelect: () => void copySticker(id, true) },
+            { label: "복제", icon: <CopyPlus size={18} />, onSelect: () => void duplicateSticker(id) },
+            clip &&
+              clip.kind !== "pages" && { label: pasteLabel(false), icon: <ClipboardPaste size={18} />, hint: "Ctrl+V", onSelect: () => pasteAny() },
+          ],
+          [
+            {
+              label: "맨 앞으로",
+              icon: <BringToFront size={18} />,
+              onSelect: () => editSticker(id, (pages, pageId) => reorderSticker(pages, pageId, id, "front")),
+            },
+            {
+              label: "맨 뒤로",
+              icon: <SendToBack size={18} />,
+              onSelect: () => editSticker(id, (pages, pageId) => reorderSticker(pages, pageId, id, "back")),
+            },
+          ],
+          [{ label: "지우기", icon: <Trash2 size={18} />, danger: true, onSelect: () => deleteSticker(id) }],
+        ],
+      };
+    }
+    if (menu.kind === "pageItem") {
+      const id = menu.pageId;
+      const i = doc.pages.findIndex((p) => p.id === id);
+      if (i < 0) return { groups: [] };
+      const pc = clip?.kind === "pages" ? clip.clip : null;
+      const isHidden = doc.hidden.includes(id);
+      return {
+        title: `${i + 1}쪽`,
+        groups: [
+          [
+            { label: "복사", icon: <Copy size={18} />, onSelect: () => void copyPage(id) },
+            { label: "잘라내기", icon: <Scissors size={18} />, disabled: doc.pages.length <= 1, onSelect: () => void copyPage(id, true) },
+            { label: "복제", icon: <CopyPlus size={18} />, onSelect: () => duplicatePage(id) },
+          ],
+          [
+            pc && { label: `앞에 붙여넣기 (${pc.pages.length}쪽)`, icon: <ClipboardPaste size={18} />, onSelect: () => void pastePages(i) },
+            pc && { label: `뒤에 붙여넣기 (${pc.pages.length}쪽)`, icon: <ClipboardPaste size={18} />, onSelect: () => void pastePages(i + 1) },
+          ],
+          [
+            { label: isHidden ? "보이기" : "숨기기", icon: isHidden ? <Eye size={18} /> : <EyeOff size={18} />, onSelect: () => toggleHidden(id) },
+            { label: "삭제", icon: <Trash2 size={18} />, danger: true, disabled: doc.pages.length <= 1, onSelect: () => deletePage(id) },
+          ],
         ],
       };
     }
@@ -710,7 +1081,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
         title: currentPage ? `${pageNumberLabel(doc.pages, doc.hidden, currentPage.id) ?? ""} 페이지` : undefined,
         groups: [
           [
-            boxClip && { label: at ? "여기에 붙여넣기" : "붙여넣기", icon: <ClipboardPaste size={18} />, hint: "Ctrl+V", onSelect: () => pasteClip(boxClip, at) },
+            clip && { label: pasteLabel(!!at), icon: <ClipboardPaste size={18} />, hint: "Ctrl+V", onSelect: () => pasteAny(at) },
             at && {
               label: "여기에 글상자",
               icon: <Type size={18} />,
@@ -720,15 +1091,39 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
               },
             },
             at && { label: "여기에 링크", icon: <Link2 size={18} />, onSelect: () => createLinkBox(at) },
+            {
+              label: at ? "여기에 이미지 스티커" : "이미지 스티커",
+              icon: <ImagePlus size={18} />,
+              onSelect: () => pickFile("sticker", pageIndex, at),
+            },
           ],
           [
-            { label: "실행 취소", icon: <Undo2 size={18} />, hint: "Ctrl+Z", disabled: !pageInk?.past.length, onSelect: () => inkAction({ type: "undo" }) },
-            { label: "다시 실행", icon: <Redo2 size={18} />, hint: "Ctrl+Y", disabled: !pageInk?.future.length, onSelect: () => inkAction({ type: "redo" }) },
+            {
+              label: "실행 취소",
+              icon: <Undo2 size={18} />,
+              hint: "Ctrl+Z",
+              disabled: !pageInk?.past.length,
+              onSelect: () => inkAction({ type: "undo" }),
+            },
+            {
+              label: "다시 실행",
+              icon: <Redo2 size={18} />,
+              hint: "Ctrl+Y",
+              disabled: !pageInk?.future.length,
+              onSelect: () => inkAction({ type: "redo" }),
+            },
             strokes.length > 0 && { label: "이 페이지 필기 지우기", icon: <Eraser size={18} />, onSelect: () => inkAction({ type: "clear" }) },
           ],
           [
             { label: "뒤에 빈 페이지 추가", icon: <FilePlus2 size={18} />, onSelect: () => addBlank(pageIndex + 1, "plain") },
             currentPage && { label: "이 페이지 복제", icon: <CopyPlus size={18} />, onSelect: () => duplicatePage(currentPage.id) },
+            currentPage && { label: "이 페이지 복사", icon: <Copy size={18} />, onSelect: () => void copyPage(currentPage.id) },
+            currentPage && {
+              label: "이 페이지 잘라내기",
+              icon: <Scissors size={18} />,
+              disabled: doc.pages.length <= 1,
+              onSelect: () => void copyPage(currentPage.id, true),
+            },
             isWebPage(currentPage) && { label: "페이지 새로고침", icon: <RotateCw size={18} />, onSelect: reloadWebPage },
           ],
           [
@@ -872,40 +1267,81 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   const closePopover = useCallback(() => setPopover(null), []);
   const closeAddMenu = useCallback(() => setAddMenu(null), []);
 
-  // PC 키보드: 고른 상자 Ctrl+C·Ctrl+X, 어디서든 Ctrl+V (글 입력 중에는 평소대로)
-  const clipRef = useRef({ copyBox, cutBox, pasteClip, pasteText, selectedBox, editingBox, boxClip });
-  clipRef.current = { copyBox, cutBox, pasteClip, pasteText, selectedBox, editingBox, boxClip };
+  // PC 키보드: 고른 상자·스티커 Ctrl+C·Ctrl+X, 어디서든 Ctrl+V (글 입력 중에는 평소대로)
+  const clipRef = useRef({
+    copyBox,
+    cutBox,
+    pasteClip,
+    pasteText,
+    pasteAny,
+    copySticker,
+    insertStickers,
+    selectedBox,
+    editingBox,
+    selectedSticker,
+    clip,
+  });
+  clipRef.current = { copyBox, cutBox, pasteClip, pasteText, pasteAny, copySticker, insertStickers, selectedBox, editingBox, selectedSticker, clip };
   useEffect(() => {
     const typing = (e: Event) => !!(e.target as Element)?.closest?.("input, textarea, [contenteditable]");
     const onCopyCut = (e: ClipboardEvent) => {
       const c = clipRef.current;
-      if (typing(e) || !c.selectedBox || c.editingBox || window.getSelection()?.toString()) return;
-      const clip = e.type === "cut" ? (c.cutBox(c.selectedBox, false), getBoxClip()) : c.copyBox(c.selectedBox, false);
-      if (!clip) return;
-      e.clipboardData?.setData("text/plain", clip.labels.join("\n"));
+      if (typing(e) || c.editingBox || window.getSelection()?.toString()) return;
+      if (c.selectedSticker) {
+        // 시스템 클립보드는 비워 둔다 (붙일 때 예전에 복사한 글이 대신 붙지 않게)
+        void c.copySticker(c.selectedSticker, e.type === "cut");
+        e.clipboardData?.setData("text/plain", "");
+        e.preventDefault();
+        return;
+      }
+      if (!c.selectedBox) return;
+      if (e.type === "cut") c.cutBox(c.selectedBox, false);
+      else c.copyBox(c.selectedBox, false);
+      const now = getClip();
+      if (now?.kind !== "boxes") return;
+      e.clipboardData?.setData("text/plain", now.clip.labels.join("\n"));
       e.preventDefault();
     };
     const onPaste = (e: ClipboardEvent) => {
       if (typing(e)) return;
       const c = clipRef.current;
+      // 복사한 그림(스크린샷 등) → 스티커
+      const images = Array.from(e.clipboardData?.files ?? []).filter((f) => f.type.startsWith("image/"));
+      if (images.length) {
+        void c.insertStickers(images);
+        e.preventDefault();
+        return;
+      }
       const text = e.clipboardData?.getData("text/plain") ?? "";
-      // 시스템 클립보드 글이 마지막으로 복사한 상자 글과 같으면 상자(링크·모양 그대로)를, 아니면 그 글을 붙인다
-      if (c.boxClip && (!text || text === c.boxClip.labels.join("\n"))) c.pasteClip();
-      else if (text.trim()) c.pasteText(text);
+      const app = c.clip;
+      if (app?.kind === "boxes") {
+        // 시스템 클립보드 글이 마지막으로 복사한 상자 글과 같으면 상자(링크·모양 그대로)를, 아니면 그 글을 붙인다
+        if (!text || text === app.clip.labels.join("\n")) c.pasteClip();
+        else if (text.trim()) c.pasteText(text);
+        else return;
+      } else if (app && (!text.trim() || blurAt.current < clipAt.current)) {
+        // 스티커·페이지: 그 뒤에 다른 앱에서 글을 복사해 온 게 아니면 앱 안 클립보드를
+        c.pasteAny();
+      } else if (text.trim()) c.pasteText(text);
       else return;
       e.preventDefault();
     };
+    const onBlur = () => (blurAt.current = Date.now());
     document.addEventListener("copy", onCopyCut);
     document.addEventListener("cut", onCopyCut);
     document.addEventListener("paste", onPaste);
+    window.addEventListener("blur", onBlur);
     return () => {
       document.removeEventListener("copy", onCopyCut);
       document.removeEventListener("cut", onCopyCut);
       document.removeEventListener("paste", onPaste);
+      window.removeEventListener("blur", onBlur);
     };
   }, []);
 
   // PC에서 시험할 때 쓰는 단축키
+  const stickerKeys = useRef({ selectedSticker, cropping, deleteSticker, deselectSticker });
+  stickerKeys.current = { selectedSticker, cropping, deleteSticker, deselectSticker };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // 주소 입력 중에는 단축키를 쓰지 않는다
@@ -917,6 +1353,12 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
       } else if (mod && e.key.toLowerCase() === "y") {
         e.preventDefault();
         inkAction({ type: "redo" });
+      } else if ((e.key === "Delete" || e.key === "Backspace") && stickerKeys.current.selectedSticker && !stickerKeys.current.cropping) {
+        e.preventDefault();
+        stickerKeys.current.deleteSticker(stickerKeys.current.selectedSticker);
+      } else if (e.key === "Escape" && stickerKeys.current.selectedSticker) {
+        if (stickerKeys.current.cropping) setCropping(false);
+        else stickerKeys.current.deselectSticker();
       } else if ((e.key === "Delete" || e.key === "Backspace") && selectedBox && !editingBox) {
         e.preventDefault();
         deleteBox(selectedBox);
@@ -1044,8 +1486,11 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
         <IconButton label="링크 만들기" disabled={!currentPage} onClick={() => createLinkBox()}>
           <Link2 size={23} />
         </IconButton>
-        {boxClip && (
-          <IconButton label="상자 붙여넣기" disabled={!currentPage} onClick={() => pasteClip()}>
+        <IconButton label="이미지 스티커" disabled={!currentPage} onClick={() => pickFile("sticker", pageIndex)}>
+          <ImagePlus size={23} />
+        </IconButton>
+        {clip && (
+          <IconButton label={pasteLabel(false)} disabled={!currentPage} onClick={() => pasteAny()}>
             <ClipboardPaste size={22} />
           </IconButton>
         )}
@@ -1077,7 +1522,21 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
         )}
       </nav>
 
-      <div className="workspace">
+      <div
+        className="workspace"
+        onDragOver={(e) => {
+          if (e.dataTransfer.types.includes("Files")) e.preventDefault();
+        }}
+        onDrop={(e) => {
+          // PC: 그림 파일을 페이지에 끌어 놓으면 놓은 자리에 스티커로
+          const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith("image/") || /\.(hei[cf]|tiff?)$/i.test(f.name));
+          if (!files.length || !currentPage) return;
+          e.preventDefault();
+          const r = document.querySelector(".page")?.getBoundingClientRect();
+          const inside = r && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+          void insertStickers(files, inside ? { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height } : undefined);
+        }}
+      >
         {pagePanelOpen && !lecture && doc.pages.length > 0 && (
           <PagePanel
             doc={doc}
@@ -1091,6 +1550,10 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
             onDelete={deletePage}
             onToggleHidden={toggleHidden}
             onCycleAspect={cycleAspect}
+            onPageMenu={(id, x, y) => {
+              setPopover(null);
+              setMenu({ kind: "pageItem", x, y, pageId: id });
+            }}
             onClose={() => setPagePanelOpen(false)}
           />
         )}
@@ -1110,7 +1573,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
           onNavigate={goTo}
           onPdfRendered={setPdfRenderMs}
           lecture={lecture}
-          inkOff={textMode}
+          inkOff={textMode || !!selectedSticker}
           webReloads={webReloads}
           onLongPress={onLongPress}
           penLongPress={!erasing}
@@ -1118,43 +1581,76 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
             setWebMode("interact");
             showToast("조작 모드로 바꿨습니다. 웹 페이지를 다시 눌러 주세요 (S펜은 판서)");
           }}
+          pageUnderlay={(size) =>
+            currentPage && (
+              <StickerLayer page={currentPage} assets={doc.assets} size={size} live={liveSticker} hiddenId={cropping ? selectedSticker : null} />
+            )
+          }
           pageOverlay={(size) =>
             currentPage && (
-              <BoxLayer
-                page={currentPage}
-                pages={doc.pages}
-                hidden={doc.hidden}
-                size={size}
-                editMode={textMode}
-                selectedId={selectedBox}
-                editingId={editingBox}
-                onCreate={createBox}
-                onSelect={(id) => {
-                  setSelectedBox(id);
-                  if (!id) setEditingBox(null);
-                }}
-                onStartEdit={(id) => {
-                  setSelectedBox(id);
-                  setEditingBox(id);
-                }}
-                onText={(id, text) => editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { text }))}
-                onEndEdit={endEdit}
-                onMove={(id, x, y) => editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { x, y }))}
-                onFollow={followLink}
-                onLink={(id) => setLinkDialog({ boxId: id, created: false })}
-                onResize={resizeBox}
-                onBoxSize={(id, w, h, size) => editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { w, h, size }))}
-                onColor={(id, color) => {
-                  setTextColor(color);
-                  editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { color }));
-                }}
-                onCopy={(id) => {
-                  copyBox(id);
-                  showToast("상자를 복사했습니다. 붙일 곳에서 붙여넣기");
-                }}
-                onCut={(id) => cutBox(id)}
-                onDelete={(id) => deleteBox(id)}
-              />
+              <>
+                <BoxLayer
+                  page={currentPage}
+                  pages={doc.pages}
+                  hidden={doc.hidden}
+                  size={size}
+                  editMode={textMode}
+                  selectedId={selectedBox}
+                  editingId={editingBox}
+                  onCreate={createBox}
+                  onSelect={(id) => {
+                    setSelectedBox(id);
+                    if (!id) setEditingBox(null);
+                  }}
+                  onStartEdit={(id) => {
+                    setSelectedBox(id);
+                    setEditingBox(id);
+                  }}
+                  onText={(id, text) => editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { text }))}
+                  onEndEdit={endEdit}
+                  onMove={(id, x, y) => editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { x, y }))}
+                  onFollow={followLink}
+                  onLink={(id) => setLinkDialog({ boxId: id, created: false })}
+                  onResize={resizeBox}
+                  onBoxSize={(id, w, h, size) => editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { w, h, size }))}
+                  onColor={(id, color) => {
+                    setTextColor(color);
+                    editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { color }));
+                  }}
+                  onCopy={(id) => {
+                    copyBox(id);
+                    showToast("상자를 복사했습니다. 붙일 곳에서 붙여넣기");
+                  }}
+                  onCut={(id) => cutBox(id)}
+                  onDelete={(id) => deleteBox(id)}
+                  onPickAt={pickStickerAt}
+                />
+                {(() => {
+                  const sticker = stickersOf(currentPage).find((s) => s.id === selectedSticker);
+                  if (!sticker) return null;
+                  const id = sticker.id;
+                  return (
+                    <StickerEditor
+                      key={id}
+                      sticker={sticker}
+                      asset={mediaAsset(doc.assets, sticker.asset)}
+                      size={size}
+                      cropping={cropping}
+                      openStyle={stickerStyleReq}
+                      onLive={setLiveSticker}
+                      onChange={(patch) => editSticker(id, (pages, pageId) => patchSticker(pages, pageId, id, patch))}
+                      onCropMode={setCropping}
+                      onPickAt={pickStickerAt}
+                      onDeselect={deselectSticker}
+                      onCopy={() => void copySticker(id)}
+                      onCut={() => void copySticker(id, true)}
+                      onDuplicate={() => void duplicateSticker(id)}
+                      onDelete={() => deleteSticker(id)}
+                      onOrder={(to) => editSticker(id, (pages, pageId) => reorderSticker(pages, pageId, id, to))}
+                    />
+                  );
+                })()}
+              </>
             )
           }
           navExtra={
@@ -1224,12 +1720,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
           )}
 
           {debugOpen && !lecture && (
-            <DebugPanel
-              lowLatency={lowLatency}
-              onLowLatency={setLowLatency}
-              pdfRenderMs={pdfRenderMs}
-              onClose={() => setDebugOpen(false)}
-            />
+            <DebugPanel lowLatency={lowLatency} onLowLatency={setLowLatency} pdfRenderMs={pdfRenderMs} onClose={() => setDebugOpen(false)} />
           )}
         </PageView>
       </div>
@@ -1256,9 +1747,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
           onClose={closePopover}
         />
       )}
-      {menu && (
-        <ContextMenu x={menu.x} y={menu.y} {...menuGroups()} onClose={() => setMenu(null)} />
-      )}
+      {menu && <ContextMenu x={menu.x} y={menu.y} {...menuGroups()} onClose={() => setMenu(null)} />}
       {linkDialog && currentPage && (
         <LinkDialog
           pages={doc.pages}
@@ -1288,6 +1777,17 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
             if (!error) setAddMenu(null);
             return error;
           }}
+          paste={
+            clip?.kind === "pages"
+              ? {
+                  label: `여기에 붙여넣기 (복사한 ${clip.clip.pages.length}쪽)`,
+                  run: () => {
+                    void pastePages(addMenu.index);
+                    setAddMenu(null);
+                  },
+                }
+              : undefined
+          }
           onClose={closeAddMenu}
         />
       )}

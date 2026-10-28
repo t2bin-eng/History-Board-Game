@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Copy, Eye, EyeOff, Plus, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, Ellipsis, Eye, EyeOff, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { isWebPage, type DocState } from "../doc/types";
 import type { InkBook } from "../ink/history";
@@ -20,6 +20,8 @@ interface Props {
   onToggleHidden: (id: string) => void;
   /** HTML·URL 페이지 화면 비율 바꾸기 (16:9 → 4:3 → A4) */
   onCycleAspect: (id: string) => void;
+  /** 페이지 메뉴 (복사·잘라내기·붙여넣기 등): ⋯ 단추, PC 오른쪽 클릭 */
+  onPageMenu: (id: string, x: number, y: number) => void;
   onClose: () => void;
 }
 
@@ -56,6 +58,7 @@ export function PagePanel({
   onDelete,
   onToggleHidden,
   onCycleAspect,
+  onPageMenu,
   onClose,
 }: Props) {
   const listRef = useRef<HTMLDivElement>(null);
@@ -201,7 +204,11 @@ export function PagePanel({
                   aria-current={current}
                   title="길게 눌러 끌면 순서를 바꿉니다"
                   onPointerDown={(e) => onThumbDown(e, page.id)}
-                  onContextMenu={(e) => e.preventDefault()}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    // 손가락 길게 누르기는 순서 바꾸기(끌기)라서 메뉴는 마우스 오른쪽 클릭만
+                    if (((e.nativeEvent as PointerEvent).pointerType || "mouse") === "mouse") onPageMenu(page.id, e.clientX, e.clientY);
+                  }}
                   onClick={() => {
                     if (!suppressClick.current) onSelect(page.id);
                   }}
@@ -249,6 +256,16 @@ export function PagePanel({
                         {page.aspect}
                       </button>
                     )}
+                    <button
+                      aria-label="페이지 메뉴"
+                      title="복사·잘라내기·붙여넣기"
+                      onClick={(e) => {
+                        const r = e.currentTarget.getBoundingClientRect();
+                        onPageMenu(page.id, r.right + 6, r.top);
+                      }}
+                    >
+                      <Ellipsis size={16} />
+                    </button>
                   </div>
                 )}
               </div>

@@ -210,7 +210,8 @@ export async function openDoc(docId: string): Promise<OpenedDoc | null> {
   };
 }
 
-async function toRuntimeAsset(id: string, meta: AssetMeta, blob: Blob): Promise<Asset> {
+/** 저장된 원본(Blob)을 화면용 원본으로 (PDF 열기, 이미지·동영상 URL 만들기) */
+export async function toRuntimeAsset(id: string, meta: AssetMeta, blob: Blob): Promise<Asset> {
   switch (meta.type) {
     case "pdf": {
       const doc = await openPdf(await blob.arrayBuffer());

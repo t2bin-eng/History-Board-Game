@@ -9,6 +9,7 @@ import { youtubeThumbUrl } from "../doc/youtube";
 import { thumbnailFor } from "../pdf/thumbnails";
 import { usePreview } from "../lib/framePreviews";
 import { paintBoxes } from "../view/boxPaint";
+import { paintStickers } from "../view/stickerPaint";
 
 interface Props {
   page: Page;
@@ -63,17 +64,26 @@ export const PageThumb = memo(function PageThumb({ page, doc, strokes, width, li
     const ctx = canvas.getContext("2d")!;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const size = { width, height };
-    for (const s of strokes) {
-      const d = strokeToSvgPath(s, size);
-      if (!d) continue;
-      ctx.globalAlpha = s.tool === "highlighter" ? HIGHLIGHTER_ALPHA : 1;
-      ctx.fillStyle = s.color;
-      ctx.fill(new Path2D(d));
-    }
-    ctx.globalAlpha = 1;
-    // 화면처럼 텍스트 상자는 필기 위에
-    paintBoxes(ctx, page, doc.pages, doc.hidden, size);
-  }, [strokes, width, height, page, doc.pages, doc.hidden]);
+    let cancelled = false;
+    // 화면과 같은 순서: 스티커(그림을 불러온 뒤) → 필기 → 텍스트 상자
+    paintStickers(ctx, page, doc.assets, size, () => !cancelled)
+      .catch(() => undefined)
+      .then(() => {
+        if (cancelled) return;
+        for (const s of strokes) {
+          const d = strokeToSvgPath(s, size);
+          if (!d) continue;
+          ctx.globalAlpha = s.tool === "highlighter" ? HIGHLIGHTER_ALPHA : 1;
+          ctx.fillStyle = s.color;
+          ctx.fill(new Path2D(d));
+        }
+        ctx.globalAlpha = 1;
+        paintBoxes(ctx, page, doc.pages, doc.hidden, size);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [strokes, width, height, page, doc.pages, doc.hidden, doc.assets]);
 
   const grid = page.kind === "blank" && page.background === "grid";
   return (

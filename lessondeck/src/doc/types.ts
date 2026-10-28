@@ -75,6 +75,36 @@ export interface TextBox {
   backOf?: string;
 }
 
+/** 이미지 스티커 꾸미기: 모양 */
+export type StickerShape = "rect" | "rounded" | "circle";
+
+/**
+ * 페이지 위 이미지 스티커 (SPEC 5장). 위치·폭은 페이지 대비 0~1, 높이는 보이는 부분의 그림 비율로 정해진다.
+ * 배열 뒤에 있을수록 위에 그린다.
+ */
+export interface Sticker {
+  id: string;
+  /** 이 문서의 image 원본 id */
+  asset: string;
+  /** 돌리기 전 틀의 왼쪽 위 */
+  x: number;
+  y: number;
+  /** 틀 폭 (페이지 가로 대비) */
+  w: number;
+  /** 가운데를 축으로 시계 방향 (도) */
+  rotation?: number;
+  /** 그림에서 보일 부분 (그림 대비 0~1). 없으면 전체 */
+  crop?: { x: number; y: number; w: number; h: number };
+  shape?: StickerShape;
+  /** 테두리. 굵기는 "페이지 가로 = 1000" 단위 */
+  border?: { color: string; width: number };
+  shadow?: boolean;
+  /** 0.2~1 (기본 1) */
+  opacity?: number;
+  flipX?: boolean;
+  flipY?: boolean;
+}
+
 export type Page = (
   | { id: string; kind: "pdf"; asset: string; pageIndex: number }
   | { id: string; kind: "blank"; background: BlankBackground; aspect: number }
@@ -86,6 +116,8 @@ export type Page = (
 ) & {
   /** 텍스트 상자·하이퍼링크 */
   boxes?: TextBox[];
+  /** 이미지 스티커 */
+  stickers?: Sticker[];
 };
 
 /** iframe으로 띄우는 페이지 (화면 비율을 고를 수 있음) */
