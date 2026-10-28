@@ -8,6 +8,8 @@ const PALM_GUARD_MS = 800;
 
 let lastPenTime = -Infinity;
 let sideButton = false;
+/** 안드로이드 앱이 S펜 버튼 상태를 직접 알려 주는지 (MainActivity: 버튼을 누른 채 쓰는 획은 지우개 끝 입력으로 온다) */
+let nativeSide = false;
 const touches = new Set<number>();
 const listeners = new Set<(down: boolean) => void>();
 
@@ -50,6 +52,11 @@ function track(e: PointerEvent) {
   }
   if (e.pointerType === "pen") lastPenTime = performance.now();
   if (e.pointerType !== "pen" && e.pointerType !== "mouse") return;
+  // 앱이 버튼 상태를 알려 주면 그것을 따른다 (펜을 띄운 채 누를 때는 웹 이벤트에 버튼이 실리지 않음)
+  if (nativeSide && e.pointerType === "pen") {
+    if (hasSideButton(e)) setSide(true);
+    return;
+  }
   setSide(hasSideButton(e));
 }
 
@@ -69,4 +76,8 @@ export function installInputTracking() {
   }
   window.addEventListener("pointerout", leave, opts);
   window.addEventListener("blur", () => setSide(false));
+  window.addEventListener("lessondecksidebutton", (e) => {
+    nativeSide = true;
+    setSide(!!(e as Event & { down?: boolean }).down);
+  });
 }

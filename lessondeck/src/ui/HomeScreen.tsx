@@ -304,7 +304,7 @@ export function HomeScreen({ onOpen, headerExtra }: Props) {
       return [
         [
           { label: "열기", icon: <FolderOpen size={18} />, onSelect: () => go(folder.id) },
-          { label: "이름·색 바꾸기", icon: <Pencil size={18} />, onSelect: () => setDialog({ type: "editFolder", folder }) },
+          { label: "이름·색", icon: <Pencil size={18} />, onSelect: () => setDialog({ type: "editFolder", folder }) },
           { label: "옮기기", icon: <FolderInput size={18} />, onSelect: () => setDialog({ type: "move", docIds: [], folderIds: [folder.id] }) },
           select,
         ],
@@ -317,13 +317,13 @@ export function HomeScreen({ onOpen, headerExtra }: Props) {
       [
         { label: "열기", icon: <FileText size={18} />, onSelect: () => onOpen(doc.id) },
         searching && {
-          label: "들어 있는 폴더 열기",
+          label: "폴더 열기",
           icon: <FolderOpen size={18} />,
           onSelect: () => go(docFolderOf.get(doc.id) ?? null),
         },
         { label: "이름 바꾸기", icon: <Pencil size={18} />, onSelect: () => setDialog({ type: "renameDoc", doc }) },
-        { label: "폴더로 옮기기", icon: <FolderInput size={18} />, onSelect: () => setDialog({ type: "move", docIds: [doc.id], folderIds: [] }) },
-        { label: "파일로 내보내기", icon: <Share2 size={18} />, onSelect: () => onExport(doc) },
+        { label: "옮기기", icon: <FolderInput size={18} />, onSelect: () => setDialog({ type: "move", docIds: [doc.id], folderIds: [] }) },
+        { label: "내보내기", icon: <Share2 size={18} />, onSelect: () => onExport(doc) },
         select,
       ],
       [{ label: "삭제", icon: <Trash2 size={18} />, danger: true, onSelect: () => askDelete([item]) }],
@@ -500,7 +500,7 @@ export function HomeScreen({ onOpen, headerExtra }: Props) {
               {searching
                 ? `‘${query.trim()}’와(과) 맞는 문서·폴더가 없습니다.`
                 : folderId
-                  ? "이 폴더는 비어 있습니다. 위의 카드로 새 문서를 만들거나, 다른 문서를 길게 눌러 이 폴더로 끌어 오거나, 문서 메뉴(⋮)의 ‘폴더로 옮기기’를 쓰세요."
+                  ? "이 폴더는 비어 있습니다. 위의 카드로 새 문서를 만들거나, 다른 문서를 길게 눌러 이 폴더로 끌어 오거나, 문서 메뉴(⋮)의 ‘옮기기’를 쓰세요."
                   : "아직 문서가 없습니다. 위에서 PDF로 새 수업을 만들거나, 구글 드라이브를 연결해 다른 기기의 문서를 받아 오세요."}
             </p>
           )}

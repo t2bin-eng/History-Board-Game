@@ -3333,3 +3333,60 @@ body:has(.select-bar) .toast {
   font-weight: 700;
 }
 
+/* 펜 설정 창: 직선 보정·필기 보정 (v0.16) */
+.ts-toggles {
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--panel-border);
+}
+
+.ts-toggle {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 120px;
+  padding: 8px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ts-toggle.on {
+  border-color: var(--accent);
+  background: rgba(63, 195, 230, 0.12);
+}
+
+.ts-check {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--icon-muted);
+  border-radius: 5px;
+  color: #062a33;
+}
+
+.ts-toggle.on .ts-check {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.ts-toggle-text {
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ts-toggle-text small {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+

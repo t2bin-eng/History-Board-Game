@@ -21,6 +21,9 @@ interface Props {
   eraserSize: number;
   fingerDraw: boolean;
   lowLatency: boolean;
+  /** 직선 보정·필기 보정 (InkCanvas) */
+  straighten?: boolean;
+  beautify?: boolean;
   /** HTML·URL 페이지의 판서/조작 모드 (SPEC F6). 조작 모드면 터치·펜이 웹앱으로 간다. */
   webMode: "interact" | "ink";
   onCommit: (strokes: Stroke[]) => void;
@@ -299,6 +302,8 @@ export function PageView(props: Props) {
             eraserSize={props.eraserSize}
             fingerDraw={props.fingerDraw}
             lowLatency={props.lowLatency}
+            straighten={props.straighten}
+            beautify={props.beautify}
             active={inkActive}
             onCommit={props.onCommit}
           />

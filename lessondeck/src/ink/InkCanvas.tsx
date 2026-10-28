@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { debugStats, recordPointer, recordRender } from "../lib/debugStore";
 import { activeTouchCount, hasSideButton, isSideButtonDown, onSideButtonChange, penRecentlyActive } from "../lib/inputState";
+import { averagePressure, beautifyStroke, linePoints, pathLengthPx } from "./beautify";
 import { strokeHitsCircle, strokeToSvgPath, unitsToPx, type PageSize } from "./geometry";
 import { HIGHLIGHTER_ALPHA } from "./palette";
 import type { InkPoint, Stroke, Tool } from "./types";
@@ -20,6 +21,10 @@ interface Props {
   lowLatency: boolean;
   /** false면 필기층을 통과시킨다 (HTML 페이지 조작 모드: 필기는 보이지만 터치·펜은 웹앱으로) */
   active: boolean;
+  /** 직선 보정: 긋다가 떼지 않고 멈추면 직선, 떼기 전까지 끝점 조절 */
+  straighten?: boolean;
+  /** 필기 보정: 펜 획을 뗄 때 반듯하게 다듬는다 */
+  beautify?: boolean;
   onCommit: (strokes: Stroke[]) => void;
 }
 
@@ -31,6 +36,10 @@ interface Gesture {
   stroke: Stroke | null;
   working: Stroke[];
   erased: boolean;
+  /** 직선 보정: 멈춘 자리(화면 px)와 타이머, 직선이 된 뒤의 시작점·필압 */
+  holdAt: { x: number; y: number };
+  holdTimer: number;
+  straight: { start: InkPoint; pressure: number } | null;
 }
 
 interface Box {
@@ -42,6 +51,9 @@ interface Box {
 
 /** 필기 캔버스 한 장의 픽셀 수 상한 (확대 시 메모리 보호) */
 const MAX_INK_PIXELS = 8_000_000;
+/** 직선 보정: 이만큼 멈추면 직선 (떨림은 HOLD_SLOP px까지 멈춘 것으로) */
+const HOLD_MS = 500;
+const HOLD_SLOP = 4;
 
 // 두 겹 캔버스: 아래는 확정된 획, 위는 지금 그리는 획.
 // 획이 진행되는 동안에는 위 캔버스만 다시 그리고, 펜을 떼면 아래 캔버스에 합성한다 (SPEC R1).
@@ -216,6 +228,9 @@ export function InkCanvas(props: Props) {
         stroke: null,
         working: renderedRef.current.slice(),
         erased: false,
+        holdAt: { x: e.clientX, y: e.clientY },
+        holdTimer: 0,
+        straight: null,
       };
       if (mode === "erase") {
         eraseAt([e], gesture);
@@ -232,6 +247,27 @@ export function InkCanvas(props: Props) {
         simulatePressure: e.pointerType !== "pen",
       };
       renderLive(gesture.stroke, []);
+      armHold(gesture);
+    };
+
+    // ── 직선 보정: 긋다가 멈추면 시작점부터 지금 자리까지 직선 ──
+    const armHold = (g: Gesture) => {
+      clearTimeout(g.holdTimer);
+      if (!propsRef.current.straighten || g.straight) return;
+      g.holdTimer = window.setTimeout(() => straighten(g), HOLD_MS);
+    };
+
+    const straighten = (g: Gesture) => {
+      const stroke = g.stroke;
+      if (gesture !== g || !stroke || g.straight) return;
+      const p = page();
+      // 짧은 획(점, 짧은 삐침)은 그대로
+      if (pathLengthPx(stroke.points, p) < Math.max(24, unitsToPx(stroke.width, p) * 4)) return;
+      const start = stroke.points[0];
+      g.straight = { start, pressure: averagePressure(stroke.points) };
+      stroke.points = linePoints(start, stroke.points[stroke.points.length - 1], g.straight.pressure, p);
+      navigator.vibrate?.(10);
+      renderLive(stroke, []);
     };
 
     const onDown = (e: PointerEvent) => {
@@ -300,6 +336,17 @@ export function InkCanvas(props: Props) {
         return;
       }
       const stroke = gesture.stroke!;
+      // 멈춘 자리에서 움직이면 다시 기다린다
+      if (Math.hypot(e.clientX - gesture.holdAt.x, e.clientY - gesture.holdAt.y) > HOLD_SLOP) {
+        gesture.holdAt = { x: e.clientX, y: e.clientY };
+        armHold(gesture);
+      }
+      if (gesture.straight) {
+        // 직선이 된 뒤: 떼기 전까지 끝점(각도·길이)이 따라온다
+        stroke.points = linePoints(gesture.straight.start, toPoint(e, gesture.rect), gesture.straight.pressure, page());
+        renderLive(stroke, []);
+        return;
+      }
       for (const ev of events) {
         const pt = toPoint(ev, gesture.rect, stroke.points[stroke.points.length - 1]);
         const last = stroke.points[stroke.points.length - 1];
@@ -316,6 +363,7 @@ export function InkCanvas(props: Props) {
       if (!gesture || e.pointerId !== gesture.pointerId) return;
       const g = gesture;
       gesture = null;
+      clearTimeout(g.holdTimer);
       clearLive();
       if (g.mode === "erase") {
         if (g.erased) propsRef.current.onCommit(g.working);
@@ -323,6 +371,10 @@ export function InkCanvas(props: Props) {
       }
       if (cancelled && g.pointerType === "touch") return;
       const stroke = g.stroke!;
+      // 필기 보정: 펜 획(형광펜·직선 제외)을 반듯하게
+      if (propsRef.current.beautify && !g.straight && stroke.tool === "pen") {
+        stroke.points = beautifyStroke(stroke.points, page(), unitsToPx(stroke.width, page()));
+      }
       const s = scale();
       const ctx = base.getContext("2d")!;
       ctx.setTransform(s, 0, 0, s, 0, 0);
@@ -334,6 +386,7 @@ export function InkCanvas(props: Props) {
     };
 
     const cancelGesture = () => {
+      if (gesture) clearTimeout(gesture.holdTimer);
       gesture = null;
       clearLive();
       redraw(base, renderedRef.current, page(), scale());
@@ -353,6 +406,7 @@ export function InkCanvas(props: Props) {
     // 길게 누르기(메뉴): 쓰던 점은 그리지 않는다. 지우던 중이면 지운 것은 그대로 둔다
     const onLongPress = () => {
       if (!gesture) return;
+      clearTimeout(gesture.holdTimer);
       ignored = gesture.pointerId;
       if (gesture.mode === "draw") cancelGesture();
       else {

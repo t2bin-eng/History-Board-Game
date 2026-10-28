@@ -27,6 +27,8 @@ import {
   PanelLeft,
   PenLine,
   Presentation,
+  Ruler,
+  Sparkles,
   Redo2,
   RotateCw,
   Share2,
@@ -198,6 +200,9 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
 
   const [fingerDraw, setFingerDraw] = usePersistentFlag("lessondeck.fingerDraw", false);
   const [lowLatency, setLowLatency] = usePersistentFlag("lessondeck.lowLatency", true);
+  /** 직선 보정(긋다 멈추면 직선)·필기 보정(뗄 때 글씨를 반듯하게) */
+  const [straighten, setStraighten] = usePersistentFlag("lessondeck.straighten", true);
+  const [beautify, setBeautify] = usePersistentFlag("lessondeck.beautify", true);
   const [debugOpen, setDebugOpen] = usePersistentFlag("lessondeck.debugOpen", false);
   const [pagePanelOpen, setPagePanelOpen] = usePersistentFlag("lessondeck.pagePanel", true);
   const [paletteOpen, setPaletteOpen] = usePersistentFlag("lessondeck.penPalette", true);
@@ -988,19 +993,8 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   };
 
   /** 메뉴 이름: 무엇을 붙일지 (기기 클립보드는 읽기 전에는 모르므로 "복사한 그림·링크·글") */
-  const pasteHereLabel = (here: boolean): string => (preferSystem() ? `${here ? "여기에 " : ""}붙여넣기 (복사한 그림·링크·글)` : pasteLabel(here));
-  const pastePageLabel = (where: string): string => {
-    const c = getClip();
-    if (!c || preferSystem()) return `${where}붙여넣기 (복사한 그림·링크·글 → 새 페이지)`;
-    if (c.kind === "pages") return `${where}붙여넣기 (복사한 ${c.clip.pages.length}쪽)`;
-    return `${where}붙여넣기 (${c.kind === "stickers" ? "스티커" : "글상자"} → 새 페이지)`;
-  };
-
-  const pasteLabel = (here: boolean): string => {
-    if (clip?.kind === "pages") return `페이지 붙여넣기 (${clip.clip.pages.length}쪽, 이 페이지 뒤에)`;
-    if (clip?.kind === "stickers") return here ? "여기에 스티커 붙여넣기" : "스티커 붙여넣기";
-    return here ? "여기에 붙여넣기" : "상자 붙여넣기";
-  };
+  /** 메뉴 이름은 짧게 (무엇을 붙일지는 붙이고 나서 보인다). 페이지 안에서 복사한 페이지는 지금 페이지 뒤에 */
+  const pasteHereLabel = (): string => (!preferSystem() && getClip()?.kind === "pages" ? "페이지 붙여넣기" : "붙여넣기");
 
   // 길게 누르기(펜·손가락)·오른쪽 클릭: 글상자 위면 상자 메뉴, 아니면 페이지 메뉴
   const onLongPress = (p: LongPress) => {
@@ -1053,7 +1047,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
                 onSelect: () => (box.link!.type === "url" ? openExternal(box.link!.url) : followLink(box.link!)),
               },
             {
-              label: "글자 고치기",
+              label: "글 고치기",
               icon: <Pencil size={18} />,
               onSelect: () => {
                 setTextMode(true);
@@ -1062,12 +1056,12 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
               },
             },
             {
-              label: box.link ? "링크 바꾸기" : "링크 걸기",
+              label: "링크",
               icon: <Link2 size={18} />,
               onSelect: () => setLinkDialog({ boxId: id, created: false }),
             },
             {
-              label: "크기·위치 조절",
+              label: "크기·위치",
               icon: <Type size={18} />,
               onSelect: () => {
                 setTextMode(true);
@@ -1087,7 +1081,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
             },
             { label: "잘라내기", icon: <Scissors size={18} />, hint: "Ctrl+X", onSelect: () => cutBox(id) },
             { label: "복제", icon: <CopyPlus size={18} />, onSelect: () => duplicateBox(id) },
-            { label: pasteHereLabel(false), icon: <ClipboardPaste size={18} />, hint: "Ctrl+V", onSelect: () => void pasteHere() },
+            { label: pasteHereLabel(), icon: <ClipboardPaste size={18} />, hint: "Ctrl+V", onSelect: () => void pasteHere() },
           ],
           [{ label: "지우기", icon: <Trash2 size={18} />, danger: true, onSelect: () => deleteBox(id) }],
         ],
@@ -1097,10 +1091,10 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
       const id = menu.stickerId;
       if (!findSticker(id)) return { groups: [] };
       return {
-        title: "이미지 스티커",
+        title: "스티커",
         groups: [
           [
-            { label: "옮기기·크기·돌리기", icon: <Move size={18} />, onSelect: () => selectSticker(id) },
+            { label: "크기·위치", icon: <Move size={18} />, onSelect: () => selectSticker(id) },
             {
               label: "자르기",
               icon: <Crop size={18} />,
@@ -1109,13 +1103,13 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
                 setCropping(true);
               },
             },
-            { label: "꾸미기 (모양·테두리·그림자·투명도)", icon: <Paintbrush size={18} />, onSelect: () => selectSticker(id, true) },
+            { label: "꾸미기", icon: <Paintbrush size={18} />, onSelect: () => selectSticker(id, true) },
           ],
           [
             { label: "복사", icon: <Copy size={18} />, hint: "Ctrl+C", onSelect: () => void copySticker(id) },
             { label: "잘라내기", icon: <Scissors size={18} />, hint: "Ctrl+X", onSelect: () => void copySticker(id, true) },
             { label: "복제", icon: <CopyPlus size={18} />, onSelect: () => void duplicateSticker(id) },
-            { label: pasteHereLabel(false), icon: <ClipboardPaste size={18} />, hint: "Ctrl+V", onSelect: () => void pasteHere() },
+            { label: pasteHereLabel(), icon: <ClipboardPaste size={18} />, hint: "Ctrl+V", onSelect: () => void pasteHere() },
           ],
           [
             {
@@ -1147,8 +1141,8 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
             { label: "복제", icon: <CopyPlus size={18} />, onSelect: () => duplicatePage(id) },
           ],
           [
-            { label: pastePageLabel("앞에 "), icon: <ClipboardPaste size={18} />, onSelect: () => void pasteAsNewPage(i) },
-            { label: pastePageLabel("뒤에 "), icon: <ClipboardPaste size={18} />, onSelect: () => void pasteAsNewPage(i + 1) },
+            { label: "앞에 붙여넣기", icon: <ClipboardPaste size={18} />, onSelect: () => void pasteAsNewPage(i) },
+            { label: "뒤에 붙여넣기", icon: <ClipboardPaste size={18} />, onSelect: () => void pasteAsNewPage(i + 1) },
           ],
           [
             { label: isHidden ? "보이기" : "숨기기", icon: isHidden ? <Eye size={18} /> : <EyeOff size={18} />, onSelect: () => toggleHidden(id) },
@@ -1160,21 +1154,21 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     if (menu.kind === "page") {
       const at = menu.at;
       return {
-        title: currentPage ? `${pageNumberLabel(doc.pages, doc.hidden, currentPage.id) ?? ""} 페이지` : undefined,
+        title: currentPage ? (pageNumberLabel(doc.pages, doc.hidden, currentPage.id) ?? undefined) : undefined,
         groups: [
           [
-            { label: pasteHereLabel(!!at), icon: <ClipboardPaste size={18} />, hint: "Ctrl+V", onSelect: () => void pasteHere(at) },
+            { label: pasteHereLabel(), icon: <ClipboardPaste size={18} />, hint: "Ctrl+V", onSelect: () => void pasteHere(at) },
             at && {
-              label: "여기에 글상자",
+              label: "글상자",
               icon: <Type size={18} />,
               onSelect: () => {
                 setTextMode(true);
                 createBox(at.x, at.y);
               },
             },
-            at && { label: "여기에 링크", icon: <Link2 size={18} />, onSelect: () => createLinkBox(at) },
+            at && { label: "링크", icon: <Link2 size={18} />, onSelect: () => createLinkBox(at) },
             {
-              label: at ? "여기에 이미지 스티커" : "이미지 스티커",
+              label: "이미지",
               icon: <ImagePlus size={18} />,
               onSelect: () => pickFile("sticker", pageIndex, at),
             },
@@ -1194,23 +1188,23 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
               disabled: !pageInk?.future.length,
               onSelect: () => inkAction({ type: "redo" }),
             },
-            strokes.length > 0 && { label: "이 페이지 필기 지우기", icon: <Eraser size={18} />, onSelect: () => inkAction({ type: "clear" }) },
+            strokes.length > 0 && { label: "필기 지우기", icon: <Eraser size={18} />, onSelect: () => inkAction({ type: "clear" }) },
           ],
           [
-            { label: "뒤에 빈 페이지 추가", icon: <FilePlus2 size={18} />, onSelect: () => addBlank(pageIndex + 1, "plain") },
-            currentPage && { label: "이 페이지 복제", icon: <CopyPlus size={18} />, onSelect: () => duplicatePage(currentPage.id) },
-            currentPage && { label: "이 페이지 복사", icon: <Copy size={18} />, onSelect: () => void copyPage(currentPage.id) },
+            { label: "빈 페이지 추가", icon: <FilePlus2 size={18} />, onSelect: () => addBlank(pageIndex + 1, "plain") },
+            currentPage && { label: "페이지 복제", icon: <CopyPlus size={18} />, onSelect: () => duplicatePage(currentPage.id) },
+            currentPage && { label: "페이지 복사", icon: <Copy size={18} />, onSelect: () => void copyPage(currentPage.id) },
             currentPage && {
-              label: "이 페이지 잘라내기",
+              label: "페이지 잘라내기",
               icon: <Scissors size={18} />,
               disabled: doc.pages.length <= 1,
               onSelect: () => void copyPage(currentPage.id, true),
             },
-            isWebPage(currentPage) && { label: "페이지 새로고침", icon: <RotateCw size={18} />, onSelect: reloadWebPage },
+            isWebPage(currentPage) && { label: "새로고침", icon: <RotateCw size={18} />, onSelect: reloadWebPage },
           ],
           [
             lecture
-              ? { label: "강의 모드 끝내기", icon: <Minimize2 size={18} />, hint: "Esc", onSelect: exitLecture }
+              ? { label: "강의 끝내기", icon: <Minimize2 size={18} />, hint: "Esc", onSelect: exitLecture }
               : { label: "강의 모드", icon: <Presentation size={18} />, hint: "F5", onSelect: enterLecture },
             !paletteOpen && { label: "펜 바 보이기", icon: <Palette size={18} />, onSelect: () => setPaletteOpen(true) },
           ],
@@ -1221,7 +1215,11 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
       groups: [
         [
           { label: "이름 바꾸기", icon: <Pencil size={18} />, onSelect: rename },
-          { label: "파일로 내보내기 (.lessondeck)", icon: <Share2 size={18} />, onSelect: exportDoc },
+          { label: "내보내기", icon: <Share2 size={18} />, onSelect: exportDoc },
+        ],
+        [
+          { label: "직선 보정", icon: <Ruler size={18} />, checked: straighten, onSelect: () => setStraighten((v) => !v) },
+          { label: "필기 보정", icon: <Sparkles size={18} />, checked: beautify, onSelect: () => setBeautify((v) => !v) },
         ],
         [
           { label: "펜 바", icon: <Palette size={18} />, checked: paletteOpen, onSelect: () => setPaletteOpen((v) => !v) },
@@ -1584,11 +1582,11 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
         <IconButton label="이미지 스티커" disabled={!currentPage} onClick={() => pickFile("sticker", pageIndex)}>
           <ImagePlus size={23} />
         </IconButton>
-        <IconButton label={pasteHereLabel(false)} disabled={!currentPage} onClick={() => void pasteHere()}>
+        <IconButton label={pasteHereLabel()} disabled={!currentPage} onClick={() => void pasteHere()}>
           <ClipboardPaste size={22} />
         </IconButton>
         <span className="toolrow-sep" />
-        <IconButton label="이 페이지 필기 지우기" disabled={strokes.length === 0} onClick={() => inkAction({ type: "clear" })}>
+        <IconButton label="필기 지우기" disabled={strokes.length === 0} onClick={() => inkAction({ type: "clear" })}>
           <Trash2 size={22} />
         </IconButton>
         <IconButton label={paletteOpen ? "펜 바 감추기" : "펜 바 보이기"} active={paletteOpen} onClick={() => setPaletteOpen((v) => !v)}>
@@ -1661,6 +1659,8 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
           eraserSize={eraserSize}
           fingerDraw={fingerDraw}
           lowLatency={lowLatency}
+          straighten={straighten}
+          beautify={beautify}
           webMode={webMode}
           onCommit={onCommit}
           onNavigate={goTo}
@@ -1824,6 +1824,18 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
           anchor={popover}
           preset={popoverPreset}
           onChange={(patch) => patchPreset(popoverPreset.id, patch)}
+          correction={{
+            straighten,
+            beautify,
+            onStraighten: (on) => {
+              setStraighten(on);
+              showToast(on ? "직선 보정: 긋다가 떼지 않고 멈추면 직선이 됩니다" : "직선 보정을 껐습니다");
+            },
+            onBeautify: (on) => {
+              setBeautify(on);
+              showToast(on ? "필기 보정: 펜을 뗄 때 글씨를 반듯하게 다듬습니다" : "필기 보정을 껐습니다");
+            },
+          }}
           onClose={closePopover}
         />
       )}
@@ -1871,7 +1883,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
             return error;
           }}
           paste={{
-            label: pastePageLabel("여기에 "),
+            label: "붙여넣기",
             run: () => {
               void pasteAsNewPage(addMenu.index);
               setAddMenu(null);

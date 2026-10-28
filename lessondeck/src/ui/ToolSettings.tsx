@@ -1,4 +1,4 @@
-import { Trash2 } from "lucide-react";
+import { Check, Trash2 } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { ERASER_LEVELS, HIGHLIGHTER_COLORS, PEN_COLORS, WIDTH_LEVELS } from "../ink/palette";
 import type { PenPreset } from "../ink/types";
@@ -14,6 +14,8 @@ type Props =
       anchor: Anchor;
       preset: PenPreset;
       onChange: (patch: Partial<PenPreset>) => void;
+      /** 직선 보정·필기 보정 켜고 끄기 (기기 설정) */
+      correction: { straighten: boolean; beautify: boolean; onStraighten: (on: boolean) => void; onBeautify: (on: boolean) => void };
       onClose: () => void;
     }
   | {
@@ -26,6 +28,18 @@ type Props =
     };
 
 const LEVEL_NAMES = ["가늘게", "보통", "굵게"];
+
+function Toggle({ on, onChange, label, hint }: { on: boolean; onChange: (on: boolean) => void; label: string; hint: string }) {
+  return (
+    <button role="switch" aria-checked={on} className={`ts-toggle${on ? " on" : ""}`} title={hint} onClick={() => onChange(!on)}>
+      <span className="ts-check">{on && <Check size={13} strokeWidth={3} />}</span>
+      <span className="ts-toggle-text">
+        {label}
+        <small>{hint}</small>
+      </span>
+    </button>
+  );
+}
 
 export function ToolSettings(props: Props) {
   const ref = useRef<HTMLDivElement>(null);
@@ -84,6 +98,12 @@ export function ToolSettings(props: Props) {
               </button>
             ))}
           </div>
+          <div className="ts-row ts-toggles" aria-label="보정">
+            <Toggle on={props.correction.straighten} onChange={props.correction.onStraighten} label="직선 보정" hint="멈추면 직선" />
+            {props.preset.tool === "pen" && (
+              <Toggle on={props.correction.beautify} onChange={props.correction.onBeautify} label="필기 보정" hint="글씨를 반듯하게" />
+            )}
+          </div>
         </>
       ) : (
         <>
@@ -103,7 +123,7 @@ export function ToolSettings(props: Props) {
             ))}
           </div>
           <button className="ts-danger" onClick={props.onClearPage}>
-            <Trash2 size={16} /> 이 페이지 필기 지우기
+            <Trash2 size={16} /> 필기 지우기
           </button>
         </>
       )}

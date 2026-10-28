@@ -347,7 +347,7 @@ function BoxToolbar({
       onPointerUp={stop}
       onClick={stop}
     >
-      <button aria-label="글자 고치기" title="글자 고치기" onClick={onEdit}>
+      <button aria-label="글 고치기" title="글 고치기" onClick={onEdit}>
         <Pencil size={16} />
       </button>
       <button aria-label="링크" title="링크 걸기" className={box.link ? "on" : undefined} onClick={onLink}>
