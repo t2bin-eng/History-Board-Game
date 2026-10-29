@@ -36,6 +36,8 @@ interface Gesture {
   stroke: Stroke | null;
   working: Stroke[];
   erased: boolean;
+  /** pointerdown으로 시작했는지 (버튼 → 접촉 순서는 pointermove로 시작한다) */
+  viaDown: boolean;
   /** 지우개가 마지막으로 지나간 자리 (페이지 px). 빠르게 쓸어도 사이를 빠뜨리지 않게 이어서 지운다 */
   lastErase: { x: number; y: number } | null;
   /** 직선 보정: 멈춘 자리(화면 px)와 타이머, 직선이 된 뒤의 시작점·필압 */
@@ -241,6 +243,7 @@ export function InkCanvas(props: Props) {
         stroke: null,
         working: renderedRef.current.slice(),
         erased: false,
+        viaDown: e.type === "pointerdown",
         holdAt: { x: e.clientX, y: e.clientY },
         holdTimer: 0,
         straight: null,
@@ -293,6 +296,10 @@ export function InkCanvas(props: Props) {
         if (e.pointerType === "pen" && gesture.pointerType === "touch") {
           // 손바닥이 먼저 닿고 펜이 나중에 오면 손바닥 획을 버리고 펜을 따른다
           cancelGesture();
+        } else if (e.pointerType === "pen" && gesture.pointerType === "pen" && gesture.viaDown) {
+          // 펜이 다시 닿았는데 지난 획이 열려 있으면 그 뗌을 놓친 것이다.
+          // 그대로 두면 새로 긋는 점이 지난 획 끝에 이어 붙어 엉뚱한 선이 생기므로 지난 획은 여기서 마무리한다
+          settle(gesture, false);
         } else {
           return;
         }
@@ -375,7 +382,11 @@ export function InkCanvas(props: Props) {
     const finish = (e: PointerEvent, cancelled: boolean) => {
       recordPointer(e);
       if (!gesture || e.pointerId !== gesture.pointerId) return;
-      const g = gesture;
+      settle(gesture, cancelled);
+    };
+
+    /** 획 마무리: 저장(지우개면 지운 결과), 취소된 손가락 획은 버린다 */
+    const settle = (g: Gesture, cancelled: boolean) => {
       gesture = null;
       clearTimeout(g.holdTimer);
       clearLive();

@@ -8,7 +8,6 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
-import android.webkit.JsPromptResult;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -60,19 +59,6 @@ public class LessonDeckChromeClient extends BridgeWebChromeClient {
 
     private FrameLayout decor() {
         return (FrameLayout) bridge.getActivity().getWindow().getDecorView();
-    }
-
-    /**
-     * 웹 화면이 펜 획을 시작할 때 "이 획이 S펜 버튼을 누른 채 시작했나"를 묻는다 (PenInput).
-     * prompt는 답을 받을 때까지 기다리므로, 이벤트보다 늦게 도착할 걱정 없이 바로 그 획의 답을 준다. 창은 띄우지 않는다.
-     */
-    @Override
-    public boolean onJsPrompt(WebView view, String url, String message, String defaultValue, JsPromptResult result) {
-        if (PenInput.QUERY.equals(message)) {
-            result.confirm(PenInput.strokeErase ? "erase" : "draw");
-            return true;
-        }
-        return super.onJsPrompt(view, url, message, defaultValue, result);
     }
 
     @Override

@@ -11,7 +11,7 @@ const PALM_GUARD_MS = 800;
 
 let lastPenTime = -Infinity;
 let sideButton = false;
-/** 안드로이드 앱이 S펜 버튼 상태를 직접 알려 주는지 (MainActivity: 버튼을 누른 채 쓰는 획은 지우개 끝 입력으로 온다) */
+/** 안드로이드 앱이 S펜 버튼 상태를 직접 알려 주는지 (lessondecksidebutton 이벤트, PenInput.java) */
 let nativeSide = false;
 const touches = new Set<number>();
 const listeners = new Set<(down: boolean) => void>();
@@ -34,32 +34,33 @@ export function onSideButtonChange(fn: (down: boolean) => void): () => void {
   return () => listeners.delete(fn);
 }
 
-/** 앱에 묻는 글 (android/.../PenInput.java QUERY) */
-const PEN_QUERY = "lessondeck:pen-stroke";
-/** 펜 포인터마다 이번 획이 지우개인지 (닿을 때 한 번 묻고, 뗄 때 지운다) */
-const strokeErase = new Map<number, boolean>();
+/** 안드로이드 앱이 웹 화면에 붙여 주는 S펜 창구 (android/.../PenInput.java JsBridge) */
+interface NativePen {
+  strokeErase(): boolean;
+}
+
+function nativePen(): NativePen | undefined {
+  return isNativeApp ? (window as unknown as { LessonDeckPen?: NativePen }).LessonDeckPen : undefined;
+}
 
 /**
  * 이 펜 획을 S펜 버튼을 누른 채 시작했는지 = 지우개 획인지.
  * 안드로이드 앱은 웹뷰가 버튼 상태를 제대로 넘기지 못해(삼성 동작 번호, 글자 고르기 가로채기) 앱이 펜 이벤트를 다듬고
- * 닿는 순간의 버튼을 기억해 둔다. prompt로 바로 물어 답을 받으므로 이벤트보다 늦을 걱정이 없다. 획마다 한 번만 묻는다.
+ * 닿는 순간의 버튼을 기억해 둔다. 그 답을 window.LessonDeckPen으로 바로 받는다
+ * (대화창(prompt)으로 묻던 0.16.1은 그동안 웹뷰가 터치를 버려 손가락·확대가 꼬였다). 앱의 답은 다음 획이 닿을 때까지 그대로다.
  */
 export function penStrokeErasing(e: PointerEvent): boolean {
   if (e.pointerType === "touch") return false;
   if (hasSideButton(e)) return true;
   // 브라우저(PC 마우스 오른쪽 버튼, 버튼 신호가 이벤트에 실리는 펜): 지금 버튼 상태
-  if (e.pointerType !== "pen" || !isNativeApp) return sideButton;
-  const known = strokeErase.get(e.pointerId);
-  if (known !== undefined) return known;
-  let erase = false;
+  const pen = e.pointerType === "pen" ? nativePen() : undefined;
+  if (!pen) return sideButton;
   try {
-    erase = window.prompt(PEN_QUERY) === "erase";
+    return pen.strokeErase() === true;
   } catch {
     // 물을 수 없으면 버튼 신호(lessondecksidebutton)만 따른다
-    erase = sideButton;
+    return sideButton;
   }
-  strokeErase.set(e.pointerId, erase);
-  return erase;
 }
 
 /** 사이드 버튼(2) 또는 S펜 지우개 끝(32)이 눌린 이벤트인지 */
@@ -77,14 +78,14 @@ function setSide(down: boolean) {
 
 function track(e: PointerEvent) {
   if (e.pointerType === "touch") {
-    if (e.type === "pointerdown") touches.add(e.pointerId);
-    else if (e.type === "pointerup" || e.type === "pointercancel") touches.delete(e.pointerId);
+    if (e.type === "pointerdown") {
+      // 첫 손가락인데 남은 손가락이 있으면 그 뗌을 놓친 것이다 (남겨 두면 한 손가락도 두 손가락으로 센다)
+      if (e.isPrimary) touches.clear();
+      touches.add(e.pointerId);
+    } else if (e.type === "pointerup" || e.type === "pointercancel") touches.delete(e.pointerId);
     return;
   }
-  if (e.pointerType === "pen") {
-    lastPenTime = performance.now();
-    if (e.type === "pointerup" || e.type === "pointercancel") strokeErase.delete(e.pointerId);
-  }
+  if (e.pointerType === "pen") lastPenTime = performance.now();
   if (e.pointerType !== "pen" && e.pointerType !== "mouse") return;
   // 앱이 버튼 상태를 알려 주면 그것을 따른다 (펜을 띄운 채 누를 때는 웹 이벤트에 버튼이 실리지 않음)
   if (nativeSide && e.pointerType === "pen") {

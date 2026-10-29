@@ -103,6 +103,11 @@ export function useViewportGestures(opts: Options) {
         return;
       }
       if (e.pointerType !== "touch") return;
+      // 첫 손가락인데 남은 손가락이 있으면 그 뗌을 놓친 것이다 (남겨 두면 한 손가락을 두 손가락 확대로 잘못 본다)
+      if (e.isPrimary && pointers.size) {
+        pointers.clear();
+        endGesture();
+      }
       // 첫 손가락이 팔레트·패널 위면 제스처가 아니다. 이미 페이지 위에 손가락이 있으면 두 번째 손가락은 어디든 인정
       if (pointers.size === 0 && (e.target as Element).closest?.("[data-no-gesture]")) return;
       if (penRecentlyActive()) return;

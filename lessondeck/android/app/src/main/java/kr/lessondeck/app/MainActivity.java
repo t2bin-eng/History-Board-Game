@@ -27,6 +27,8 @@ public class MainActivity extends BridgeActivity {
         // 웹 주소 페이지는 앱(localhost)과 다른 사이트라 쿠키가 "제3자 쿠키"가 된다.
         // 웹뷰는 기본으로 막아서 로그인·세션이 필요한 사이트가 열리지 않으므로 허용한다
         WebView webView = getBridge().getWebView();
+        // 펜 획이 S펜 버튼을 누른 채 시작했는지 웹 화면이 바로 물을 수 있게 (PenInput.JsBridge)
+        webView.addJavascriptInterface(new PenInput.JsBridge(), PenInput.JS_NAME);
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
         // 웹 페이지의 "크게 보기"(전체 화면)와 새 창이 동작하게 한다

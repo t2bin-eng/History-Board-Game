@@ -1,6 +1,7 @@
 package kr.lessondeck.app;
 
 import android.view.MotionEvent;
+import android.webkit.JavascriptInterface;
 
 /**
  * S펜 입력 다듬기 (SPEC 6장 "S펜 사이드 버튼 = 지우개").
@@ -11,12 +12,13 @@ import android.view.MotionEvent;
  * - 표준 버튼 상태가 오면 웹뷰가 "버튼 누른 채 끌기 = 글자 고르기"로 가로채기도 한다.
  * 그래서 앱이 웹뷰보다 먼저 받아 모든 펜 이벤트를 표준 동작·버튼 없음으로 바꿔 넘기고,
  * 펜이 닿는 순간 버튼이 눌려 있었는지(이 획이 지우개인지)를 기억해 두었다가 웹 화면이 획을 시작할 때 묻는 대로 알려 준다
- * (LessonDeckChromeClient.onJsPrompt). 한 획 안에서는 버튼을 떼거나 눌러도 바뀌지 않는다.
+ * (JsBridge, 웹 화면에서는 window.LessonDeckPen). 한 획 안에서는 버튼을 떼거나 눌러도 바뀌지 않는다.
+ * prompt로 묻던 때(0.16.1)는 대화창이 열리는 동안 웹뷰가 들어오는 터치를 버려서 손가락 뗌이 사라지고 확대·필기가 꼬였다.
  */
 final class PenInput {
 
-    /** 웹 화면이 "지금 펜 획이 지우개인가"를 물을 때 쓰는 prompt 글 */
-    static final String QUERY = "lessondeck:pen-stroke";
+    /** 웹 화면에 붙이는 이름 (window.LessonDeckPen) */
+    static final String JS_NAME = "LessonDeckPen";
 
     /** S펜 버튼(옆 버튼)으로 여기는 버튼 상태 */
     private static final int PEN_BUTTONS =
@@ -37,13 +39,30 @@ final class PenInput {
 
     private PenInput() {}
 
-    /** 삼성 동작 번호면 표준 동작, 아니면 -1 */
-    private static int samsungToStandard(int masked) {
-        switch (masked) {
+    /**
+     * 웹 화면이 부르는 창구. 웹뷰의 별도 스레드에서 바로 답하므로 대화창도, 터치를 막는 일도 없다.
+     */
+    static final class JsBridge {
+        /** 마지막으로 닿은 펜 획을 S펜 버튼을 누른 채 시작했는지 */
+        @JavascriptInterface
+        public boolean strokeErase() {
+            return strokeErase;
+        }
+    }
+
+    /**
+     * 삼성 동작 번호면 표준 동작, 아니면 -1.
+     * 손바닥·손가락이 함께 닿아 있으면 그 펜의 POINTER_DOWN/UP으로 (DOWN/UP으로 바꾸면 웹뷰가 손가락까지 끝난 것으로 본다).
+     */
+    private static int samsungToStandard(MotionEvent ev, int stylus) {
+        boolean multi = ev.getPointerCount() > 1;
+        int index = (ev.getAction() & MotionEvent.ACTION_POINTER_INDEX_MASK) != 0 ? ev.getActionIndex() : Math.max(stylus, 0);
+        int shifted = index << MotionEvent.ACTION_POINTER_INDEX_SHIFT;
+        switch (ev.getActionMasked()) {
             case SPEN_DOWN:
-                return MotionEvent.ACTION_DOWN;
+                return multi ? MotionEvent.ACTION_POINTER_DOWN | shifted : MotionEvent.ACTION_DOWN;
             case SPEN_UP:
-                return MotionEvent.ACTION_UP;
+                return multi ? MotionEvent.ACTION_POINTER_UP | shifted : MotionEvent.ACTION_UP;
             case SPEN_MOVE:
                 return MotionEvent.ACTION_MOVE;
             case SPEN_CANCEL:
@@ -66,19 +85,20 @@ final class PenInput {
      * 돌려준 이벤트는 넘긴 뒤 recycle 해야 한다.
      */
     static MotionEvent normalizeTouch(MotionEvent ev) {
-        int masked = ev.getActionMasked();
-        int samsung = samsungToStandard(masked);
         int stylus = stylusIndex(ev);
+        int samsung = samsungToStandard(ev, stylus);
         if (stylus < 0 && samsung < 0) return null;
-        int standard = samsung >= 0 ? samsung : masked;
+        int action = samsung >= 0 ? samsung : ev.getAction();
+        int masked = action & MotionEvent.ACTION_MASK;
+        int index = (action & MotionEvent.ACTION_POINTER_INDEX_MASK) >> MotionEvent.ACTION_POINTER_INDEX_SHIFT;
         boolean pressed = samsung >= 0 || (ev.getButtonState() & PEN_BUTTONS) != 0;
-        boolean stylusDown =
-            standard == MotionEvent.ACTION_DOWN || (standard == MotionEvent.ACTION_POINTER_DOWN && ev.getActionIndex() == stylus);
+        boolean stylusDown = masked == MotionEvent.ACTION_DOWN || (masked == MotionEvent.ACTION_POINTER_DOWN && index == stylus);
         if (stylusDown) strokeErase = pressed;
         buttonDown = pressed;
-        lastInfo = "a=" + ev.getAction() + " b=" + ev.getButtonState() + " t=" + (stylus >= 0 ? ev.getToolType(stylus) : -1);
+        lastInfo =
+            "a=" + ev.getAction() + " b=" + ev.getButtonState() + " t=" + (stylus >= 0 ? ev.getToolType(stylus) : -1) + " n=" + ev.getPointerCount();
         if (samsung < 0 && ev.getButtonState() == 0) return null;
-        return rebuild(ev, samsung >= 0 ? samsung : ev.getAction());
+        return rebuild(ev, action);
     }
 
     /** 펜을 띄운 채(호버) 버튼을 누르고 뗌 → 버튼 상태만 기억 */
