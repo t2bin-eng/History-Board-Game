@@ -131,12 +131,18 @@ button { font: inherit; color: inherit; }
 .t-notes .note { position: static; translate: none; opacity: 1; box-shadow: none; padding: 9px 12px; }
 .t-notes .note .nt { font-size: 13.5px; }
 .t-foot { text-align: center; font-size: 11.5px; color: var(--ink-3); }
+#text.compact { gap: 6px; }
+#text.compact .t-vs, #text.compact .t-foot, #text.compact .keys { display: none; }
+#text.compact .t-title { font-size: 24px; }
+#text.compact .t-body { font-size: 15px; line-height: 1.5; }
+#text.compact .start { padding: 9px 18px; font-size: 15px; }
 .start { justify-self: center; display: inline-flex; align-items: center; gap: 10px; padding: 12px 22px; border: 0; border-radius: 999px; background: var(--ink); color: var(--bg); font-size: 16px; font-weight: 700; cursor: pointer; transition: transform .2s; }
 .start:hover { transform: translateX(3px); }
 .start svg { width: 16px; height: 16px; fill: currentColor; }
+.cta { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+.start.ghost { background: var(--chip); color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--ink-3); }
 .keys { text-align: center; font-size: 12.5px; color: var(--ink-3); }
 .keys kbd { font-family: var(--f-mono); font-size: 11.5px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line); color: var(--ink-2); }
-#text.narrow 
 /* summary chart */
 #chart { transition: opacity .6s ease; }
 #chart.hide { opacity: 0; pointer-events: none; }
@@ -548,6 +554,7 @@ function layout() {
   const top = 60;
   wide = isWide();
   textEl.classList.toggle('narrow', !wide);
+  textEl.classList.remove('compact');
   let R, tw, side = 0, cy;
   const cx = W / 2;
   if (wide) {
@@ -558,6 +565,8 @@ function layout() {
       tw = Math.min(660, Math.max(320, 2 * R - 180));
       textEl.style.width = tw + 'px';
       R = Math.min(rW, 540, H - top - 44 - tlH - textEl.offsetHeight - 34);
+      // short screens (projectors, slide embeds): drop the chip row and tighten the type
+      if (pass === 0 && R < 230) textEl.classList.add('compact');
     }
     R = Math.max(R, 150);
     cy = top + 44 + R;
@@ -737,10 +746,10 @@ function drawNotes(notes, delay) {
 function renderText(s) {
   if (s.intro) {
     textEl.innerHTML = `
-      <div class="t-date">중의원 의석으로 읽는 일본 정치 · 1951–2015</div>
+      <div class="t-date">중의원 의석으로 읽는 일본 정치</div>
       <h1 class="t-title">일본 55년 체제의 성립과 붕괴</h1>
       <p class="t-body">점 하나가 중의원 의원 한 명입니다. 자민당과 사회당의 의석이 사건마다 어떻게 바뀌었는지 따라가 봅니다.</p>
-      <button class="start" id="start" type="button">시작하기 <svg viewBox="0 0 24 24"><path d="M5 11h10.2l-4.6-4.6L12 5l7 7-7 7-1.4-1.4 4.6-4.6H5z"/></svg></button>
+      <div class="cta"><button class="start" id="start" type="button">시작하기 <svg viewBox="0 0 24 24"><path d="M5 11h10.2l-4.6-4.6L12 5l7 7-7 7-1.4-1.4 4.6-4.6H5z"/></svg></button><button class="start ghost to-quiz" type="button">형성평가 풀기</button></div>
       <div class="keys"><kbd>→</kbd> <kbd>Space</kbd> 다음 · <kbd>←</kbd> 이전 · <kbd>P</kbd> 자동 재생 · 점에 마우스를 올리면 정당 이름</div>`;
     $('#start').addEventListener('click', () => go(1));
   } else {
@@ -752,8 +761,10 @@ function renderText(s) {
       <div class="t-vs">${vs}</div>
       <p class="t-body">${s.body}</p>
       ${notes}
-      ${s.foot ? `<div class="t-foot">${s.foot}</div>` : ''}`;
+      ${s.foot ? `<div class="t-foot">${s.foot}</div>` : ''}
+      ${s.chart ? '<div class="cta"><button class="start to-quiz" type="button">형성평가로 복습하기 <svg viewBox="0 0 24 24"><path d="M5 11h10.2l-4.6-4.6L12 5l7 7-7 7-1.4-1.4 4.6-4.6H5z"/></svg></button></div>' : ''}`;
   }
+  textEl.querySelectorAll('.to-quiz').forEach((b) => b.addEventListener('click', () => setMode('quiz')));
   [...textEl.children].forEach((c, i) => c.style.setProperty('--i', i));
   textEl.style.animation = 'none'; void textEl.offsetWidth; textEl.style.animation = '';
   [...textEl.children].forEach((c) => { c.style.animation = 'none'; void c.offsetWidth; c.style.animation = ''; });
@@ -762,19 +773,22 @@ function renderText(s) {
 /* ================= summary chart ================= */
 function drawChart(animate) {
   chartG.innerHTML = '';
-  const { cx, cy, R } = L;
-  const x0 = cx - R + 46, x1 = cx + R - 92, y0 = cy - R + 8, y1 = cy - 26;
+  const { cx, cy } = L;
+  // the chart is not tied to the arc: use the full width above the text block
+  const half = wide ? Math.min((W - 64) / 2, 540) : (W - 24) / 2;
+  const x0 = cx - half + 42, x1 = cx + half - 90, y0 = 76, y1 = cy - 26;
+  const tight = x1 - x0 < 520 || y1 - y0 < 220;
   const X = (yr) => x0 + (yr - 1953) / (2014 - 1953) * (x1 - x0);
   const Y = (v) => y1 - v / .7 * (y1 - y0);
   // band: LDP single-party rule
   S('rect', { x: X(1955.87), y: y0, width: X(1993.6) - X(1955.87), height: y1 - y0, class: 'c-band' }, chartG);
-  S('text', { x: (X(1955.87) + X(1993.6)) / 2, y: y0 + 18, 'text-anchor': 'middle', class: 'c-bandl' }, chartG).textContent = '자민당 단독 집권 38년 (1955–1993)';
+  S('text', { x: (X(1955.87) + X(1993.6)) / 2, y: y0 + 18, 'text-anchor': 'middle', class: 'c-bandl' }, chartG).textContent = tight ? '자민당 단독 집권 38년' : '자민당 단독 집권 38년 (1955–1993)';
   for (const [v, lab, cls] of [[0, '0%', ''], [1 / 3, '1/3', ''], [.5, '과반', 'maj'], [2 / 3, '2/3', '']]) {
     S('line', { x1: x0, x2: x1, y1: Y(v), y2: Y(v), class: 'c-grid ' + cls }, chartG);
     S('text', { x: x0 - 8, y: Y(v) + 4, 'text-anchor': 'end', class: v === .5 ? 'c-axl' : 'c-ax' }, chartG).textContent = lab;
   }
-  for (const yr of [1955, 1965, 1975, 1985, 1995, 2005]) S('text', { x: X(yr), y: y1 + 18, 'text-anchor': 'middle', class: 'c-ax' }, chartG).textContent = yr;
-  for (const [yr, lab] of [[1976.9, '록히드 사건'], [1993.55, '55년 체제 붕괴']]) {
+  for (const yr of (tight ? [1955, 1975, 1995] : [1955, 1965, 1975, 1985, 1995, 2005])) S('text', { x: X(yr), y: y1 + 18, 'text-anchor': 'middle', class: 'c-ax' }, chartG).textContent = yr;
+  for (const [yr, lab] of (tight ? [] : [[1976.9, '록히드 사건'], [1993.55, '55년 체제 붕괴']])) {
     S('line', { x1: X(yr), x2: X(yr), y1: y0 + 28, y2: y1, class: 'c-ev' }, chartG);
     S('text', { x: X(yr), y: y0 + 42, 'text-anchor': 'middle', class: 'c-evl' }, chartG).textContent = lab;
   }
@@ -792,9 +806,11 @@ function drawChart(animate) {
   lab(X(2012.96) + 10, Y(57 / 480) + 4, '민주당 12%');
   lab(X(2012.96) + 10, Y(2 / 480) + 4, '사민당 0.4%');
   lab(X(1958.39), Y(166 / 467) - 12, '사회당 36%', 'start');
-  lab(X(2009.66) - 10, Y(308 / 480) - 8, '2009 민주당 64%', 'end');
-  lab(X(1993.55) + 8, Y(223 / 511) + 22, '1993 자민당 44%', 'start');
-  lab(X(2009.66) + 8, Y(119 / 480) + 20, '2009 자민당 25%', 'start');
+  lab(X(2009.66) - 10, Y(308 / 480) - 8, tight ? '민주당 64%' : '2009 민주당 64%', 'end');
+  if (!tight) {
+    lab(X(1993.55) + 8, Y(223 / 511) + 22, '1993 자민당 44%', 'start');
+    lab(X(2009.66) + 8, Y(119 / 480) + 20, '2009 자민당 25%', 'start');
+  }
   if (animate && !INSTANT) paths.forEach((p, i) => p.animate([{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], { duration: 1600, delay: 300 + i * 350, fill: 'both', easing: 'ease-in-out' }));
   // hover: nearest election
   const cross = S('line', { y1: y0, y2: y1, class: 'c-cross', opacity: 0 }, chartG);
