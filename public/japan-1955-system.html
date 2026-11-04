@@ -16,6 +16,7 @@
   --card: rgba(13, 18, 32, .84); --line: rgba(170, 190, 230, .17); --chip: rgba(255, 255, 255, .07);
   --halo: rgba(13, 18, 32, .95); --shade: rgba(2, 5, 12, .55); --fade: rgba(10, 14, 26, .92);
   --focus: #ffd166;
+  --ok: #3fbf7a; --ok-bg: rgba(63, 191, 122, .12); --bad: #f06b6b; --bad-bg: rgba(240, 107, 107, .12);
   --p-ldp: #3987e5; --p-jsp: #e66767; --p-dpj: #d95926; --p-kmt: #c98500; --p-dsp: #9085e9;
   --p-jcp: #d55181; --p-split: #199e70; --p-ishin: #008300; --p-oth: #3e475b; --p-none: #252e44;
   --f-display: "Hahmlet", "Noto Serif KR", "Nanum Myeongjo", "AppleMyungjo", serif;
@@ -31,6 +32,7 @@
     --card: rgba(255, 255, 255, .92); --line: rgba(20, 40, 80, .14); --chip: rgba(15, 30, 60, .06);
     --halo: rgba(255, 255, 255, .96); --shade: rgba(40, 60, 100, .16); --fade: rgba(236, 240, 246, .95);
     --focus: #c98c00;
+    --ok: #12823f; --ok-bg: rgba(18, 130, 63, .09); --bad: #c62828; --bad-bg: rgba(198, 40, 40, .08);
     --p-ldp: #2a78d6; --p-jsp: #e34948; --p-dpj: #eb6834; --p-kmt: #eda100; --p-dsp: #6250d6;
     --p-jcp: #e87ba4; --p-split: #1baf7a; --p-ishin: #008300; --p-oth: #c3cad6; --p-none: #dde2ea;
     color-scheme: light;
@@ -42,6 +44,7 @@
   --card: rgba(255, 255, 255, .92); --line: rgba(20, 40, 80, .14); --chip: rgba(15, 30, 60, .06);
   --halo: rgba(255, 255, 255, .96); --shade: rgba(40, 60, 100, .16); --fade: rgba(236, 240, 246, .95);
   --focus: #c98c00;
+  --ok: #12823f; --ok-bg: rgba(18, 130, 63, .09); --bad: #c62828; --bad-bg: rgba(198, 40, 40, .08);
   --p-ldp: #2a78d6; --p-jsp: #e34948; --p-dpj: #eb6834; --p-kmt: #eda100; --p-dsp: #6250d6;
   --p-jcp: #e87ba4; --p-split: #1baf7a; --p-ishin: #008300; --p-oth: #c3cad6; --p-none: #dde2ea;
   color-scheme: light;
@@ -189,16 +192,117 @@ button { font: inherit; color: inherit; }
 #tip b { font-family: var(--f-mono); font-weight: 600; }
 #credit { position: absolute; z-index: 4; margin: 0; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(var(--tl-h) + 4px); font-size: 10.5px; color: var(--ink-3); pointer-events: none; }
 
+/* view tabs */
+#tabs { position: absolute; z-index: 5; top: calc(12px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); display: flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+#tabs button { height: 32px; padding: 0 16px; border: 0; border-radius: 999px; background: transparent; color: var(--ink-2); font-size: 13.5px; font-weight: 700; cursor: pointer; }
+#tabs button:hover { color: var(--ink); }
+#tabs button[aria-selected="true"] { background: var(--ink); color: var(--bg); }
+#app.quiz-on #stage, #app.quiz-on #ov, #app.quiz-on #text, #app.quiz-on #tl, #app.quiz-on #credit, #app.quiz-on #tip { display: none !important; }
+
+/* formative quiz */
+#quiz { position: absolute; inset: 0; z-index: 3; overflow-y: auto; background: radial-gradient(120% 70% at 50% 0%, var(--bg-glow), var(--bg) 70%); padding-top: calc(72px + env(safe-area-inset-top, 0px)); padding-bottom: calc(48px + env(safe-area-inset-bottom, 0px)); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); outline: none; }
+.qz-wrap { max-width: 780px; margin: 0 auto; display: grid; gap: 18px; }
+.qz-head { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 20px; }
+.qz-eyebrow { font-family: var(--f-mono); font-size: 12px; letter-spacing: .08em; color: var(--ink-3); }
+.qz-title { margin: 4px 0 0; font-family: var(--f-display); font-size: clamp(26px, 3vw, 34px); font-weight: 800; line-height: 1.2; }
+.qz-score { font-size: 14px; font-weight: 600; color: var(--ink-2); }
+.qz-score b { font-family: var(--f-display); font-size: 28px; color: var(--ink); margin-right: 2px; font-variant-numeric: tabular-nums; }
+.qz-steps { display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); gap: 6px; }
+.qz-step { height: 36px; border: 1.5px solid var(--line); border-radius: 9px; background: var(--chip); color: var(--ink-2); font-family: var(--f-mono); font-size: 13px; font-weight: 600; cursor: pointer; }
+.qz-step:hover { border-color: var(--ink-3); }
+.qz-step.ok { background: var(--ok-bg); border-color: var(--ok); color: var(--ok); font-size: 16px; }
+.qz-step.bad { background: var(--bad-bg); border-color: var(--bad); color: var(--bad); font-size: 16px; }
+.qz-step.cur { outline: 2px solid var(--ink); outline-offset: 2px; }
+.qz-step.res { font-family: var(--f-body); font-size: 12.5px; }
+.qz-card { display: grid; gap: 16px; padding: clamp(18px, 3vw, 30px); border: 1px solid var(--line); border-radius: 16px; background: var(--card); box-shadow: 0 18px 50px var(--shade); }
+.qz-meta { display: flex; align-items: center; gap: 10px; font-size: 12.5px; font-weight: 700; color: var(--ink-3); }
+.qz-num { font-family: var(--f-mono); }
+.qz-tag { padding: 3px 9px; border-radius: 999px; background: var(--chip); color: var(--ink-2); }
+.qz-prompt { margin: 0; font-size: clamp(18px, 2vw, 22px); font-weight: 700; line-height: 1.5; text-wrap: pretty; }
+.qz-choices, .qz-oxs { display: grid; gap: 9px; }
+.qz-ch { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--chip); text-align: left; font-size: 16px; line-height: 1.45; cursor: pointer; }
+.qz-ch:hover:not(:disabled) { border-color: var(--ink-3); }
+.qz-ch .bd { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid var(--ink-3); font-family: var(--f-mono); font-size: 14px; font-weight: 600; color: var(--ink-2); }
+.qz-ch.sq .bd { border-radius: 7px; }
+.qz-ch.sel { border-color: var(--ink); }
+.qz-ch.sel .bd { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+.qz-ch:disabled { cursor: default; }
+.qz-ch.right { border-color: var(--ok); background: var(--ok-bg); }
+.qz-ch.right .bd { background: var(--ok); border-color: var(--ok); color: #fff; }
+.qz-ch.wrong { border-color: var(--bad); background: var(--bad-bg); }
+.qz-ch.wrong .bd { background: var(--bad); border-color: var(--bad); color: #fff; }
+.qz-label { font-size: 13px; font-weight: 700; color: var(--ink-2); }
+.qz-in, .qz-ta { width: 100%; box-sizing: border-box; padding: 12px 16px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--bg); color: var(--ink); font: inherit; font-size: 18px; }
+.qz-ta { min-height: 110px; resize: vertical; font-size: 16px; line-height: 1.6; }
+.qz-in:focus, .qz-ta:focus { outline: none; border-color: var(--ink-2); box-shadow: 0 0 0 3px var(--chip); }
+.qz-in:disabled, .qz-ta:disabled { opacity: .85; }
+.qz-hint { font-size: 14px; color: var(--ink-2); }
+.qz-hint b { font-family: var(--f-mono); font-size: 16px; letter-spacing: .25em; color: var(--ink); }
+.qz-ox { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px; padding: 10px 12px 10px 14px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--chip); }
+.qz-ox p { margin: 0; font-size: 15.5px; line-height: 1.5; }
+.qz-ox .pair { display: flex; gap: 6px; }
+.qz-ox button { width: 46px; height: 42px; border: 1.5px solid var(--line); border-radius: 10px; background: var(--bg); font-family: var(--f-mono); font-size: 18px; font-weight: 600; cursor: pointer; }
+.qz-ox button.sel { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+.qz-ox button:disabled { cursor: default; }
+.qz-ox.right { border-color: var(--ok); background: var(--ok-bg); }
+.qz-ox.wrong { border-color: var(--bad); background: var(--bad-bg); }
+.qz-seq { display: grid; gap: 7px; min-height: 52px; margin: 0; padding: 12px; border: 1.5px dashed var(--line); border-radius: 12px; list-style: none; counter-reset: sq; }
+.qz-seq li { display: flex; align-items: center; gap: 10px; font-size: 15.5px; font-weight: 600; counter-increment: sq; }
+.qz-seq li::before { content: counter(sq); display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--ink); color: var(--bg); font-family: var(--f-mono); font-size: 13px; flex: none; }
+.qz-seq li.right::before { background: var(--ok); color: #fff; }
+.qz-seq li.wrong::before { background: var(--bad); color: #fff; }
+.qz-seq .empty { color: var(--ink-3); font-weight: 500; font-size: 14px; }
+.qz-seq .empty::before { display: none; }
+.qz-pool { display: flex; flex-wrap: wrap; gap: 8px; }
+.qz-pool button { padding: 10px 14px; border: 1.5px solid var(--line); border-radius: 999px; background: var(--chip); font-size: 15px; font-weight: 600; cursor: pointer; }
+.qz-pool button:hover { border-color: var(--ink-3); }
+.qz-fig { margin: 0; display: grid; gap: 8px; justify-items: center; }
+.qz-fig svg { width: 100%; max-width: 480px; height: auto; display: block; }
+.qz-fig .fl { fill: var(--ink); font-family: var(--f-body); font-size: 14px; font-weight: 700; }
+.qz-fig .fll { fill: var(--ink-2); font-family: var(--f-mono); font-size: 12px; font-weight: 600; }
+.qz-fig .fline { stroke: var(--focus); stroke-width: 2; }
+.qz-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.qz-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+.qz-btn { display: inline-flex; align-items: center; gap: 8px; height: 46px; padding: 0 20px; border: 1.5px solid var(--line); border-radius: 999px; background: var(--chip); font-size: 15px; font-weight: 700; cursor: pointer; }
+.qz-btn:hover { border-color: var(--ink-3); }
+.qz-btn.primary { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+.qz-btn.warn { border-color: var(--bad); color: var(--bad); }
+.qz-msg { min-height: 1.2em; font-size: 14px; font-weight: 600; color: var(--bad); }
+.qz-fb { display: grid; gap: 8px; padding: 14px 16px; border: 1.5px solid; border-radius: 12px; animation: rise .45s cubic-bezier(.2, .8, .2, 1) both; }
+.qz-fb.ok { border-color: var(--ok); background: var(--ok-bg); }
+.qz-fb.bad { border-color: var(--bad); background: var(--bad-bg); }
+.qz-fbh { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 800; }
+.qz-fbh .ic { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; color: #fff; font-size: 15px; }
+.qz-fb.ok .ic { background: var(--ok); } .qz-fb.bad .ic { background: var(--bad); }
+.qz-fb p { margin: 0; font-size: 15px; line-height: 1.6; }
+.qz-ans { font-weight: 700; }
+.qz-mine { color: var(--ink-2); }
+.qz-link { justify-self: start; padding: 0; border: 0; background: none; color: var(--ink); font-size: 14px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.qz-res { display: grid; gap: 18px; padding: clamp(20px, 3vw, 32px); border: 1px solid var(--line); border-radius: 16px; background: var(--card); }
+.qz-big { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.qz-big b { font-family: var(--f-display); font-size: clamp(52px, 8vw, 76px); font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.qz-big span { font-size: 18px; font-weight: 700; color: var(--ink-2); }
+.qz-bar { display: grid; grid-template-columns: repeat(13, 1fr); gap: 3px; }
+.qz-bar i { height: 10px; border-radius: 3px; background: var(--line); }
+.qz-bar i.ok { background: var(--ok); } .qz-bar i.bad { background: var(--bad); }
+.qz-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.qz-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--chip); text-align: left; font-size: 15px; cursor: pointer; }
+.qz-pill { flex: none; min-width: 60px; padding: 3px 8px; border-radius: 999px; font-size: 12.5px; font-weight: 700; text-align: center; background: var(--line); color: var(--ink-2); }
+.qz-row.ok .qz-pill { background: var(--ok); color: #fff; } .qz-row.bad .qz-pill { background: var(--bad); color: #fff; }
+.qz-note { font-size: 12.5px; color: var(--ink-3); }
+
 @media (max-width: 819px) {
-  #brand span { display: none; }
+  #brand { display: none; }
+  #tabs { left: max(16px, env(safe-area-inset-left, 0px)); transform: none; }
+  .qz-steps { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+  .qz-ox { grid-template-columns: 1fr; }
   #tl { gap: 8px; padding-top: 20px; }
   .tl-dot .y { font-size: 10px; visibility: hidden; }
   .tl-dot.on .y { visibility: visible; }
   .tl-ph { letter-spacing: .04em; font-size: 10px; margin: 0 2px; }
   .nav { width: 38px; height: 38px; }
   #play .lbl, .ibtn .lbl, .tl-dot .n, #credit { display: none; }
-  .wl { font-size: 12px; }
-  .wl b { font-size: 11.5px; }
+  .wl { display: none; }
   .end .nm { font-size: 12.5px; }
 }
 @media (max-width: 480px) { #play { display: none; } }
@@ -225,8 +329,13 @@ button { font: inherit; color: inherit; }
     <div id="labels"></div>
   </div>
   <section id="text" aria-live="polite"></section>
+  <section id="quiz" aria-label="형성평가" tabindex="-1" hidden></section>
 
   <header id="brand"><b>일본 55년 체제의 성립과 붕괴</b><span>중의원 의석으로 읽는 일본 정치 1951–2015</span></header>
+  <div id="tabs" role="tablist" aria-label="보기 선택">
+    <button type="button" role="tab" id="tab-lesson" aria-selected="true">수업 자료</button>
+    <button type="button" role="tab" id="tab-quiz" aria-selected="false">형성평가</button>
+  </div>
   <div id="tools">
     <button class="ibtn" id="theme" type="button" title="밝은 화면 / 어두운 화면 (T)" aria-label="화면 밝기 전환"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg></button>
     <button class="ibtn" id="fs" type="button" title="전체 화면 (F)" aria-label="전체 화면"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
@@ -407,10 +516,7 @@ const MAX = 512, ROWS = 13;
 let W = 0, H = 0, L = null, wide = true, cur = -1, curState = null;
 const geomCache = new Map();
 
-function geom(N) {
-  const key = [N, L.R, L.cx, L.cy].map((v) => v.toFixed(1)).join(':');
-  if (geomCache.has(key)) return geomCache.get(key);
-  const { cx, cy, R, r } = L;
+function hemiSeats(N, cx, cy, R, r) {
   const radii = Array.from({ length: ROWS }, (_, i) => r + (R - r) * i / (ROWS - 1));
   const sum = radii.reduce((a, b) => a + b, 0);
   const raw = radii.map((ri) => N * ri / sum);
@@ -426,9 +532,12 @@ function geom(N) {
     }
   });
   seats.sort((a, b) => b.th - a.th || a.rad - b.rad);
-  const g = { seats, dot: Math.min((R - r) / (ROWS - 1), Math.PI * r / (cnt[0] - 1)) * .4 };
-  geomCache.set(key, g);
-  return g;
+  return { seats, dot: Math.min((R - r) / (ROWS - 1), Math.PI * r / (cnt[0] - 1)) * .4 };
+}
+function geom(N) {
+  const key = [N, L.R, L.cx, L.cy].map((v) => v.toFixed(1)).join(':');
+  if (!geomCache.has(key)) geomCache.set(key, hemiSeats(N, L.cx, L.cy, L.R, L.r));
+  return geomCache.get(key);
 }
 
 const isWide = () => app.clientWidth >= 900 && app.clientWidth / app.clientHeight > 1.15;
@@ -525,9 +634,9 @@ function applySeats(stKey, focus, instant) {
 function rangeOf(stKey, party) { let a = 0; for (const [p, n] of ST[stKey].parts) { if (p === party) return [a, a + n]; a += n; } return null; }
 function lineSpec(type, N) {
   const maj = Math.floor(N / 2) + 1, two3 = Math.ceil(2 * N / 3);
-  if (type === 'maj') return { k: N - maj, text: `과반 ${maj}석` };
-  if (type === 'block') return { k: N - two3 + 1, text: `개헌 저지선 1/3 · ${N - two3 + 1}석`, gold: true };
-  return { k: N - two3, text: `개헌 발의선 2/3 · ${two3}석`, gold: true };
+  if (type === 'maj') return { k: N - maj, text: `과반 ${maj}석`, short: `과반 ${maj}` };
+  if (type === 'block') return { k: N - two3 + 1, text: `개헌 저지선 1/3 · ${N - two3 + 1}석`, short: '1/3', gold: true };
+  return { k: N - two3, text: `개헌 발의선 2/3 · ${two3}석`, short: '2/3', gold: true };
 }
 function place(el, th, rad, gap = 0) {
   const { cx, cy } = L;
@@ -554,7 +663,7 @@ function drawLabels(stKey, wl, lines, delay) {
     if (sp.gold && !INSTANT) { p.style.strokeDashoffset = 1; p.animate([{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], { duration: 900, delay: delay + 300, fill: 'forwards', easing: 'ease-out' }); }
     const el = document.createElement('div');
     el.className = 'ov-item ll halo' + (sp.gold ? ' gold' : '');
-    el.textContent = sp.text;
+    el.textContent = wide ? sp.text : sp.short;
     labelsEl.appendChild(el);
     place(el, th, R + 18, 2);
     show(el, delay + 500);
@@ -812,7 +921,8 @@ function toggleFs() { try { if (document.fullscreenElement) document.exitFullscr
 $('#fs').addEventListener('click', toggleFs);
 
 document.addEventListener('keydown', (e) => {
-  if (e.altKey || e.ctrlKey || e.metaKey) return;
+  if (e.altKey || e.ctrlKey || e.metaKey || mode === 'quiz') return;
+  if (e.target.closest && e.target.closest('input, textarea, [role="tab"]')) return;
   const k = e.key;
   if (k === 'ArrowRight' || k === 'PageDown' || (k === ' ' && !(e.target instanceof HTMLButtonElement))) { e.preventDefault(); go(cur + 1); }
   else if (k === 'ArrowLeft' || k === 'PageUp') { e.preventDefault(); go(cur - 1); }
@@ -839,17 +949,305 @@ seatsG.addEventListener('pointermove', (e) => {
 seatsG.addEventListener('pointerleave', () => { tip.hidden = true; });
 seatsG.addEventListener('pointerup', (e) => { if (e.pointerType !== 'mouse') setTimeout(() => { tip.hidden = true; }, 2200); });
 
-let rsT = 0;
-addEventListener('resize', () => { clearTimeout(rsT); rsT = setTimeout(relayout, 120); });
-const idFromHash = () => { const h = (location.hash || '').slice(1); const i = SC.findIndex((s) => s.id === h); return i < 0 ? 0 : i; };
-addEventListener('hashchange', () => { const i = idFromHash(); if (i !== cur) go(i); });
+/* ================= formative quiz ================= */
+const quizEl = $('#quiz');
+const QKEY = 'jp55-quiz-v1';
+const CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
+const chosung = (t) => [...t].map((c) => { const k = c.charCodeAt(0) - 0xac00; return k >= 0 && k < 11172 ? CHO[Math.floor(k / 588)] : c; }).join('');
+const norm = (t) => String(t || '').normalize('NFC').toLowerCase().replace(/[\s·.,()[\]'"‘’“”\-_/~!?:]/g, '');
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const MARK = ['①', '②', '③', '④', '⑤'];
+const QZ = [
+  { id: 'q1', type: 'mc', tag: '개념 확인', scene: 'ldp', short: '55년 체제의 뜻',
+    prompt: '‘55년 체제’의 뜻으로 옳은 것은?',
+    choices: ['1955년 미국과 일본이 맺은 군사 동맹 체제', '1955년 이후 자유민주당과 일본 사회당이 이끈 정치 체제', '1955년 이후 일본 사회당이 혼자 정권을 잡은 체제', '1955년 일본이 평화 헌법을 처음 만든 뒤의 체제'],
+    answer: 1, why: '여당 자민당(약 2/3 의석)과 제1 야당 사회당(약 1/3 의석)이 맞서는 구도가 1955년부터 1993년까지 이어졌다.' },
+  { id: 'q2', type: 'short', tag: '단답형', scene: 'treaty', short: '1951년 미일 안보 조약',
+    prompt: '1951년에 맺은 조약으로, 미군의 일본 주둔은 인정했지만 미국이 일본을 지킬 의무는 없었던 조약의 이름을 쓰세요.',
+    hint: '미일 안전 보장 조약', display: '미일 안전 보장 조약 (미일 안보 조약)',
+    accept: (v) => /(미일|일미)?(안전보장|안보)조약/.test(v) || /^(미일|일미)안보$/.test(v),
+    why: '샌프란시스코 강화 조약과 같은 날(1951. 9. 8) 맺었다. 미국의 방위 의무는 1960년 개정 때 들어갔다.' },
+  { id: 'q3', type: 'mc', tag: '개념 확인', scene: 'jsp', short: '사회당 통일의 주장',
+    prompt: '1955년 좌파·우파 사회당이 하나로 합치며 내건 주장으로 옳은 것은?',
+    choices: ['헌법을 고쳐 군대를 다시 갖추자', '자위대의 해외 활동을 넓히자', '평화 헌법을 지키고 미일 안보 조약에 반대하자', '미국과의 군사 동맹을 강화하자'],
+    answer: 2, why: '사회당은 평화 헌법 유지와 비무장 중립을 내세웠다. 개헌과 재무장은 보수 세력의 주장이다.' },
+  { id: 'q4', type: 'short', tag: '단답형', scene: 'ldp', short: '자민당 결성',
+    prompt: '사회당 통일에 맞서 1955년 11월 자유당과 일본 민주당이 합쳐 만든 정당의 이름을 쓰세요.',
+    hint: '자유민주당', display: '자유민주당 (자민당)',
+    accept: (v) => v.includes('자유민주당') || v === '자민당',
+    why: '보수 합동으로 태어난 자민당은 1993년까지 38년 동안 혼자 정권을 잡았다.' },
+  { id: 'q5', type: 'mc', tag: '도표 읽기', scene: 'e1955', short: '1/3 의석의 의미',
+    fig: { st: 'e55', line: 'block', lineText: '1/3', left: '혁신 156석', right: '보수 297석' },
+    prompt: '1955년 총선 결과입니다. 혁신 세력이 의석의 1/3 이상을 차지한 것은 어떤 의미가 있었나요?',
+    choices: ['혼자 정권을 잡을 수 있었다', '총리를 뽑을 수 있었다', '헌법 개정을 막을 수 있었다', '미일 안보 조약을 없앨 수 있었다'],
+    answer: 2, why: '헌법을 고치려면 의원 2/3 이상이 찬성해야 한다. 1/3 넘게 차지하면 개헌을 막을 수 있다.' },
+  { id: 'q6', type: 'mc', tag: '개념 확인', scene: 'anpo', short: '1960년 안보 조약 개정',
+    prompt: '1960년 미일 안보 조약 개정에 대한 설명으로 옳은 것은?',
+    choices: ['주일 미군이 모두 철수했다', '미국의 일본 방위 의무를 조약에 적었다', '사회당이 앞장서서 개정했다', '개정 뒤 기시 내각의 인기가 높아졌다'],
+    answer: 1, why: '기시 내각은 미국과 대등한 관계를 위해 조약을 고쳤다. 사회당과 시민들의 안보 투쟁 속에 기시 내각은 물러났다.' },
+  { id: 'q7', type: 'multi', tag: '모두 고르기', scene: 'growth', short: '자민당 장기 집권의 배경',
+    prompt: '자민당이 오랫동안 집권할 수 있었던 배경을 모두 고르세요.',
+    choices: ['고도 경제 성장이 이어졌다', '사회당이 혼자 과반 의석을 차지했다', '야당이 여러 당으로 나뉘어 표가 갈라졌다', '주일 미군이 모두 철수했다'],
+    answer: [0, 2], why: '경제가 해마다 10% 가까이 성장했고, 야당은 사회당·공명당·민사당·공산당으로 나뉘어 자민당에 맞서기 어려웠다.' },
+  { id: 'q8', type: 'short', tag: '단답형', scene: 'lockheed', short: '록히드 사건',
+    prompt: '1976년 다나카 가쿠에이 전 총리가 미국 항공기 회사의 뇌물을 받은 혐의로 체포된 사건은?',
+    hint: '록히드 사건', display: '록히드 사건',
+    accept: (v) => /록[히키]드/.test(v) || v.includes('lockheed'),
+    why: '이 사건 뒤 치른 1976년 총선에서 자민당은 처음으로 과반 의석을 얻지 못했다.' },
+  { id: 'q9', type: 'mc', tag: '도표 읽기', scene: 'collapse', short: '1993년 총선 이후',
+    fig: { st: 'e93', line: 'maj', lineText: '과반 256', left: '비자민 정당들', right: '자민당 223석' },
+    prompt: '1993년 총선 결과입니다. 이 선거 뒤에 일어난 일로 옳은 것은?',
+    choices: ['자민당이 혼자 과반을 지켜 정권을 이어 갔다', '사회당이 혼자 정권을 잡았다', '비자민 8개 정당·정파가 연립 내각을 세웠다', '민주당이 혼자 과반을 차지했다'],
+    answer: 2, why: '자민당이 과반(256석)에 못 미치자 비자민 정당들이 손잡고 호소카와 연립 내각을 세웠다. 이로써 55년 체제가 무너졌다.' },
+  { id: 'q10', type: 'short', tag: '단답형', scene: 'collapse', short: '호소카와 연립 내각',
+    prompt: '1993년 비자민 연립 내각을 이끈 총리의 이름을 쓰세요. (성만 써도 돼요)',
+    hint: '호소카와', display: '호소카와 (모리히로)',
+    accept: (v) => /호소[카가]와/.test(v) || v.includes('hosokawa'),
+    why: '일본 신당의 호소카와 모리히로가 8개 정당·정파 연립 내각의 총리가 되었다.' },
+  { id: 'q11', type: 'ox', tag: 'O·X', scene: 'dpj', short: 'O·X로 정리하기',
+    prompt: '다음 설명이 맞으면 O, 틀리면 X를 고르세요.',
+    items: [['55년 체제 동안 사회당은 대부분 과반 의석을 차지했다.', false], ['1976년 총선에서 자민당은 처음으로 과반 의석을 얻지 못했다.', true], ['2009년 총선에서 야당이던 민주당이 이겨 정권이 바뀌었다.', true], ['2012년 정권을 되찾은 자민당은 평화 헌법 개정과 자위대 지위 강화를 추진했다.', true]],
+    why: '사회당은 약 1/3 의석에 머물렀다. 나머지 세 문장은 모두 맞다.' },
+  { id: 'q12', type: 'order', tag: '순서 배열', scene: 'summary', short: '사건 순서',
+    prompt: '다음 사건을 일어난 순서대로 누르세요.',
+    items: ['일본 사회당 통일', '자유민주당 결성', '미일 안보 조약 개정', '록히드 사건', '호소카와 연립 내각 수립', '민주당으로 정권 교체'],
+    show: [3, 0, 5, 2, 4, 1],
+    why: '사회당 통일(1955.10) → 자민당 결성(1955.11) → 안보 조약 개정(1960) → 록히드 사건(1976) → 호소카와 내각(1993) → 민주당 정권 교체(2009)' },
+  { id: 'q13', type: 'essay', tag: '서술형', scene: 'collapse', short: '55년 체제 붕괴 원인',
+    prompt: '55년 체제가 무너진 원인을 두 가지 쓰세요.',
+    groups: [['부패 사건', /부패|록[히키]드|리쿠르트|사가와|뇌물|비리|스캔들|금권|정경유착/], ['경제 침체', /경제|불황|침체|거품|버블/], ['자민당 분열', /분열|탈당|신생당|사키가케|내분/]],
+    model: '록히드 사건 같은 부패 사건이 잇따랐고, 거품 경제가 무너지며 경제가 침체했다. 여기에 자민당이 분열해 1993년 총선에서 과반을 잃었다.',
+    why: '부패 사건, 경제 침체, 자민당 분열 가운데 두 가지를 쓰면 정답으로 처리한다. 핵심어로 채점하므로 선생님과 함께 다시 확인해 보자.' },
+];
+let qs = { ans: {} }, qi = 0, resetArmed = false;
+const draft = {};
+try { const raw = localStorage.getItem(QKEY); if (raw) { const v = JSON.parse(raw); if (v && v.ans) qs = v; } } catch (e) { /* storage unavailable */ }
+const saveQuiz = () => { try { localStorage.setItem(QKEY, JSON.stringify(qs)); } catch (e) { /* storage unavailable */ } };
 
-cur = idFromHash();
-layout();
-// first frame: seats rise in from the floor, left to right
-{ const g = geom(467); seatEls.forEach((el, i) => { const s = g.seats[Math.min(i, 466)]; el.style.transform = `translate(${s.x}px,${L.cy}px)`; el.setAttribute('r', g.dot); }); }
-requestAnimationFrame(() => go(cur));
-if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => relayout());
+function essayHits(q, text) { return q.groups.filter(([, re]) => re.test(text)).map(([name]) => name); }
+function grade(q, r) {
+  if (q.type === 'mc') return r === q.answer;
+  if (q.type === 'multi') return r.length === q.answer.length && q.answer.every((k) => r.includes(k));
+  if (q.type === 'short') return q.accept(norm(r));
+  if (q.type === 'ox') return q.items.every(([, v], k) => r[k] === v);
+  if (q.type === 'order') return r.every((v, k) => v === k);
+  return essayHits(q, r).length >= 2;
+}
+function complete(q, r) {
+  if (r == null) return false;
+  if (q.type === 'short' || q.type === 'essay') return String(r).trim().length > 0;
+  if (q.type === 'multi') return r.length > 0;
+  if (q.type === 'ox') return q.items.every((_, k) => typeof r[k] === 'boolean');
+  if (q.type === 'order') return r.length === q.items.length;
+  return true;
+}
+
+function miniHemi(f) {
+  const st = ST[f.st], w = 440, cx = w / 2, cy = 200, R = 188, r = R * .36;
+  const g = hemiSeats(st.N, cx, cy, R, r), own = ownersOf(f.st);
+  let out = '';
+  g.seats.forEach((p, i) => {
+    const P = PARTY[own[i]], col = `var(--p-${P.col})`;
+    out += `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${g.dot.toFixed(2)}" style="fill:${P.ring ? 'var(--card)' : col};stroke:${col};stroke-width:${P.ring ? (g.dot * .5).toFixed(2) : 0}"/>`;
+  });
+  const sp = lineSpec(f.line, st.N), th = (g.seats[sp.k - 1].th + g.seats[sp.k].th) / 2;
+  const pt = (rad) => [cx + rad * Math.cos(th), cy - rad * Math.sin(th)];
+  const [x1, y1] = pt(r - 6), [x2, y2] = pt(R + 10), [lx, ly] = pt(R + 16);
+  const anchor = th > 1.9 ? 'end' : th < 1.25 ? 'start' : 'middle';
+  out += `<line class="fline" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/><text class="fll" x="${lx}" y="${ly}" text-anchor="${anchor}">${f.lineText}</text>`;
+  out += `<text class="fl" x="${cx - R}" y="${cy + 26}">${f.left}</text><text class="fl" x="${cx + R}" y="${cy + 26}" text-anchor="end">${f.right}</text>`;
+  const legend = st.parts.filter(([p, n]) => n >= 30 && p !== 'oth').map(([p, n]) => `<span class="chip" style="--c:var(--p-${PARTY[p].col})"><i${PARTY[p].ring ? ' class="ring"' : ''}></i>${PARTY[p].name.replace(/\s*\(.*\)$/, '')} ${n}</span>`).join('');
+  return `<svg viewBox="-10 -6 ${w + 20} 240" role="img" aria-label="${f.left}, ${f.right}의 의석 반원 도표">${out}</svg><div class="qz-legend">${legend}</div>`;
+}
+
+function answerUI(q, a) {
+  const locked = !!a, r = a ? a.resp : draft[q.id];
+  if (q.type === 'mc' || q.type === 'multi') {
+    const multi = q.type === 'multi';
+    return `<div class="qz-choices" role="${multi ? 'group' : 'radiogroup'}" aria-label="보기">${q.choices.map((c, k) => {
+      const sel = multi ? (r || []).includes(k) : r === k;
+      const isAns = multi ? q.answer.includes(k) : q.answer === k;
+      let cls = 'qz-ch' + (multi ? ' sq' : '') + (sel ? ' sel' : '');
+      if (locked) cls += isAns ? ' right' : sel ? ' wrong' : '';
+      const badge = multi ? (sel || (locked && isAns) ? '✓' : '') : k + 1;
+      return `<button type="button" class="${cls}" data-act="pick" data-k="${k}" role="${multi ? 'checkbox' : 'radio'}" aria-checked="${sel}"${locked ? ' disabled' : ''}><span class="bd">${badge}</span><span>${c}</span></button>`;
+    }).join('')}</div>`;
+  }
+  if (q.type === 'short') {
+    const showHint = locked || draft['hint-' + q.id];
+    return `<label class="qz-label" for="qz-in">답 쓰기</label><input class="qz-in" id="qz-in" type="text" autocomplete="off" spellcheck="false" placeholder="여기에 답을 쓰고 Enter" value="${esc(r || '')}"${locked ? ' disabled' : ''}>${showHint ? `<div class="qz-hint">초성 힌트 <b>${chosung(q.hint)}</b></div>` : ''}`;
+  }
+  if (q.type === 'essay') return `<label class="qz-label" for="qz-ta">답 쓰기</label><textarea class="qz-ta" id="qz-ta" placeholder="원인 두 가지를 문장으로 써 보세요"${locked ? ' disabled' : ''}>${esc(r || '')}</textarea>`;
+  if (q.type === 'ox') {
+    return `<div class="qz-oxs">${q.items.map(([t, v], k) => {
+      const mine = r ? r[k] : undefined;
+      const cls = locked ? (mine === v ? ' right' : ' wrong') : '';
+      return `<div class="qz-ox${cls}"><p>${k + 1}. ${t}</p><div class="pair" role="radiogroup" aria-label="${k + 1}번">${[true, false].map((b) => `<button type="button" data-act="ox" data-k="${k}" data-v="${b}" class="${mine === b ? 'sel' : ''}" role="radio" aria-checked="${mine === b}" aria-label="${b ? '맞다' : '틀리다'}"${locked ? ' disabled' : ''}>${b ? 'O' : 'X'}</button>`).join('')}</div></div>`;
+    }).join('')}</div>`;
+  }
+  const seq = r || [];
+  const lis = seq.length ? seq.map((k, pos) => `<li class="${locked ? (k === pos ? 'right' : 'wrong') : ''}">${q.items[k]}</li>`).join('') : '<li class="empty">아래 사건을 먼저 일어난 것부터 차례로 누르세요.</li>';
+  const pool = locked ? '' : `<div class="qz-pool">${q.show.filter((k) => !seq.includes(k)).map((k) => `<button type="button" data-act="ord" data-k="${k}">${q.items[k]}</button>`).join('')}</div>${seq.length ? '<div class="qz-actions" style="justify-content:flex-start"><button type="button" class="qz-btn" data-act="undo">한 칸 되돌리기</button><button type="button" class="qz-btn" data-act="clear">다시 배열</button></div>' : ''}`;
+  return `<ol class="qz-seq">${lis}</ol>${pool}`;
+}
+
+function feedback(q, a) {
+  let ans = '', extra = '';
+  if (q.type === 'mc' && !a.ok) ans = `정답 ${MARK[q.answer]} ${q.choices[q.answer]}`;
+  if (q.type === 'multi' && !a.ok) ans = `정답 ${q.answer.map((k) => q.choices[k]).join(' / ')}`;
+  if (q.type === 'short') { if (!a.ok) { ans = `정답 ${q.display}`; extra = `<p class="qz-mine">내 답: ${esc(a.resp)}</p>`; } }
+  if (q.type === 'ox' && !a.ok) ans = '정답 ' + q.items.map(([, v], k) => `${k + 1}번 ${v ? 'O' : 'X'}`).join(' · ');
+  if (q.type === 'order' && !a.ok) ans = '정답 순서';
+  if (q.type === 'essay') { const hits = essayHits(q, a.resp); extra = `<p class="qz-mine">찾은 핵심 내용: ${hits.length ? hits.join(', ') : '없음'}</p><p><b>예시 답안</b> ${q.model}</p>`; }
+  return `<div class="qz-fb ${a.ok ? 'ok' : 'bad'}" role="status"><div class="qz-fbh"><span class="ic" aria-hidden="true">${a.ok ? '✓' : '✕'}</span>${a.ok ? '정답이에요' : '다시 살펴봐요'}</div>${ans ? `<p class="qz-ans">${ans}</p>` : ''}${extra}<p>${q.why}</p><button type="button" class="qz-link" data-act="scene">관련 장면 다시 보기 →</button></div>`;
+}
+
+function quizRender(focusSel) {
+  const right = QZ.filter((q) => qs.ans[q.id] && qs.ans[q.id].ok).length;
+  const done = QZ.filter((q) => qs.ans[q.id]).length;
+  const steps = QZ.map((q, i) => {
+    const a = qs.ans[q.id], st = a ? (a.ok ? ' ok' : ' bad') : '';
+    return `<button type="button" class="qz-step${st}${i === qi ? ' cur' : ''}" data-act="jump" data-i="${i}" aria-label="${i + 1}번 ${a ? (a.ok ? '정답' : '오답') : '안 푼 문제'}"${i === qi ? ' aria-current="step"' : ''}>${a ? (a.ok ? '✓' : '✕') : i + 1}</button>`;
+  }).join('') + `<button type="button" class="qz-step res${qi === QZ.length ? ' cur' : ''}" data-act="jump" data-i="${QZ.length}">결과</button>`;
+  let body;
+  if (qi >= QZ.length) {
+    const wrong = QZ.filter((q) => qs.ans[q.id] && !qs.ans[q.id].ok).length;
+    const msg = done < QZ.length ? `아직 ${QZ.length - done}문제가 남았어요. 위의 번호를 눌러 마저 풀어 보세요.`
+      : right === QZ.length ? '모두 맞혔어요! 55년 체제의 흐름을 잘 이해했어요.'
+      : right >= 10 ? '잘했어요. 틀린 문제만 다시 확인해 봐요.'
+      : right >= 7 ? '조금만 더! 틀린 문제의 관련 장면을 다시 보고 풀어 봐요.'
+      : '수업 자료를 한 번 더 살펴본 뒤 다시 도전해 봐요.';
+    body = `<section class="qz-res" aria-label="결과">
+      <div class="qz-big"><b>${right}</b><span>/ ${QZ.length}문제 맞힘</span></div>
+      <div class="qz-bar" aria-hidden="true">${QZ.map((q) => `<i class="${qs.ans[q.id] ? (qs.ans[q.id].ok ? 'ok' : 'bad') : ''}"></i>`).join('')}</div>
+      <p class="qz-prompt" style="font-size:17px;font-weight:600">${msg}</p>
+      <ul class="qz-list">${QZ.map((q, i) => { const a = qs.ans[q.id]; return `<li><button type="button" class="qz-row${a ? (a.ok ? ' ok' : ' bad') : ''}" data-act="jump" data-i="${i}"><span class="qz-pill">${a ? (a.ok ? '✓ 정답' : '✕ 오답') : '안 풂'}</span><span>${i + 1}. ${q.short}</span></button></li>`; }).join('')}</ul>
+      <div class="qz-actions" style="justify-content:flex-start">${wrong ? '<button type="button" class="qz-btn primary" data-act="retry">틀린 문제 다시 풀기</button>' : ''}<button type="button" class="qz-btn${resetArmed ? ' warn' : ''}" data-act="reset">${resetArmed ? '한 번 더 누르면 기록이 지워져요' : '처음부터 다시 풀기'}</button></div>
+      <p class="qz-note">기록은 이 기기의 브라우저에만 남습니다.</p>
+    </section>`;
+  } else {
+    const q = QZ[qi], a = qs.ans[q.id];
+    const fig = q.fig ? `<figure class="qz-fig">${miniHemi(q.fig)}</figure>` : '';
+    const actions = a
+      ? `<div class="qz-actions"><button type="button" class="qz-btn primary" data-act="next">${qi === QZ.length - 1 ? '결과 보기' : '다음 문제'} →</button></div>`
+      : `<div class="qz-msg" id="qz-msg" aria-live="polite"></div><div class="qz-actions">${q.type === 'short' && !draft['hint-' + q.id] ? '<button type="button" class="qz-btn" data-act="hint">초성 힌트</button>' : ''}<button type="submit" class="qz-btn primary">확인하기</button></div>`;
+    body = `<form class="qz-card" id="qz-form" novalidate>
+      <div class="qz-meta"><span class="qz-num">${qi + 1} / ${QZ.length}</span><span class="qz-tag">${q.tag}</span></div>
+      <h2 class="qz-prompt">${q.prompt}</h2>${fig}${answerUI(q, a)}${a ? feedback(q, a) : ''}${actions}
+    </form>`;
+  }
+  quizEl.innerHTML = `<div class="qz-wrap">
+    <header class="qz-head"><div><div class="qz-eyebrow">형성평가 · 일본 55년 체제</div><h1 class="qz-title">스스로 확인하기</h1></div><div class="qz-score" aria-live="polite"><b>${right}</b>/ ${QZ.length} 맞힘 · ${done}문제 풂</div></header>
+    <nav class="qz-steps" aria-label="문항 이동">${steps}</nav>${body}</div>`;
+  const form = $('#qz-form');
+  if (form) form.addEventListener('submit', onSubmit);
+  const inp = $('#qz-in') || $('#qz-ta');
+  if (inp && !inp.disabled) inp.addEventListener('input', () => { draft[QZ[qi].id] = inp.value; });
+  if (focusSel) { const el = quizEl.querySelector(focusSel); if (el) el.focus({ preventScroll: false }); }
+}
+
+function onSubmit(e) {
+  e.preventDefault();
+  const q = QZ[qi];
+  if (qs.ans[q.id]) return;
+  let r = draft[q.id];
+  if (q.type === 'short' || q.type === 'essay') r = ($('#qz-in') || $('#qz-ta')).value;
+  if (!complete(q, r)) {
+    const m = $('#qz-msg');
+    if (m) m.textContent = q.type === 'ox' ? '모든 문장에 O 또는 X를 골라 주세요.' : q.type === 'order' ? '모든 사건을 순서대로 눌러 주세요.' : q.type === 'short' || q.type === 'essay' ? '답을 써 주세요.' : '답을 골라 주세요.';
+    return;
+  }
+  qs.ans[q.id] = { resp: Array.isArray(r) ? r.slice() : r, ok: grade(q, r) };
+  saveQuiz();
+  quizRender('.qz-fb');
+}
+
+quizEl.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-act]');
+  if (!b || b.disabled) return;
+  const act = b.dataset.act, q = QZ[qi];
+  if (act !== 'reset') resetArmed = false;
+  if (act === 'pick') {
+    const k = +b.dataset.k;
+    if (q.type === 'mc') draft[q.id] = k;
+    else { const cur2 = draft[q.id] || []; draft[q.id] = cur2.includes(k) ? cur2.filter((x) => x !== k) : cur2.concat(k); }
+    quizRender();
+  } else if (act === 'ox') {
+    const arr = (draft[q.id] || []).slice(); arr[+b.dataset.k] = b.dataset.v === 'true'; draft[q.id] = arr; quizRender();
+  } else if (act === 'ord') {
+    draft[q.id] = (draft[q.id] || []).concat(+b.dataset.k); quizRender();
+  } else if (act === 'undo') {
+    draft[q.id] = (draft[q.id] || []).slice(0, -1); quizRender();
+  } else if (act === 'clear') {
+    draft[q.id] = []; quizRender();
+  } else if (act === 'hint') {
+    draft['hint-' + q.id] = true; quizRender('#qz-in');
+  } else if (act === 'jump') {
+    qi = +b.dataset.i; quizRender(); quizEl.scrollTop = 0;
+  } else if (act === 'next') {
+    qi = Math.min(qi + 1, QZ.length); quizRender(); quizEl.scrollTop = 0;
+  } else if (act === 'scene') {
+    goScene(q.scene);
+  } else if (act === 'retry') {
+    const first = QZ.findIndex((x) => qs.ans[x.id] && !qs.ans[x.id].ok);
+    QZ.forEach((x) => { if (qs.ans[x.id] && !qs.ans[x.id].ok) { delete qs.ans[x.id]; delete draft[x.id]; } });
+    saveQuiz(); qi = Math.max(0, first); quizRender(); quizEl.scrollTop = 0;
+  } else if (act === 'reset') {
+    if (!resetArmed) { resetArmed = true; quizRender(); return; }
+    resetArmed = false; qs = { ans: {} }; Object.keys(draft).forEach((k) => delete draft[k]); saveQuiz(); qi = 0; quizRender(); quizEl.scrollTop = 0;
+  }
+});
+
+/* ================= view switching ================= */
+let mode = 'lesson', lessonStarted = false, pendingScene = null;
+const tabL = $('#tab-lesson'), tabQ = $('#tab-quiz');
+function startLesson() {
+  lessonStarted = true;
+  cur = pendingScene != null ? pendingScene : idFromHash();
+  pendingScene = null;
+  layout();
+  // first frame: seats rise in from the floor
+  const g = geom(467);
+  seatEls.forEach((el, i) => { const p = g.seats[Math.min(i, 466)]; el.style.transform = `translate(${p.x}px,${L.cy}px)`; el.setAttribute('r', g.dot); });
+  requestAnimationFrame(() => go(cur));
+}
+function setMode(m) {
+  mode = m;
+  app.classList.toggle('quiz-on', m === 'quiz');
+  quizEl.hidden = m !== 'quiz';
+  tabL.setAttribute('aria-selected', String(m === 'lesson'));
+  tabQ.setAttribute('aria-selected', String(m === 'quiz'));
+  if (m === 'quiz') {
+    setPlaying(false); tip.hidden = true;
+    quizRender();
+    try { history.replaceState(null, '', '#quiz'); } catch (e) { /* ignore */ }
+    quizEl.focus({ preventScroll: true });
+  } else if (!lessonStarted) startLesson();
+  else {
+    relayout();
+    try { history.replaceState(null, '', '#' + SC[cur].id); } catch (e) { /* ignore */ }
+  }
+}
+function goScene(id) {
+  const i = Math.max(0, SC.findIndex((x) => x.id === id));
+  if (!lessonStarted) { pendingScene = i; setMode('lesson'); } else { setMode('lesson'); go(i); }
+}
+tabL.addEventListener('click', () => { if (mode !== 'lesson') setMode('lesson'); });
+tabQ.addEventListener('click', () => { if (mode !== 'quiz') setMode('quiz'); });
+for (const t of [tabL, tabQ]) t.addEventListener('keydown', (e) => { if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); const o = t === tabL ? tabQ : tabL; o.focus(); o.click(); } });
+
+let rsT = 0;
+addEventListener('resize', () => { clearTimeout(rsT); rsT = setTimeout(() => { if (mode === 'lesson' && lessonStarted) relayout(); }, 120); });
+function idFromHash() { const h = (location.hash || '').slice(1); const i = SC.findIndex((x) => x.id === h); return i < 0 ? 0 : i; }
+addEventListener('hashchange', () => {
+  if (location.hash === '#quiz') { if (mode !== 'quiz') setMode('quiz'); return; }
+  const i = idFromHash();
+  if (mode === 'quiz') { if (lessonStarted) { setMode('lesson'); go(i); } else { pendingScene = i; setMode('lesson'); } return; }
+  if (i !== cur) go(i);
+});
+
+if (location.hash === '#quiz') setMode('quiz'); else startLesson();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (mode === 'lesson' && lessonStarted) relayout(); });
 })();
 </script>
 </body>
