@@ -39,3 +39,12 @@ Supabase 실시간 동기화, 교사 대시보드, 문제 CSV 업로드 및 외�
 - 특정 장면 링크: `#indochina`, `#japan`, `#independence`, `#war1`, `#dienbienphu`, `#geneva`, `#election`, `#tonkin`, `#tet`, `#nixon`, `#paris`, `#saigon`, `#unification`
 
 지도 윤곽은 Natural Earth 1:10m 국가 경계(퍼블릭 도메인)를 줄여 넣은 것입니다. 다시 만들 때는 `scripts/build-vietnam-map-geo.mjs` 머리말의 순서를 따릅니다.
+
+## 일본 55년 체제 의석도
+
+`public/japan-1955-system.html`은 중의원 의석 반원 도표(점 1개 = 의원 1명)로 55년 체제의 성립(1955)과 붕괴(1993), 그 이후(2009·2012·개헌 추진)를 12개 장면으로 보여 주는 단독 실행 HTML입니다. 마지막 장면은 1955–2012년 총선 20회의 정당별 의석 비율 그래프입니다.
+
+- 바로 열기: 파일을 더블클릭합니다. 개발 서버에서는 `http://localhost:3000/japan55`
+- 조작: `→`/`Space` 다음, `←` 이전, `P` 자동 재생, `F` 전체 화면, `T` 밝은/어두운 화면. 점이나 그래프에 마우스를 올리면 정당 이름과 의석수가 뜹니다.
+- 특정 장면 링크: `#treaty`, `#e1955`, `#jsp`, `#ldp`, `#anpo`, `#growth`, `#lockheed`, `#collapse`, `#dpj`, `#ldp2012`, `#kaiken`, `#summary`
+- 의석 자료: 각 회 중의원 총선거 결과. 1955년 자민당 의석은 2월 총선의 민주당+자유당 합계, 사회당은 좌파+우파 합계입니다.

@@ -1,0 +1,856 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>일본 55년 체제 의석도</title>
+<meta name="description" content="중의원 의석 변화로 일본 55년 체제의 성립과 붕괴, 그 이후를 보여 주는 수업용 웹앱">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hahmlet:wght@600;800&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: one full-bleed stage. The Diet hemicycle is the picture; the year sits in its hollow, party totals hang off its two ends, and the event text sits under its floor. */
+:root {
+  --bg: #0d1220; --bg-glow: #18213a; --floor: rgba(170, 190, 230, .12);
+  --ink: #eef1f7; --ink-2: #a9b3c8; --ink-3: #6f7a93;
+  --card: rgba(13, 18, 32, .84); --line: rgba(170, 190, 230, .17); --chip: rgba(255, 255, 255, .07);
+  --halo: rgba(13, 18, 32, .95); --shade: rgba(2, 5, 12, .55); --fade: rgba(10, 14, 26, .92);
+  --focus: #ffd166;
+  --p-ldp: #3987e5; --p-jsp: #e66767; --p-dpj: #d95926; --p-kmt: #c98500; --p-dsp: #9085e9;
+  --p-jcp: #d55181; --p-split: #199e70; --p-ishin: #008300; --p-oth: #3e475b; --p-none: #252e44;
+  --f-display: "Hahmlet", "Noto Serif KR", "Nanum Myeongjo", "AppleMyungjo", serif;
+  --f-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --tl-h: 96px;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f3f5f9; --bg-glow: #ffffff; --floor: rgba(30, 50, 90, .1);
+    --ink: #111827; --ink-2: #445067; --ink-3: #7b869b;
+    --card: rgba(255, 255, 255, .92); --line: rgba(20, 40, 80, .14); --chip: rgba(15, 30, 60, .06);
+    --halo: rgba(255, 255, 255, .96); --shade: rgba(40, 60, 100, .16); --fade: rgba(236, 240, 246, .95);
+    --focus: #c98c00;
+    --p-ldp: #2a78d6; --p-jsp: #e34948; --p-dpj: #eb6834; --p-kmt: #eda100; --p-dsp: #6250d6;
+    --p-jcp: #e87ba4; --p-split: #1baf7a; --p-ishin: #008300; --p-oth: #c3cad6; --p-none: #dde2ea;
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f3f5f9; --bg-glow: #ffffff; --floor: rgba(30, 50, 90, .1);
+  --ink: #111827; --ink-2: #445067; --ink-3: #7b869b;
+  --card: rgba(255, 255, 255, .92); --line: rgba(20, 40, 80, .14); --chip: rgba(15, 30, 60, .06);
+  --halo: rgba(255, 255, 255, .96); --shade: rgba(40, 60, 100, .16); --fade: rgba(236, 240, 246, .95);
+  --focus: #c98c00;
+  --p-ldp: #2a78d6; --p-jsp: #e34948; --p-dpj: #eb6834; --p-kmt: #eda100; --p-dsp: #6250d6;
+  --p-jcp: #e87ba4; --p-split: #1baf7a; --p-ishin: #008300; --p-oth: #c3cad6; --p-none: #dde2ea;
+  color-scheme: light;
+}
+
+html, body { height: 100%; margin: 0; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); word-break: keep-all; overflow-wrap: break-word; overflow: hidden; -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+#app { position: fixed; inset: 0; overflow: hidden; }
+#stage { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.g0 { stop-color: var(--bg-glow); } .g1 { stop-color: var(--bg); }
+
+/* hemicycle */
+.floor { fill: none; stroke: var(--floor); stroke-width: 1; }
+.floor-base { stroke: var(--line); stroke-width: 1.5; }
+.seat { stroke-width: 0; transition: fill .55s ease, stroke .55s ease, transform .95s cubic-bezier(.3, .7, .2, 1), opacity .5s ease; }
+.seat.off { opacity: 0; }
+.seat.dim { opacity: .18; }
+#seats { transition: opacity .6s ease; }
+#seats.gone { opacity: 0; }
+#app.instant .seat, #app.instant .ov-item, #app.instant .end { transition: none !important; }
+.tline { fill: none; stroke: var(--ink-2); stroke-width: 1.4; stroke-dasharray: 5 4; }
+.tline.gold { stroke: var(--focus); stroke-width: 2; stroke-dasharray: none; }
+
+/* overlay items */
+#ov { position: absolute; inset: 0; pointer-events: none; }
+.ov-item { position: absolute; left: 0; top: 0; white-space: nowrap; opacity: 0; transition: opacity .5s ease, translate .5s ease; }
+.ov-item.on { opacity: 1; }
+.halo { text-shadow: 0 0 3px var(--halo), 0 0 8px var(--halo), 0 0 14px var(--halo); }
+.wl { display: flex; align-items: baseline; gap: 6px; font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.wl i { align-self: center; width: 9px; height: 9px; border-radius: 50%; background: var(--c); flex: none; }
+.wl i.ring { background: transparent; box-shadow: inset 0 0 0 2px var(--c); }
+.wl b { font-family: var(--f-mono); font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.wl small { font-size: 11.5px; color: var(--ink-3); font-weight: 500; }
+.ll { font-family: var(--f-mono); font-size: 11.5px; font-weight: 600; color: var(--ink-2); }
+.ll.gold { color: var(--ink); }
+.ll.gold::before { content: ""; display: inline-block; width: 8px; height: 2px; margin-right: 5px; vertical-align: middle; background: var(--focus); }
+
+#hollow { position: absolute; display: grid; justify-items: center; align-content: end; gap: 4px; text-align: center; pointer-events: none; }
+.h-year { font-family: var(--f-display); font-weight: 800; line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.h-sub { font-family: var(--f-mono); font-size: 12.5px; color: var(--ink-2); letter-spacing: .02em; }
+#hollow.mini .h-sub { display: none; }
+#hollow.mini .h-doc { transform: scale(.8); transform-origin: 50% 100%; }
+.h-doc { display: grid; gap: 7px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); text-align: left; }
+.h-doc b { font-family: var(--f-display); font-size: 15px; }
+.h-doc span { display: flex; align-items: center; gap: 9px; font-size: 14px; font-weight: 600; }
+.h-doc em { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; font-style: normal; font-family: var(--f-mono); font-size: 12px; font-weight: 600; border: 2px solid currentColor; }
+.h-doc .o { color: var(--p-ldp); } .h-doc .x { color: var(--p-jsp); }
+.swap { animation: swap .5s ease both; }
+@keyframes swap { from { opacity: 0; transform: translateY(6px); } }
+
+.end { position: absolute; display: grid; gap: 2px; white-space: nowrap; transition: opacity .5s ease; }
+.end.ar { text-align: right; justify-items: end; }
+.end .nm { display: flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 700; }
+.end.ar .nm { flex-direction: row-reverse; }
+.end .nm i { width: 11px; height: 11px; border-radius: 50%; background: var(--c); flex: none; }
+.end .num { font-family: var(--f-display); font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.end .num small { font-family: var(--f-body); font-size: .32em; font-weight: 600; color: var(--ink-2); margin-left: 3px; }
+.end .meta { font-family: var(--f-mono); font-size: 11.5px; color: var(--ink-3); }
+.end .sub { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+
+.note { position: absolute; box-sizing: border-box; display: grid; gap: 6px; padding: 12px 14px; border-radius: 12px; background: var(--card); border: 1px solid var(--line); box-shadow: 0 12px 30px var(--shade); white-space: normal; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.note .nh { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 700; color: var(--ink-2); letter-spacing: .02em; }
+.note .nh i { width: 9px; height: 9px; border-radius: 50%; background: var(--c, var(--ink-3)); flex: none; }
+.note .nt { font-size: 14.5px; line-height: 1.55; font-weight: 500; color: var(--ink); }
+.note { translate: 0 8px; }
+.note.on { translate: 0 0; }
+
+/* text block under the floor */
+#text { position: absolute; z-index: 2; display: grid; gap: 10px; align-content: start; }
+#text > * { animation: rise .6s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--i, 0) * 70ms + 60ms); }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+.t-date { text-align: center; font-family: var(--f-mono); font-size: 14px; font-weight: 600; color: var(--ink-2); letter-spacing: .04em; }
+.t-title { margin: 0; text-align: center; font-family: var(--f-display); font-weight: 800; font-size: clamp(24px, 2.5vw, 38px); line-height: 1.2; text-wrap: balance; }
+.t-vs { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 7px; padding: 4px 11px 4px 9px; border-radius: 999px; background: var(--chip); font-size: 13.5px; font-weight: 600; }
+.chip i { width: 9px; height: 9px; border-radius: 50%; background: var(--c); flex: none; }
+.chip i.ring { background: transparent; box-shadow: inset 0 0 0 2px var(--c); }
+.sep { font-family: var(--f-mono); font-size: 12px; font-weight: 600; color: var(--ink-3); }
+.t-body { margin: 0 auto; max-width: 36em; text-align: center; font-size: clamp(15.5px, 1.18vw, 18px); line-height: 1.65; text-wrap: pretty; }
+.t-notes { display: grid; gap: 8px; }
+.t-notes .note { position: static; translate: none; opacity: 1; box-shadow: none; padding: 9px 12px; }
+.t-notes .note .nt { font-size: 13.5px; }
+.t-foot { text-align: center; font-size: 11.5px; color: var(--ink-3); }
+.start { justify-self: center; display: inline-flex; align-items: center; gap: 10px; padding: 12px 22px; border: 0; border-radius: 999px; background: var(--ink); color: var(--bg); font-size: 16px; font-weight: 700; cursor: pointer; transition: transform .2s; }
+.start:hover { transform: translateX(3px); }
+.start svg { width: 16px; height: 16px; fill: currentColor; }
+.keys { text-align: center; font-size: 12.5px; color: var(--ink-3); }
+.keys kbd { font-family: var(--f-mono); font-size: 11.5px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line); color: var(--ink-2); }
+#text.narrow 
+/* summary chart */
+#chart { transition: opacity .6s ease; }
+#chart.hide { opacity: 0; pointer-events: none; }
+.c-grid { stroke: var(--line); stroke-width: 1; }
+.c-grid.maj { stroke: var(--ink-3); stroke-dasharray: 5 4; }
+.c-ax { fill: var(--ink-3); font-family: var(--f-mono); font-size: 11px; }
+.c-axl { fill: var(--ink-2); font-family: var(--f-body); font-size: 11.5px; font-weight: 600; }
+.c-band { fill: var(--chip); }
+.c-bandl { fill: var(--ink-2); font-family: var(--f-body); font-size: 12.5px; font-weight: 700; }
+.c-ser { fill: none; stroke-width: 2.4; stroke-linejoin: round; stroke-linecap: round; stroke-dasharray: 1 1; }
+.c-pt { stroke: var(--bg); stroke-width: 2; }
+.c-lab { font-family: var(--f-body); font-size: 13px; font-weight: 700; fill: var(--ink); paint-order: stroke; stroke: var(--bg); stroke-width: 4px; }
+.c-ev { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 2 3; }
+.c-evl { fill: var(--ink-2); font-family: var(--f-body); font-size: 11.5px; font-weight: 600; paint-order: stroke; stroke: var(--bg); stroke-width: 4px; }
+.c-cross { stroke: var(--ink-2); stroke-width: 1; }
+.c-hit { fill: transparent; }
+
+/* HUD */
+#brand { position: absolute; z-index: 4; top: calc(14px + env(safe-area-inset-top, 0px)); left: max(16px, env(safe-area-inset-left, 0px)); display: grid; gap: 2px; pointer-events: none; }
+#brand b { font-family: var(--f-display); font-size: 16px; font-weight: 800; }
+#brand span { font-family: var(--f-mono); font-size: 11px; letter-spacing: .06em; color: var(--ink-3); }
+#tools { position: absolute; z-index: 4; top: calc(12px + env(safe-area-inset-top, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); display: flex; gap: 8px; }
+.ibtn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 38px; min-width: 38px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); cursor: pointer; font-size: 13px; font-weight: 600; }
+.ibtn:hover { border-color: var(--ink-3); }
+.ibtn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+#tl { position: absolute; z-index: 4; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 12px; padding: 24px max(16px, env(safe-area-inset-right, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); background: linear-gradient(to top, var(--fade) 0%, var(--fade) 60%, transparent 100%); }
+.nav { flex: none; width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; background: var(--card); cursor: pointer; }
+.nav svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.nav:disabled { opacity: .35; cursor: default; }
+.tl-grid { position: relative; flex: 1; min-width: 0; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); row-gap: 8px; }
+.tl-ph { grid-row: 1; margin: 0 6px; padding-top: 5px; border-top: 1px solid var(--line); text-align: center; font-size: 11.5px; font-weight: 600; letter-spacing: .2em; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tl-ph.on { color: var(--ink); border-top-color: var(--ink-2); }
+.tl-line { grid-row: 2; grid-column: 1 / -1; align-self: start; margin: 10px calc(100% / 24) 0; height: 2px; background: var(--line); border-radius: 2px; }
+.tl-prog { height: 100%; width: 0; background: var(--ink-2); border-radius: 2px; transition: width .6s cubic-bezier(.2, .8, .2, 1); }
+.tl-dot { grid-row: 2; position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; padding: 4px 0 0; border: 0; background: none; color: var(--ink-3); cursor: pointer; }
+.tl-dot .d { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--ink-3); background: var(--bg); transition: transform .3s, background .3s, border-color .3s; }
+.tl-dot.past .d { background: var(--ink-2); border-color: var(--ink-2); }
+.tl-dot.on .d { background: var(--focus); border-color: var(--focus); transform: scale(1.45); box-shadow: 0 0 0 4px var(--chip); }
+.tl-dot .y { font-family: var(--f-mono); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.tl-dot.on .y { color: var(--ink); font-weight: 600; }
+.tl-dot .n { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); padding: 5px 9px; border-radius: 6px; background: var(--card); border: 1px solid var(--line); font-size: 12px; font-weight: 600; color: var(--ink); white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity .2s; }
+.tl-dot:hover .n, .tl-dot:focus-visible .n { opacity: 1; }
+.tl-dot:first-of-type .n { left: 0; transform: none; }
+.tl-dot:last-of-type .n { left: auto; right: 0; transform: none; }
+#play { position: relative; overflow: hidden; flex: none; height: 42px; }
+#play .pbar { position: absolute; left: 0; bottom: 0; height: 2px; width: 0; background: var(--focus); }
+#play.on .pbar { animation: pbar var(--dwell, 9s) linear forwards; }
+@keyframes pbar { to { width: 100%; } }
+#play .ico-pause { display: none; }
+#play.on .ico-pause { display: block; }
+#play.on .ico-play { display: none; }
+#tip { position: absolute; z-index: 6; left: 0; top: 0; max-width: 260px; padding: 7px 11px; border-radius: 8px; background: var(--card); border: 1px solid var(--line); box-shadow: 0 10px 24px var(--shade); font-size: 13px; font-weight: 600; line-height: 1.45; pointer-events: none; }
+#tip b { font-family: var(--f-mono); font-weight: 600; }
+#credit { position: absolute; z-index: 4; margin: 0; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(var(--tl-h) + 4px); font-size: 10.5px; color: var(--ink-3); pointer-events: none; }
+
+@media (max-width: 819px) {
+  #brand span { display: none; }
+  #tl { gap: 8px; padding-top: 20px; }
+  .tl-dot .y { font-size: 10px; visibility: hidden; }
+  .tl-dot.on .y { visibility: visible; }
+  .tl-ph { letter-spacing: .04em; font-size: 10px; margin: 0 2px; }
+  .nav { width: 38px; height: 38px; }
+  #play .lbl, .ibtn .lbl, .tl-dot .n, #credit { display: none; }
+  .wl { font-size: 12px; }
+  .wl b { font-size: 11.5px; }
+  .end .nm { font-size: 12.5px; }
+}
+@media (max-width: 480px) { #play { display: none; } }
+@media (pointer: coarse) { .keys { display: none; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; transition-delay: 0s !important; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <svg id="stage" role="img" aria-label="일본 중의원 의석 반원 도표">
+    <defs><radialGradient id="glow" cx="50%" cy="45%" r="70%"><stop offset="0" class="g0"/><stop offset="1" class="g1"/></radialGradient></defs>
+    <rect width="100%" height="100%" fill="url(#glow)"/>
+    <g id="floor"></g>
+    <g id="seats"></g>
+    <g id="lines"></g>
+    <g id="chart" class="hide"></g>
+  </svg>
+  <div id="ov" aria-hidden="true">
+    <div id="hollow"></div>
+    <div class="end" id="end-l"></div>
+    <div class="end" id="end-r"></div>
+    <div id="labels"></div>
+  </div>
+  <section id="text" aria-live="polite"></section>
+
+  <header id="brand"><b>일본 55년 체제의 성립과 붕괴</b><span>중의원 의석으로 읽는 일본 정치 1951–2015</span></header>
+  <div id="tools">
+    <button class="ibtn" id="theme" type="button" title="밝은 화면 / 어두운 화면 (T)" aria-label="화면 밝기 전환"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg></button>
+    <button class="ibtn" id="fs" type="button" title="전체 화면 (F)" aria-label="전체 화면"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+  </div>
+  <nav id="tl" aria-label="사건 타임라인">
+    <button class="nav" id="prev" type="button" aria-label="이전 장면"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+    <div class="tl-grid" id="tl-grid"><div class="tl-line"><div class="tl-prog" id="tl-prog"></div></div></div>
+    <button class="nav" id="next" type="button" aria-label="다음 장면"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
+    <button class="ibtn" id="play" type="button" aria-pressed="false" title="자동 재생 (P)"><svg class="ico-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10-6.5z" fill="currentColor"/></svg><svg class="ico-pause" viewBox="0 0 24 24"><path d="M9 5v14M15 5v14"/></svg><span class="lbl">자동 재생</span><span class="pbar"></span></button>
+  </nav>
+  <div id="tip" role="tooltip" hidden></div>
+  <p id="credit">의석: 중의원 총선거 결과</p>
+</div>
+<noscript><p style="position:fixed;inset:auto 16px 16px">이 자료는 JavaScript가 켜져 있어야 동작합니다.</p></noscript>
+
+<script>
+(() => {
+'use strict';
+const $ = (s) => document.querySelector(s);
+const NS = 'http://www.w3.org/2000/svg';
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+function S(tag, attrs, parent) { const e = document.createElementNS(NS, tag); if (attrs) for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+
+/* ================= data ================= */
+// Parties. `col` picks the colour token; `ring` draws the seat as an outline (pre-merger factions).
+const PARTY = {
+  none:  { name: '의석', col: 'none' },
+  dem:   { name: '일본 민주당 (보수)', col: 'ldp' },
+  lib:   { name: '자유당 (보수)', col: 'ldp', ring: true },
+  ldp:   { name: '자유민주당 (자민당)', col: 'ldp' },
+  jspL:  { name: '좌파 사회당 (혁신)', col: 'jsp' },
+  jspR:  { name: '우파 사회당 (혁신)', col: 'jsp', ring: true },
+  jsp:   { name: '일본 사회당', col: 'jsp' },
+  sdp:   { name: '사회민주당 (옛 사회당)', col: 'jsp' },
+  dsp:   { name: '민사당 (사회당 우파가 분리)', col: 'dsp' },
+  kmt:   { name: '공명당', col: 'kmt' },
+  jcp:   { name: '일본 공산당', col: 'jcp' },
+  nlc:   { name: '신자유 클럽 (자민당 탈당파)', col: 'split' },
+  split: { name: '신생당·신당 사키가케 (자민당 탈당파)', col: 'split' },
+  jnp:   { name: '일본 신당 (호소카와)', col: 'dpj' },
+  coal:  { name: '비자민 연립 8개 정당·정파', col: 'dpj' },
+  dpj:   { name: '민주당', col: 'dpj' },
+  ishin: { name: '일본 유신회', col: 'ishin' },
+  oth:   { name: '기타 정당·무소속', col: 'oth' },
+  othj:  { name: '공산당 등', col: 'oth' },
+  sdf:   { name: '사회민주연합', col: 'oth' },
+};
+// House of Representatives results. Seats run left to right in this order.
+const ST = {
+  blank: { N: 467, parts: [['none', 467]] },
+  e55:   { N: 467, parts: [['jspL', 89], ['jspR', 67], ['oth', 14], ['dem', 185], ['lib', 112]] },
+  e55j:  { N: 467, parts: [['jsp', 156], ['oth', 14], ['dem', 185], ['lib', 112]] },
+  e55l:  { N: 467, parts: [['jsp', 156], ['oth', 14], ['ldp', 297]] },
+  e60:   { N: 467, parts: [['jsp', 145], ['dsp', 17], ['jcp', 3], ['oth', 6], ['ldp', 296]] },
+  e69:   { N: 486, parts: [['jsp', 90], ['dsp', 31], ['kmt', 47], ['jcp', 14], ['oth', 16], ['ldp', 288]] },
+  e76:   { N: 511, parts: [['jsp', 123], ['dsp', 29], ['kmt', 55], ['jcp', 17], ['oth', 21], ['nlc', 17], ['ldp', 249]] },
+  e93:   { N: 511, parts: [['jcp', 15], ['oth', 30], ['jsp', 70], ['sdf', 4], ['kmt', 51], ['dsp', 15], ['jnp', 35], ['split', 68], ['ldp', 223]] },
+  e93c:  { N: 511, parts: [['jcp', 15], ['oth', 30], ['coal', 243], ['ldp', 223]] },
+  e09:   { N: 480, parts: [['sdp', 7], ['othj', 9], ['dpj', 308], ['oth', 16], ['kmt', 21], ['ldp', 119]] },
+  e12:   { N: 480, parts: [['sdp', 2], ['othj', 8], ['dpj', 57], ['oth', 34], ['ishin', 54], ['kmt', 31], ['ldp', 294]] },
+};
+// Every general election 1955-2012: [year, total, LDP, JSP/SDP, DPJ]
+const ELEC = [
+  [1955.15, 467, 297, 156, null], [1958.39, 467, 287, 166, null], [1960.89, 467, 296, 145, null], [1963.89, 467, 283, 144, null],
+  [1967.08, 486, 277, 140, null], [1969.99, 486, 288, 90, null], [1972.94, 491, 271, 118, null], [1976.93, 511, 249, 123, null],
+  [1979.77, 511, 248, 107, null], [1980.47, 511, 284, 107, null], [1983.96, 511, 250, 112, null], [1986.51, 512, 300, 85, null],
+  [1990.13, 512, 275, 136, null], [1993.55, 511, 223, 70, null], [1996.8, 500, 239, 15, 52], [2000.48, 480, 233, 19, 127],
+  [2003.86, 480, 237, 6, 177], [2005.69, 480, 296, 7, 113], [2009.66, 480, 119, 7, 308], [2012.96, 480, 294, 2, 57],
+];
+
+/* ================= scenes ================= */
+const PHASES = ['성립', '장기 집권', '붕괴', '붕괴 이후', '정리'];
+const SC = [
+  { id: 'intro', intro: true, states: [{ s: 'e55l', at: 300 }], hollow: { y: '55년 체제', s: '자민당 vs 사회당', small: true } },
+
+  { id: 'treaty', ph: 0, yr: '1951', nm: '미일 안보 조약', date: '1951. 9. 8',
+    title: '배경: 미일 안전 보장 조약',
+    body: '샌프란시스코 강화 조약과 함께 맺었다. 미군은 일본에 계속 머물지만, 미국이 일본을 지킬 의무는 적혀 있지 않았다.',
+    vs: [['jsp', '혁신 세력'], 'vs', ['ldp', '보수 세력']],
+    states: [{ s: 'blank', at: 0 }], hollow: { doc: true },
+    notes: [{ side: 'l', c: 'jsp', h: '혁신 세력 (사회당)', t: '평화 헌법을 지키고 미일 안보 조약에 반대' }, { side: 'r', c: 'ldp', h: '보수 세력 (자유당·민주당)', t: '헌법을 고쳐 재무장, 조약도 대등하게 고치자' }] },
+
+  { id: 'e1955', ph: 0, yr: '1955', nm: '1955 총선거', date: '1955. 2. 27 총선거',
+    title: '보수도 혁신도 둘로 나뉘다',
+    body: '보수는 민주당과 자유당, 혁신은 좌파·우파 사회당으로 갈라져 있었다. 혁신 세력이 1/3을 차지해 개헌을 막을 수 있었다.',
+    vs: [['jsp', '좌파 사회당'], ['jsp', '우파 사회당', 1], 'vs', ['ldp', '민주당'], ['ldp', '자유당', 1]],
+    states: [{ s: 'e55', at: 0, wl: ['jspL', 'jspR', 'dem', 'lib'], ends: { l: ['혁신 계열', 'jsp', 156, '좌파 + 우파 사회당'], r: ['보수 계열', 'ldp', 297, '민주당 + 자유당'] } }],
+    lines: ['block'], hollow: { y: '1955', s: '2. 27 총선 · 중의원 467석' } },
+
+  { id: 'jsp', ph: 0, yr: '1955', nm: '사회당 통일', date: '1955. 10. 13',
+    title: '일본 사회당 통일 (좌파 + 우파)',
+    body: '평화 헌법 유지와 미일 안보 조약 반대를 내걸고 좌파·우파 사회당이 다시 하나가 되었다.',
+    vs: [['jsp', '좌파'], '+', ['jsp', '우파', 1], '→', ['jsp', '일본 사회당']],
+    states: [{ s: 'e55', at: 0, wl: ['dem', 'lib'], ends: { l: ['혁신 계열', 'jsp', 156, '좌파 + 우파 사회당'], r: ['보수 계열', 'ldp', 297, '민주당 + 자유당'] } },
+      { s: 'e55j', at: 1300, wl: ['dem', 'lib'], ends: { l: ['일본 사회당', 'jsp', 156, '1955.10 통일'], r: ['보수 계열', 'ldp', 297, '민주당 + 자유당'] } }],
+    lines: ['block'], hollow: { y: '1955', s: '10. 13 · 중의원 467석' } },
+
+  { id: 'ldp', ph: 0, yr: '1955', nm: '자민당 결성', date: '1955. 11. 15',
+    title: '자유민주당 결성, 55년 체제 성립',
+    body: '사회당 통일에 맞서 자유당과 민주당이 합쳐 자민당이 되었다. 여당 자민당과 제1 야당 사회당의 구도가 38년 동안 이어졌다.',
+    vs: [['ldp', '민주당'], '+', ['ldp', '자유당', 1], '→', ['ldp', '자유민주당']],
+    states: [{ s: 'e55j', at: 0, ends: { l: ['일본 사회당', 'jsp', 156], r: ['보수 계열', 'ldp', 297, '민주당 + 자유당'] } },
+      { s: 'e55l', at: 1300, ends: { l: ['일본 사회당', 'jsp', 156, '약 1/3 · 개헌 저지'], r: ['자유민주당', 'ldp', 297, '약 2/3 · 단독 집권'] } }],
+    lines: ['maj', 'block'], hollow: { y: '1955', s: '11. 15 · 중의원 467석' },
+    notes: [{ side: 'l', c: 'jsp', h: '사회당', t: '평화 헌법 지키기 · 비무장 중립' }, { side: 'r', c: 'ldp', h: '자민당', t: '헌법 개정 · 미국과 협력하며 경제 성장' }],
+    foot: '의석은 1955년 2월 총선 결과로 합산했다.' },
+
+  { id: 'anpo', ph: 1, yr: '1960', nm: '안보 조약 개정', date: '1960. 1. 19 서명 · 11. 20 총선',
+    title: '미일 안보 조약 개정과 안보 투쟁',
+    body: '기시 내각은 일본의 군사력을 키워 미국과 대등한 관계를 맺으려 조약을 고쳤다. 사회당과 시민들은 국회를 둘러싸고 거세게 반대했다.',
+    vs: [['ldp', '자민당 · 기시 내각'], 'vs', ['jsp', '사회당 · 시민']],
+    states: [{ s: 'e60', at: 0, wl: ['dsp'], ends: { l: ['일본 사회당', 'jsp', 145], r: ['자유민주당', 'ldp', 296] } }],
+    lines: ['maj'], hollow: { y: '1960', s: '1. 19 서명 · 11. 20 총선' },
+    notes: [{ side: 'l', c: 'jsp', h: '안보 투쟁 (1960. 5~6)', t: '국회 앞 대규모 시위 → 조약 발효 직후 기시 내각 사퇴' }, { side: 'r', c: 'ldp', h: '새 안보 조약', t: '미국의 일본 방위 의무를 적고, 미군은 계속 주둔' }] },
+
+  { id: 'growth', ph: 1, yr: '1969', nm: '고도 성장', date: '1960년대 · 1969. 12. 27 총선',
+    title: '고도 성장과 사회당의 한계',
+    body: '경제가 해마다 10% 가까이 성장하자 자민당 지지가 이어졌다. 사회당은 90석으로 줄고 야당은 여러 당으로 나뉘었다.',
+    vs: [['ldp', '자민당 288'], 'vs', ['jsp', '사회당 90'], ['kmt', '공명당'], ['dsp', '민사당'], ['jcp', '공산당']],
+    states: [{ s: 'e69', at: 0, wl: ['dsp', 'kmt', 'jcp'], ends: { l: ['일본 사회당', 'jsp', 90], r: ['자유민주당', 'ldp', 288] } }],
+    lines: ['maj'], hollow: { y: '1969', s: '12. 27 총선 · 중의원 486석' },
+    notes: [{ side: 'l', c: 'kmt', h: '야당이 여러 갈래로', t: '공명당·민사당·공산당이 늘며 야당 표가 나뉨' }, { side: 'r', c: 'ldp', h: '고도 성장', t: '1960 소득 배증 계획 · 1964 도쿄 올림픽 · 1968 GNP 자본주의 국가 2위' }] },
+
+  { id: 'lockheed', ph: 2, yr: '1976', nm: '록히드 사건', date: '1976. 7. 27 · 12. 5 총선',
+    title: '록히드 사건, 흔들리는 자민당',
+    body: '다나카 전 총리가 미국 항공기 회사의 뇌물을 받은 혐의로 체포되었다. 그해 총선에서 자민당은 처음으로 과반을 얻지 못했다.',
+    vs: [['ldp', '자민당 249'], 'vs', ['jsp', '사회당 123']],
+    states: [{ s: 'e76', at: 0, wl: ['kmt', 'nlc'], ends: { l: ['일본 사회당', 'jsp', 123], r: ['자유민주당', 'ldp', 249, '과반 256 미달'] } }],
+    lines: ['maj'], hollow: { y: '1976', s: '7. 27 체포 · 12. 5 총선' },
+    notes: [{ side: 'l', c: 'jsp', h: '1976. 7. 27', t: '다나카 가쿠에이 전 총리 체포' }, { side: 'r', c: 'split', h: '자민당 분열의 시작', t: '탈당파가 신자유 클럽 결성 · 자민당은 무소속을 받아들여 겨우 과반 회복' }] },
+
+  { id: 'collapse', ph: 2, yr: '1993', nm: '55년 체제 붕괴', date: '1993. 7. 18 총선 · 8. 9 내각 출범',
+    title: '55년 체제의 붕괴',
+    body: '부패 사건과 경제 침체 속에 자민당이 쪼개졌다. 총선 뒤 비자민 8개 정당·정파가 손잡고 호소카와 연립 내각을 세웠다.',
+    vs: [['dpj', '비자민 연립 · 호소카와'], 'vs', ['ldp', '자민당 223']],
+    states: [{ s: 'e93', at: 0, wl: ['kmt', 'jnp', 'split'], ends: { l: ['일본 사회당', 'jsp', 70], r: ['자유민주당', 'ldp', 223, '과반 256 미달'] } },
+      { s: 'e93c', at: 2800, ends: { l: ['비자민 연립', 'dpj', 243, '+ 무소속 일부 → 과반'], r: ['자유민주당', 'ldp', 223, '38년 만에 야당으로'] } }],
+    lines: ['maj'], hollow: { y: '1993', s: '7. 18 총선 · 8. 9 연립 내각' },
+    notes: [{ side: 'l', c: 'jcp', h: '부패 사건 · 경제 침체', t: '록히드·리쿠르트·사가와규빈 사건 · 1991 거품 경제 붕괴' }, { side: 'r', c: 'split', h: '자민당 분열 (1993. 6)', t: '탈당파가 신생당·신당 사키가케 창당' }] },
+
+  { id: 'dpj', ph: 3, yr: '2009', nm: '민주당 집권', date: '2009. 8. 30 총선',
+    title: '민주당으로 정권 교체',
+    body: '야당 민주당이 308석을 얻어 하토야마 내각을 세웠다. 야당이 총선에서 단독 과반을 얻어 정권을 바꾼 것은 전후 처음이었다.',
+    vs: [['dpj', '민주당 308'], 'vs', ['ldp', '자민당 119']],
+    states: [{ s: 'e09', at: 0, wl: ['kmt'], ends: { l: ['민주당', 'dpj', 308, '단독 과반'], r: ['자유민주당', 'ldp', 119, '창당 이후 최저'] } }],
+    lines: ['maj'], hollow: { y: '2009', s: '8. 30 총선 · 중의원 480석' },
+    notes: [{ side: 'l', c: 'jsp', h: '사회당의 쇠퇴', t: '1996년 사회민주당으로 이름을 바꾼 뒤 7석까지 줄어듦' }] },
+
+  { id: 'ldp2012', ph: 3, yr: '2012', nm: '자민당 재집권', date: '2012. 12. 16 총선',
+    title: '자민당 정권 재획득',
+    body: '민주당 정권이 흔들리자 자민당이 294석으로 압승했다. 아베 신조가 다시 총리가 되었다.',
+    vs: [['ldp', '자민당 294'], '+', ['kmt', '공명당 31'], 'vs', ['dpj', '민주당 57']],
+    states: [{ s: 'e12', at: 0, wl: ['ishin', 'kmt'], ends: { l: ['민주당', 'dpj', 57], r: ['자유민주당', 'ldp', 294, '+ 공명당 31 = 325석'] } }],
+    lines: ['maj', 'two3'], hollow: { y: '2012', s: '12. 16 총선 · 중의원 480석' },
+    notes: [{ side: 'r', c: 'ldp', h: '연립 여당 325석', t: '자민당 + 공명당이 중의원 2/3(320석)를 넘김' }] },
+
+  { id: 'kaiken', ph: 3, yr: '2015', nm: '개헌 추진', date: '2012 ~ 2015',
+    title: '평화 헌법 개정 · 자위대 강화 추진',
+    body: '아베 내각은 헌법 9조 개정과 자위대의 지위 강화를 추진했다. 2015년에는 집단적 자위권을 허용하는 안보 관련법을 만들었다.',
+    vs: [['ldp', '자민당'], '+', ['kmt', '공명당'], '→', ['ldp', '개헌 발의선 2/3']],
+    states: [{ s: 'e12', at: 0, focus: ['ldp', 'kmt'], ends: { l: ['야당 등', 'oth', 155], r: ['연립 여당', 'ldp', 325, '자민당 294 + 공명당 31'] } }],
+    lines: ['two3'], hollow: { y: '9조', s: '전쟁 포기 · 군대 보유 금지 조항' },
+    notes: [{ side: 'l', c: 'oth', h: '개헌 절차', t: '중의원·참의원 각각 2/3 찬성으로 발의 → 국민 투표 과반' }, { side: 'r', c: 'ldp', h: '2015 안보 관련법', t: '집단적 자위권 행사 허용 · 자위대 해외 활동 확대' }] },
+
+  { id: 'summary', ph: 4, yr: '전체', nm: '한눈에 보기', date: '1955 ~ 2012 중의원 총선거 20회',
+    title: '38년 자민당 단독 집권, 그리고 그 뒤',
+    body: '1955년부터 1993년까지 38년 동안 자민당이 혼자 정권을 잡았다. 그 뒤 두 번 정권을 내주었지만(1993, 2009) 다시 돌아왔다.',
+    vs: [['ldp', '자민당'], ['jsp', '사회당 → 사민당'], ['dpj', '민주당 (1996~)']],
+    chart: true, dwell: 14000 },
+];
+const LAST = SC.length - 1;
+
+/* ================= layout ================= */
+const app = $('#app'), stage = $('#stage'), seatsG = $('#seats'), linesG = $('#lines'), floorG = $('#floor'), chartG = $('#chart');
+const ov = $('#ov'), labelsEl = $('#labels'), hollowEl = $('#hollow'), endL = $('#end-l'), endR = $('#end-r'), textEl = $('#text'), tl = $('#tl');
+const MAX = 512, ROWS = 13;
+let W = 0, H = 0, L = null, wide = true, cur = -1, curState = null;
+const geomCache = new Map();
+
+function geom(N) {
+  const key = [N, L.R, L.cx, L.cy].map((v) => v.toFixed(1)).join(':');
+  if (geomCache.has(key)) return geomCache.get(key);
+  const { cx, cy, R, r } = L;
+  const radii = Array.from({ length: ROWS }, (_, i) => r + (R - r) * i / (ROWS - 1));
+  const sum = radii.reduce((a, b) => a + b, 0);
+  const raw = radii.map((ri) => N * ri / sum);
+  const cnt = raw.map(Math.floor);
+  let rest = N - cnt.reduce((a, b) => a + b, 0);
+  raw.map((v, i) => [v - Math.floor(v), i]).sort((a, b) => b[0] - a[0]).forEach(([, i]) => { if (rest > 0) { cnt[i]++; rest--; } });
+  const seats = [];
+  radii.forEach((ri, i) => {
+    const m = cnt[i];
+    for (let k = 0; k < m; k++) {
+      const th = m === 1 ? Math.PI / 2 : Math.PI * (1 - k / (m - 1));
+      seats.push({ th, rad: ri, x: cx + ri * Math.cos(th), y: cy - ri * Math.sin(th) });
+    }
+  });
+  seats.sort((a, b) => b.th - a.th || a.rad - b.rad);
+  const g = { seats, dot: Math.min((R - r) / (ROWS - 1), Math.PI * r / (cnt[0] - 1)) * .4 };
+  geomCache.set(key, g);
+  return g;
+}
+
+const isWide = () => app.clientWidth >= 900 && app.clientWidth / app.clientHeight > 1.15;
+function layout() {
+  W = app.clientWidth; H = app.clientHeight;
+  const tlH = tl.offsetHeight;
+  app.style.setProperty('--tl-h', tlH + 'px');
+  const top = 60;
+  wide = isWide();
+  textEl.classList.toggle('narrow', !wide);
+  let R, tw, side = 0, cy;
+  const cx = W / 2;
+  if (wide) {
+    side = clamp(W * .16, 190, 300);
+    const rW = (W - 2 * side - 40) / 2;
+    R = Math.min(rW, 540);
+    for (let pass = 0; pass < 2; pass++) {
+      tw = Math.min(660, Math.max(320, 2 * R - 180));
+      textEl.style.width = tw + 'px';
+      R = Math.min(rW, 540, H - top - 44 - tlH - textEl.offsetHeight - 34);
+    }
+    R = Math.max(R, 150);
+    cy = top + 44 + R;
+    textEl.style.top = (cy + 24) + 'px';
+    // party totals stand at the two feet of the arc, just outside the text column
+    endL.className = 'end ar'; endR.className = 'end al';
+    endL.style.left = 'auto'; endL.style.right = (W - (cx - R + 74)) + 'px';
+    endR.style.left = (cx + R - 74) + 'px'; endR.style.right = 'auto';
+    endL.style.top = endR.style.top = (cy + 20) + 'px';
+  } else {
+    tw = W - 32;
+    textEl.style.width = tw + 'px';
+    const endsH = 96;
+    R = Math.min((W - 28) / 2, H - top - 22 - tlH - endsH - textEl.offsetHeight - 12);
+    R = Math.max(R, 100);
+    cy = top + 22 + R;
+    textEl.style.top = (cy + 12 + endsH) + 'px';
+    endL.className = 'end al'; endR.className = 'end ar';
+    endL.style.left = '16px'; endL.style.right = 'auto';
+    endR.style.left = 'auto'; endR.style.right = '16px';
+    endL.style.top = endR.style.top = (cy + 14) + 'px';
+  }
+  textEl.style.left = (cx - tw / 2) + 'px';
+  L = { cx, cy, R, r: R * .36, side, tw };
+  for (const e of [endL, endR]) e.style.setProperty('--num', Math.round(clamp(R * .11, 30, 58)) + 'px');
+  const hr = L.r;
+  Object.assign(hollowEl.style, { left: (cx - hr) + 'px', width: 2 * hr + 'px', top: (cy - hr) + 'px', height: (hr - 8) + 'px' });
+  hollowEl.style.setProperty('--ys', Math.round(clamp(hr * .44, 28, 92)) + 'px');
+  hollowEl.classList.toggle('mini', hr < 100);
+  drawFloor();
+}
+
+function drawFloor() {
+  floorG.innerHTML = '';
+  const { cx, cy, R, r } = L;
+  const arc = (rad) => `M${cx - rad} ${cy}A${rad} ${rad} 0 0 1 ${cx + rad} ${cy}`;
+  S('path', { d: arc(R + 14), class: 'floor' }, floorG);
+  S('path', { d: arc(r - 12), class: 'floor' }, floorG);
+  S('path', { d: `M${cx - R - 24} ${cy + 6}H${cx + R + 24}`, class: 'floor floor-base' }, floorG);
+}
+
+/* ================= seats ================= */
+const seatEls = [];
+for (let i = 0; i < MAX; i++) seatEls.push(S('circle', { class: 'seat off', r: 3, 'data-i': i }, seatsG));
+let owners = new Array(MAX).fill(null);
+
+function ownersOf(st) { const o = []; for (const [p, n] of ST[st].parts) for (let j = 0; j < n; j++) o.push(p); return o; }
+
+function applySeats(stKey, focus, instant) {
+  const st = ST[stKey], g = geom(st.N), next = ownersOf(stKey);
+  let sum = 0, n = 0;
+  for (let i = 0; i < st.N; i++) if (owners[i] !== next[i]) { sum += g.seats[i].th; n++; }
+  const thc = n ? sum / n : Math.PI / 2;
+  for (let i = 0; i < MAX; i++) {
+    const el = seatEls[i];
+    if (i < st.N) {
+      const p = next[i], P = PARTY[p], s = g.seats[i];
+      const changed = owners[i] !== p;
+      el.style.transitionDelay = instant || !changed ? '0ms' : `${Math.round(Math.abs(s.th - thc) / Math.PI * 1100 + Math.random() * 140)}ms`;
+      el.setAttribute('r', g.dot.toFixed(2));
+      el.style.transform = `translate(${s.x.toFixed(1)}px,${s.y.toFixed(1)}px)`;
+      const col = `var(--p-${P.col})`;
+      el.style.fill = P.ring ? 'var(--bg)' : col;
+      el.style.stroke = col;
+      el.style.strokeWidth = P.ring ? (g.dot * .5).toFixed(2) + 'px' : '0px';
+      el.classList.remove('off');
+      el.classList.toggle('dim', !!focus && !focus.includes(p));
+      owners[i] = p;
+    } else { el.classList.add('off'); owners[i] = null; }
+  }
+}
+
+/* ================= labels, lines, ends ================= */
+function rangeOf(stKey, party) { let a = 0; for (const [p, n] of ST[stKey].parts) { if (p === party) return [a, a + n]; a += n; } return null; }
+function lineSpec(type, N) {
+  const maj = Math.floor(N / 2) + 1, two3 = Math.ceil(2 * N / 3);
+  if (type === 'maj') return { k: N - maj, text: `과반 ${maj}석` };
+  if (type === 'block') return { k: N - two3 + 1, text: `개헌 저지선 1/3 · ${N - two3 + 1}석`, gold: true };
+  return { k: N - two3, text: `개헌 발의선 2/3 · ${two3}석`, gold: true };
+}
+function place(el, th, rad, gap = 0) {
+  const { cx, cy } = L;
+  const x = cx + rad * Math.cos(th), y = cy - rad * Math.sin(th);
+  const deg = th * 180 / Math.PI;
+  let tx = '-50%', ty = '-100%';
+  if (deg > 108) { tx = `calc(-100% - ${gap}px)`; ty = '-50%'; } else if (deg < 72) { tx = `${gap}px`; ty = '-50%'; }
+  if (deg > 160 || deg < 20) ty = '-80%';
+  el.style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px) translate(${tx},${ty})`;
+}
+let labelTimers = [];
+function drawLabels(stKey, wl, lines, delay) {
+  labelsEl.querySelectorAll('.ov-item').forEach((e) => { e.classList.remove('on'); setTimeout(() => e.remove(), 400); });
+  linesG.innerHTML = '';
+  const st = ST[stKey], g = geom(st.N), N = st.N;
+  const lineAngles = [];
+  for (const type of lines || []) {
+    const sp = lineSpec(type, N);
+    const a = g.seats[clamp(sp.k - 1, 0, N - 1)].th, b = g.seats[clamp(sp.k, 0, N - 1)].th, th = (a + b) / 2;
+    lineAngles.push(th);
+    const { cx, cy, R, r } = L;
+    const p = S('path', { d: `M${cx + (r - 8) * Math.cos(th)} ${cy - (r - 8) * Math.sin(th)}L${cx + (R + 12) * Math.cos(th)} ${cy - (R + 12) * Math.sin(th)}`, class: 'tline' + (sp.gold ? ' gold' : ''), pathLength: 1 }, linesG);
+    p.style.strokeDasharray = sp.gold ? '1 1' : '0.012 0.01';
+    if (sp.gold && !INSTANT) { p.style.strokeDashoffset = 1; p.animate([{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], { duration: 900, delay: delay + 300, fill: 'forwards', easing: 'ease-out' }); }
+    const el = document.createElement('div');
+    el.className = 'ov-item ll halo' + (sp.gold ? ' gold' : '');
+    el.textContent = sp.text;
+    labelsEl.appendChild(el);
+    place(el, th, R + 18, 2);
+    show(el, delay + 500);
+  }
+  for (const key of wl || []) {
+    const rg = rangeOf(stKey, key); if (!rg) continue;
+    const mid = Math.floor((rg[0] + rg[1] - 1) / 2), th = g.seats[mid].th;
+    const near = lineAngles.some((a) => Math.abs(a - th) < .16);
+    const el = document.createElement('div');
+    el.className = 'ov-item wl halo';
+    el.style.setProperty('--c', `var(--p-${PARTY[key].col})`);
+    const short = PARTY[key].name.replace(/\s*\(.*\)$/, '');
+    const note = (PARTY[key].name.match(/\((.*)\)$/) || [])[1];
+    el.innerHTML = `<i${PARTY[key].ring ? ' class="ring"' : ''}></i><span>${short}</span><b>${rg[1] - rg[0]}</b>${note && /탈당|분리/.test(note) ? `<small>${note}</small>` : ''}`;
+    labelsEl.appendChild(el);
+    place(el, th, L.R + (near ? 46 : 18), 4);
+    show(el, delay + 650);
+  }
+}
+function show(el, ms) { if (INSTANT) { el.classList.add('on'); return; } labelTimers.push(setTimeout(() => el.classList.add('on'), ms)); }
+
+const endState = { l: null, r: null };
+function drawEnds(ends, N) {
+  for (const side of ['l', 'r']) {
+    const el = side === 'l' ? endL : endR, d = ends && ends[side];
+    if (!d) { el.style.opacity = 0; endState[side] = null; continue; }
+    const [name, col, n, sub] = d;
+    const prev = endState[side] ? endState[side].n : 0;
+    el.style.setProperty('--c', `var(--p-${col})`);
+    el.innerHTML = `<div class="nm"><i></i><span>${name}</span></div><div class="num" style="font-size:var(--num)"><span class="cnt">${prev}</span><small>석</small></div><div class="meta">${(n / N * 100).toFixed(1)}%</div>${sub ? `<div class="sub">${sub}</div>` : ''}`;
+    el.style.opacity = 1;
+    countTo(el.querySelector('.cnt'), prev, n);
+    endState[side] = { n };
+  }
+}
+function countTo(el, a, b) {
+  if (INSTANT || a === b) { el.textContent = b; return; }
+  const t0 = performance.now(), dur = 900;
+  const step = (now) => { const t = clamp((now - t0) / dur, 0, 1), e = 1 - Math.pow(1 - t, 3); el.textContent = Math.round(a + (b - a) * e); if (t < 1) requestAnimationFrame(step); };
+  requestAnimationFrame(step);
+}
+
+function drawHollow(h) {
+  if (!h) { hollowEl.innerHTML = ''; return; }
+  if (h.doc) {
+    hollowEl.innerHTML = `<div class="h-doc swap"><b>미일 안전 보장 조약 (1951)</b><span><em class="o">O</em>주일 미군 주둔</span><span><em class="x">X</em>미국의 일본 방위 의무</span></div>`;
+    return;
+  }
+  hollowEl.innerHTML = `<div class="h-year swap" style="font-size:${h.small ? 'calc(var(--ys) * .62)' : 'var(--ys)'}">${h.y}</div><div class="h-sub swap">${h.s}</div>`;
+}
+
+/* side notes: beside the hemicycle on wide screens, inside the text block on narrow ones */
+function drawNotes(notes, delay) {
+  ov.querySelectorAll('.note').forEach((e) => { e.classList.remove('on'); setTimeout(() => e.remove(), 400); });
+  if (!notes || !wide) return;
+  for (const n of notes) {
+    const el = document.createElement('div');
+    el.className = 'ov-item note';
+    el.style.setProperty('--c', `var(--p-${n.c})`);
+    el.innerHTML = `<div class="nh"><i></i>${n.h}</div><div class="nt">${n.t}</div>`;
+    const w = Math.min(L.side - 30, L.cx - L.R - 54);
+    el.style.width = w + 'px';
+    el.style.top = Math.max(66, L.cy - L.R - 6) + 'px';
+    el.style.left = (n.side === 'l' ? L.cx - L.R - 24 - w : L.cx + L.R + 24) + 'px';
+    ov.appendChild(el);
+    show(el, delay);
+  }
+}
+
+/* ================= text block ================= */
+function renderText(s) {
+  if (s.intro) {
+    textEl.innerHTML = `
+      <div class="t-date">중의원 의석으로 읽는 일본 정치 · 1951–2015</div>
+      <h1 class="t-title">일본 55년 체제의 성립과 붕괴</h1>
+      <p class="t-body">점 하나가 중의원 의원 한 명입니다. 자민당과 사회당의 의석이 사건마다 어떻게 바뀌었는지 따라가 봅니다.</p>
+      <button class="start" id="start" type="button">시작하기 <svg viewBox="0 0 24 24"><path d="M5 11h10.2l-4.6-4.6L12 5l7 7-7 7-1.4-1.4 4.6-4.6H5z"/></svg></button>
+      <div class="keys"><kbd>→</kbd> <kbd>Space</kbd> 다음 · <kbd>←</kbd> 이전 · <kbd>P</kbd> 자동 재생 · 점에 마우스를 올리면 정당 이름</div>`;
+    $('#start').addEventListener('click', () => go(1));
+  } else {
+    const vs = (s.vs || []).map((v) => (typeof v === 'string' ? `<span class="sep">${v}</span>` : `<span class="chip" style="--c:var(--p-${v[0]})"><i${v[2] ? ' class="ring"' : ''}></i>${v[1]}</span>`)).join('');
+    const notes = !isWide() && s.notes ? `<div class="t-notes">${s.notes.map((n) => `<div class="note" style="--c:var(--p-${n.c})"><div class="nh"><i></i>${n.h}</div><div class="nt">${n.t}</div></div>`).join('')}</div>` : '';
+    textEl.innerHTML = `
+      ${!isWide() || s.chart ? `<div class="t-date">${s.date}</div>` : ''}
+      <h2 class="t-title">${s.title}</h2>
+      <div class="t-vs">${vs}</div>
+      <p class="t-body">${s.body}</p>
+      ${notes}
+      ${s.foot ? `<div class="t-foot">${s.foot}</div>` : ''}`;
+  }
+  [...textEl.children].forEach((c, i) => c.style.setProperty('--i', i));
+  textEl.style.animation = 'none'; void textEl.offsetWidth; textEl.style.animation = '';
+  [...textEl.children].forEach((c) => { c.style.animation = 'none'; void c.offsetWidth; c.style.animation = ''; });
+}
+
+/* ================= summary chart ================= */
+function drawChart(animate) {
+  chartG.innerHTML = '';
+  const { cx, cy, R } = L;
+  const x0 = cx - R + 46, x1 = cx + R - 92, y0 = cy - R + 8, y1 = cy - 26;
+  const X = (yr) => x0 + (yr - 1953) / (2014 - 1953) * (x1 - x0);
+  const Y = (v) => y1 - v / .7 * (y1 - y0);
+  // band: LDP single-party rule
+  S('rect', { x: X(1955.87), y: y0, width: X(1993.6) - X(1955.87), height: y1 - y0, class: 'c-band' }, chartG);
+  S('text', { x: (X(1955.87) + X(1993.6)) / 2, y: y0 + 18, 'text-anchor': 'middle', class: 'c-bandl' }, chartG).textContent = '자민당 단독 집권 38년 (1955–1993)';
+  for (const [v, lab, cls] of [[0, '0%', ''], [1 / 3, '1/3', ''], [.5, '과반', 'maj'], [2 / 3, '2/3', '']]) {
+    S('line', { x1: x0, x2: x1, y1: Y(v), y2: Y(v), class: 'c-grid ' + cls }, chartG);
+    S('text', { x: x0 - 8, y: Y(v) + 4, 'text-anchor': 'end', class: v === .5 ? 'c-axl' : 'c-ax' }, chartG).textContent = lab;
+  }
+  for (const yr of [1955, 1965, 1975, 1985, 1995, 2005]) S('text', { x: X(yr), y: y1 + 18, 'text-anchor': 'middle', class: 'c-ax' }, chartG).textContent = yr;
+  for (const [yr, lab] of [[1976.9, '록히드 사건'], [1993.55, '55년 체제 붕괴']]) {
+    S('line', { x1: X(yr), x2: X(yr), y1: y0 + 28, y2: y1, class: 'c-ev' }, chartG);
+    S('text', { x: X(yr), y: y0 + 42, 'text-anchor': 'middle', class: 'c-evl' }, chartG).textContent = lab;
+  }
+  const series = [['ldp', 2], ['jsp', 3], ['dpj', 4]];
+  const paths = [];
+  for (const [col, idx] of series) {
+    const pts = ELEC.filter((e) => e[idx] != null).map((e) => [X(e[0]), Y(e[idx] / e[1])]);
+    const p = S('path', { d: 'M' + pts.map((q) => q.map((v) => v.toFixed(1)).join(' ')).join('L'), class: 'c-ser', pathLength: 1 }, chartG);
+    p.style.stroke = `var(--p-${col})`;
+    paths.push(p);
+    for (const q of pts) { const c = S('circle', { cx: q[0], cy: q[1], r: 3.6, class: 'c-pt' }, chartG); c.style.fill = `var(--p-${col})`; }
+  }
+  const lab = (x, y, t, anchor = 'start') => { S('text', { x, y, class: 'c-lab', 'text-anchor': anchor }, chartG).textContent = t; };
+  lab(X(2012.96) + 10, Y(294 / 480) + 4, '자민당 61%');
+  lab(X(2012.96) + 10, Y(57 / 480) + 4, '민주당 12%');
+  lab(X(2012.96) + 10, Y(2 / 480) + 4, '사민당 0.4%');
+  lab(X(1958.39), Y(166 / 467) - 12, '사회당 36%', 'start');
+  lab(X(2009.66) - 10, Y(308 / 480) - 8, '2009 민주당 64%', 'end');
+  lab(X(1993.55) + 8, Y(223 / 511) + 22, '1993 자민당 44%', 'start');
+  lab(X(2009.66) + 8, Y(119 / 480) + 20, '2009 자민당 25%', 'start');
+  if (animate && !INSTANT) paths.forEach((p, i) => p.animate([{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], { duration: 1600, delay: 300 + i * 350, fill: 'both', easing: 'ease-in-out' }));
+  // hover: nearest election
+  const cross = S('line', { y1: y0, y2: y1, class: 'c-cross', opacity: 0 }, chartG);
+  const hit = S('rect', { x: x0, y: y0, width: x1 - x0, height: y1 - y0, class: 'c-hit' }, chartG);
+  hit.style.pointerEvents = 'all';
+  hit.addEventListener('pointermove', (e) => {
+    const box = stage.getBoundingClientRect(), mx = e.clientX - box.left;
+    let best = ELEC[0];
+    for (const el of ELEC) if (Math.abs(X(el[0]) - mx) < Math.abs(X(best[0]) - mx)) best = el;
+    cross.setAttribute('x1', X(best[0])); cross.setAttribute('x2', X(best[0])); cross.setAttribute('opacity', 1);
+    const [yr, N, ldp, jsp, dpj] = best;
+    tipShow(e, `<b>${Math.floor(yr)}</b> 총선 · 총 ${N}석<br>자민당 ${ldp}석 (${(ldp / N * 100).toFixed(1)}%)${yr < 1956 ? ' · 민주당+자유당' : ''}<br>${yr < 1996 ? '사회당' : '사민당'} ${jsp}석${dpj ? `<br>민주당 ${dpj}석` : ''}`);
+  });
+  hit.addEventListener('pointerleave', () => { cross.setAttribute('opacity', 0); tip.hidden = true; });
+}
+
+/* ================= navigation ================= */
+let INSTANT = false, sceneTimers = [];
+function clearSceneTimers() { sceneTimers.forEach(clearTimeout); sceneTimers = []; labelTimers.forEach(clearTimeout); labelTimers = []; }
+function applyStateEntry(s, e, instant) {
+  INSTANT = instant;
+  curState = e;
+  applySeats(e.s, e.focus, instant);
+  drawEnds(e.ends, ST[e.s].N);
+  drawLabels(e.s, e.wl, s.lines, instant ? 0 : 500);
+  INSTANT = false;
+}
+function go(i, o = {}) {
+  i = clamp(i, 0, LAST);
+  const s = SC[i];
+  const instant = !!o.instant || reduced;
+  clearSceneTimers();
+  cur = i;
+  try { history.replaceState(null, '', '#' + s.id); } catch (e) { /* ignore */ }
+  if (instant) app.classList.add('instant');
+  renderText(s);
+  layout();
+  INSTANT = instant;
+  drawHollow(s.chart ? null : s.hollow);
+  drawNotes(s.notes, instant ? 0 : 900);
+  INSTANT = false;
+  seatsG.classList.toggle('gone', !!s.chart);
+  floorG.style.opacity = s.chart ? 0 : 1;
+  if (s.chart) {
+    linesG.innerHTML = ''; labelsEl.innerHTML = ''; drawEnds(null, 1);
+    INSTANT = instant; drawChart(true); INSTANT = false;
+    chartG.classList.remove('hide');
+  } else {
+    chartG.classList.add('hide');
+    setTimeout(() => { if (!SC[cur].chart) chartG.innerHTML = ''; }, 650);
+    if (instant) applyStateEntry(s, s.states[s.states.length - 1], true);
+    else s.states.forEach((e) => {
+      if (e.at === 0) applyStateEntry(s, e, false);
+      else sceneTimers.push(setTimeout(() => applyStateEntry(s, e, false), e.at));
+    });
+  }
+  updateTimeline();
+  if (instant) requestAnimationFrame(() => requestAnimationFrame(() => app.classList.remove('instant')));
+  schedulePlay();
+}
+
+function relayout() {
+  geomCache.clear();
+  app.classList.add('instant');
+  layout();
+  const s = SC[cur];
+  if (s.chart) drawChart(false);
+  else if (curState) {
+    INSTANT = true;
+    applySeats(curState.s, curState.focus, true);
+    drawLabels(curState.s, curState.wl, s.lines, 0);
+    INSTANT = false;
+  }
+  INSTANT = true; drawNotes(s.notes, 0); INSTANT = false;
+  requestAnimationFrame(() => requestAnimationFrame(() => app.classList.remove('instant')));
+}
+
+const dots = [];
+(() => {
+  const grid = $('#tl-grid');
+  const spans = [[1, 5], [5, 7], [7, 9], [9, 12], [12, 13]];
+  PHASES.forEach((p, i) => { const d = document.createElement('div'); d.className = 'tl-ph'; d.textContent = p; d.style.gridColumn = `${spans[i][0]} / ${spans[i][1]}`; grid.appendChild(d); });
+  SC.slice(1).forEach((s, i) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'tl-dot'; b.style.gridColumn = String(i + 1);
+    b.innerHTML = `<span class="n">${s.nm}</span><span class="d"></span><span class="y">${s.yr}</span>`;
+    b.setAttribute('aria-label', `${s.yr} ${s.nm}`);
+    b.addEventListener('click', () => go(i + 1));
+    grid.appendChild(b); dots.push(b);
+  });
+})();
+function updateTimeline() {
+  dots.forEach((d, i) => { d.classList.toggle('on', i + 1 === cur); d.classList.toggle('past', i + 1 < cur); d.setAttribute('aria-current', i + 1 === cur ? 'step' : 'false'); });
+  $('#tl-prog').style.width = cur <= 1 ? '0%' : ((cur - 1) / (LAST - 1)) * 100 + '%';
+  const ph = SC[cur].ph;
+  document.querySelectorAll('.tl-ph').forEach((e, i) => e.classList.toggle('on', i === ph));
+  $('#prev').disabled = cur <= 0;
+  $('#next').disabled = cur >= LAST;
+}
+
+let playing = false, playTimer = 0;
+const playBtn = $('#play');
+function schedulePlay() {
+  clearTimeout(playTimer);
+  playBtn.classList.remove('on'); void playBtn.offsetWidth;
+  if (!playing) return;
+  if (cur >= LAST) { setPlaying(false); return; }
+  const dwell = SC[cur].dwell || (SC[cur].intro ? 3000 : 10000);
+  playBtn.style.setProperty('--dwell', dwell + 'ms');
+  playBtn.classList.add('on');
+  playTimer = setTimeout(() => go(cur + 1), dwell);
+}
+function setPlaying(v) { playing = v; playBtn.setAttribute('aria-pressed', String(v)); playBtn.querySelector('.lbl').textContent = v ? '일시 정지' : '자동 재생'; schedulePlay(); }
+playBtn.addEventListener('click', () => setPlaying(!playing));
+$('#prev').addEventListener('click', () => go(cur - 1));
+$('#next').addEventListener('click', () => go(cur + 1));
+
+const root = document.documentElement;
+const effectiveTheme = () => root.dataset.theme || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+try { const t = localStorage.getItem('jp55-theme'); if (t === 'light' || t === 'dark') root.dataset.theme = t; } catch (e) { /* storage unavailable */ }
+function toggleTheme() { const t = effectiveTheme() === 'dark' ? 'light' : 'dark'; root.dataset.theme = t; try { localStorage.setItem('jp55-theme', t); } catch (e) { /* storage unavailable */ } }
+$('#theme').addEventListener('click', toggleTheme);
+function toggleFs() { try { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); else if (root.requestFullscreen) root.requestFullscreen().catch(() => {}); } catch (e) { /* not available */ } }
+$('#fs').addEventListener('click', toggleFs);
+
+document.addEventListener('keydown', (e) => {
+  if (e.altKey || e.ctrlKey || e.metaKey) return;
+  const k = e.key;
+  if (k === 'ArrowRight' || k === 'PageDown' || (k === ' ' && !(e.target instanceof HTMLButtonElement))) { e.preventDefault(); go(cur + 1); }
+  else if (k === 'ArrowLeft' || k === 'PageUp') { e.preventDefault(); go(cur - 1); }
+  else if (k === 'Home') go(0);
+  else if (k === 'End') go(LAST);
+  else if (k === 'p' || k === 'P') setPlaying(!playing);
+  else if (k === 'f' || k === 'F') toggleFs();
+  else if (k === 't' || k === 'T') toggleTheme();
+});
+
+/* seat tooltip */
+const tip = $('#tip');
+function tipShow(e, html) {
+  tip.innerHTML = html; tip.hidden = false;
+  const x = clamp(e.clientX + 16, 8, W - tip.offsetWidth - 8), y = clamp(e.clientY + 16, 8, H - tip.offsetHeight - 8);
+  tip.style.transform = `translate(${x}px,${y}px)`;
+}
+seatsG.addEventListener('pointermove', (e) => {
+  const i = +e.target.getAttribute('data-i'), p = owners[i];
+  if (!curState || p == null || p === 'none') { tip.hidden = true; return; }
+  const rg = rangeOf(curState.s, p), N = ST[curState.s].N, n = rg[1] - rg[0];
+  tipShow(e, `${PARTY[p].name}<br><b>${n}석</b> · ${(n / N * 100).toFixed(1)}%`);
+});
+seatsG.addEventListener('pointerleave', () => { tip.hidden = true; });
+seatsG.addEventListener('pointerup', (e) => { if (e.pointerType !== 'mouse') setTimeout(() => { tip.hidden = true; }, 2200); });
+
+let rsT = 0;
+addEventListener('resize', () => { clearTimeout(rsT); rsT = setTimeout(relayout, 120); });
+const idFromHash = () => { const h = (location.hash || '').slice(1); const i = SC.findIndex((s) => s.id === h); return i < 0 ? 0 : i; };
+addEventListener('hashchange', () => { const i = idFromHash(); if (i !== cur) go(i); });
+
+cur = idFromHash();
+layout();
+// first frame: seats rise in from the floor, left to right
+{ const g = geom(467); seatEls.forEach((el, i) => { const s = g.seats[Math.min(i, 466)]; el.style.transform = `translate(${s.x}px,${L.cy}px)`; el.setAttribute('r', g.dot); }); }
+requestAnimationFrame(() => go(cur));
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => relayout());
+})();
+</script>
+</body>
+</html>
