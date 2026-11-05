@@ -1,6 +1,8 @@
 // 손으로 그린 획 → 도형 알아보기 (긋다가 떼지 않고 멈추면, SPEC 6장 "도형 보정").
-// 모서리 찾기는 공개된 ShortStraw 방법(Wolin 외, 2008): 고른 간격으로 다시 찍은 점에서 앞뒤 몇 점 사이 거리("빨대")가
-// 짧아지는 곳이 모서리다. 모서리 사이가 모두 곧으면 다각형, 아니면 타원 맞추기로 원·타원을 본다.
+// 큰 모양은 공개된 CALI 인식기(Fonseca 외, 2002)의 넓이 비로 가린다: 볼록 껍질이 가장 작은 둘레 사각형을 꽉 채우면 사각형
+// (모서리가 둥글거나 변이 휘어도), 껍질 안의 가장 큰 삼각형이 껍질을 거의 채우면 삼각형.
+// 별·오각형·육각형·마름모 같은 나머지는 공개된 ShortStraw 방법(Wolin 외, 2008)으로 모서리를 찾는다: 고른 간격으로 다시 찍은 점에서
+// 앞뒤 몇 점 사이 거리("빨대")가 짧아지는 곳이 모서리. 모서리 사이가 모두 곧으면 다각형, 아니면 타원 맞추기로 원·타원.
 // 결과는 페이지 px 기준 (중심·크기·회전). 모르면 null → 그리던 쪽이 직선으로 바꾼다.
 
 import type { ShapeKind } from "./types";
@@ -127,7 +129,9 @@ export function recognizeShape(input: Pt[]): ShapeGuess | null {
       end = i;
     }
   }
-  const closed = gap < Math.max(0.16 * D, 12) && L > 1.6 * D;
+  // 덜 닫은 것(둘레의 몇 %)도 닫힌 모양으로
+  // (U·C·ㄱ처럼 열린 모양은 틈이 그은 길이의 30% 넘게)
+  const closed = gap < Math.max(0.22 * D, 0.12 * L, 12) && L > 1.6 * D;
   if (!closed) return recognizeArrow(pts, D, L);
   return recognizeClosed(pts.slice(0, end + 1));
 }
@@ -209,10 +213,144 @@ function recognizeClosed(loopPts: Pt[]): ShapeGuess | null {
   const ellErr = R.reduce((sum, p) => sum + ellipseDist(p, ell), 0) / N / D;
   const polyErr = polyValid ? R.reduce((sum, p) => sum + Math.min(...V.map((v, j) => lineDist(p, v, V[(j + 1) % k]))), 0) / N / D : Infinity;
 
+  // ── 전체 모양 (CALI): 볼록 껍질 / 가장 작은 둘레 사각형, 껍질 안 가장 큰 삼각형 / 껍질 ──
+  const hull = convexHull(R);
+  const hullArea = polygonArea(hull);
+  const rect = minAreaRect(hull);
+  const fill = hullArea / Math.max(1e-6, rect.w * rect.h);
+  const tri = largestTriangle(hull);
+  const triFill = tri.area / Math.max(1e-6, hullArea);
+
+  // 별은 껍질이 오각형이라 모서리로 먼저
+  if (polyValid && isStarCorners(V)) return classifyPolygon(V);
+  // 사각형: 원·타원은 π/4(손그림도 0.79 아래), 정육각형 0.75, 모서리가 아주 둥글고 변이 휜 사각형도 0.82 넘게
+  if (fill >= 0.83) return rectGuess(rect, hull);
+  // 삼각형: 원 안 가장 큰 삼각형은 원의 0.41, 사각형은 0.5
+  if (triFill >= 0.85) return classifyPolygon(tri.pts);
   if (polyValid && polyErr <= ellErr * 0.85) return classifyPolygon(V);
-  if (ellErr < 0.05) return ellipseGuess(ell);
+  if (ellErr < 0.06) return ellipseGuess(ell);
   if (polyValid && polyErr < 0.04) return classifyPolygon(V);
   return null;
+}
+
+/** 별 모양 모서리: 한 번에 그린 오각별(뾰족한 꼭짓점 5개) 또는 멀고 가까움을 번갈아 하는 꼭짓점 10개 */
+function isStarCorners(V: Pt[]): boolean {
+  if (V.length === 5) return V.every((_, i) => angleAt(V, i) < 72);
+  return V.length === 10 && isStar10(V, centroid(V));
+}
+
+/** 볼록 껍질 (Andrew monotone chain, 시계 반대 방향) */
+function convexHull(points: Pt[]): Pt[] {
+  const pts = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (pts.length < 3) return pts;
+  const cross = (o: Pt, a: Pt, b: Pt) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lower: Pt[] = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper: Pt[] = [];
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  return [...lower.slice(0, -1), ...upper.slice(0, -1)];
+}
+
+function polygonArea(P: Pt[]): number {
+  let a = 0;
+  for (let i = 0; i < P.length; i++) {
+    const [x1, y1] = P[i];
+    const [x2, y2] = P[(i + 1) % P.length];
+    a += x1 * y2 - x2 * y1;
+  }
+  return Math.abs(a) / 2;
+}
+
+interface Box {
+  cx: number;
+  cy: number;
+  w: number;
+  h: number;
+  /** w 쪽 변의 방향 (라디안) */
+  t: number;
+}
+
+/** 볼록 껍질을 감싸는 가장 작은 사각형 (껍질의 한 변과 나란한 것 중에서) */
+function minAreaRect(hull: Pt[]): Box {
+  let best: Box = { cx: 0, cy: 0, w: 0, h: 0, t: 0 };
+  let bestArea = Infinity;
+  for (let i = 0; i < hull.length; i++) {
+    const a = hull[i];
+    const b = hull[(i + 1) % hull.length];
+    const t = Math.atan2(b[1] - a[1], b[0] - a[0]);
+    const cos = Math.cos(t);
+    const sin = Math.sin(t);
+    let minU = Infinity;
+    let maxU = -Infinity;
+    let minV = Infinity;
+    let maxV = -Infinity;
+    for (const [x, y] of hull) {
+      const u = x * cos + y * sin;
+      const v = -x * sin + y * cos;
+      minU = Math.min(minU, u);
+      maxU = Math.max(maxU, u);
+      minV = Math.min(minV, v);
+      maxV = Math.max(maxV, v);
+    }
+    const area = (maxU - minU) * (maxV - minV);
+    if (area < bestArea) {
+      bestArea = area;
+      const mu = (minU + maxU) / 2;
+      const mv = (minV + maxV) / 2;
+      best = { cx: mu * cos - mv * sin, cy: mu * sin + mv * cos, w: maxU - minU, h: maxV - minV, t };
+    }
+  }
+  return best;
+}
+
+/** 껍질 꼭짓점으로 만들 수 있는 가장 큰 삼각형 (꼭짓점이 많으면 고르게 골라서) */
+function largestTriangle(hull: Pt[]): { area: number; pts: Pt[] } {
+  const step = Math.max(1, Math.ceil(hull.length / 36));
+  const H = hull.filter((_, i) => i % step === 0);
+  let best = { area: 0, pts: H.slice(0, 3) };
+  for (let i = 0; i < H.length; i++) {
+    for (let j = i + 1; j < H.length; j++) {
+      for (let k = j + 1; k < H.length; k++) {
+        const area = Math.abs((H[j][0] - H[i][0]) * (H[k][1] - H[i][1]) - (H[k][0] - H[i][0]) * (H[j][1] - H[i][1])) / 2;
+        if (area > best.area) best = { area, pts: [H[i], H[j], H[k]] };
+      }
+    }
+  }
+  return best;
+}
+
+/** 둘레 사각형 → 사각형 도형 (기울기 ±8°면 바로 세우고, 가로세로가 10% 안이면 정사각형) */
+function rectGuess(box: Box, hull: Pt[]): ShapeGuess {
+  let { w, h } = box;
+  let rot = deg(box.t);
+  // w가 가로에 가까운 쪽이 되게 (-45°, 45°]
+  rot = ((rot % 180) + 180) % 180;
+  if (rot > 90) rot -= 180;
+  if (rot > 45) {
+    rot -= 90;
+    [w, h] = [h, w];
+  } else if (rot <= -45) {
+    rot += 90;
+    [w, h] = [h, w];
+  }
+  let { cx, cy } = box;
+  if (Math.abs(rot) <= 8) {
+    rot = 0;
+    const b = bounds(hull);
+    cx = (b.minX + b.maxX) / 2;
+    cy = (b.minY + b.maxY) / 2;
+    w = b.w;
+    h = b.h;
+  }
+  if (Math.abs(w - h) < 0.1 * Math.max(w, h)) w = h = (w + h) / 2;
+  return { kind: "rect", cx, cy, w, h, rot: rot === -0 ? 0 : rot };
 }
 
 interface Ellipse {

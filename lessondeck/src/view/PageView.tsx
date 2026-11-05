@@ -6,6 +6,7 @@ import { stepVisible, visiblePosition } from "../doc/pages";
 import { isInteractivePage, mediaAsset, pageAspect, pdfAsset, type DocState, type InteractivePage, type Page } from "../doc/types";
 import { fitPage, type PageSize } from "../ink/geometry";
 import { InkCanvas } from "../ink/InkCanvas";
+import type { ShapeTool } from "../ink/shapes";
 import type { Stroke, Tool } from "../ink/types";
 import { PdfPageView } from "../pdf/PdfPageView";
 import { PageNav } from "./PageNav";
@@ -53,6 +54,8 @@ interface Props {
   children?: ReactNode;
   /** 멈춰서 도형·직선이 된 획 (고를 수 있게) */
   onShapeDrawn?: (strokeId: string) => void;
+  /** 도형 모드 (InkCanvas) */
+  shapeTool?: ShapeTool | null;
 }
 
 export interface LongPress {
@@ -318,6 +321,7 @@ export function PageView(props: Props) {
             active={inkActive}
             onCommit={props.onCommit}
             onShapeDrawn={props.onShapeDrawn}
+            shapeTool={props.shapeTool}
           />
           {props.pageOverlay?.(size)}
           {web && (

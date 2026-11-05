@@ -32,6 +32,49 @@ export const SHAPE_NAMES: Record<ShapeKind, string> = {
   polygon: "다각형",
 };
 
+/** 도형 모드: 고른 도형을 펜으로 끌어 그리기, auto는 그린 획을 뗄 때 알아본 도형으로 */
+export type ShapeTool = Exclude<ShapeKind, "polygon"> | "auto";
+
+/** 반듯해 보이는 세로/가로 비율 (끌어 그릴 때 이 비율 ±10%면 딱 맞춘다) */
+const REGULAR_ASPECT: Record<Exclude<ShapeKind, "polygon">, number> = {
+  line: 0,
+  arrow: 0,
+  arrow2: 0,
+  ellipse: 1,
+  rect: 1,
+  roundrect: 1,
+  diamond: 1,
+  rtriangle: 1,
+  triangle: Math.sqrt(3) / 2,
+  pentagon: (1 + Math.cos(Math.PI / 5)) / (2 * Math.sin((2 * Math.PI) / 5)),
+  hexagon: Math.sqrt(3) / 2,
+  star: (1 + Math.cos(Math.PI / 5)) / (2 * Math.sin((2 * Math.PI) / 5)),
+  heart: 0.9,
+};
+
+/**
+ * 끌어 그리기: 펜을 댄 곳(start)에서 지금 자리(end)까지 (페이지 px).
+ * 선·화살표는 두 끝(가로·세로·45° 근처 붙음), 그 밖은 두 점을 맞모서리로 한 상자(반듯한 비율 ±10%면 딱 맞춤)
+ */
+export function dragShape(kind: Exclude<ShapeKind, "polygon">, start: P, end: P, page: Size): ShapeSpec {
+  if (isLineShape(kind)) {
+    const len = Math.hypot(end[0] - start[0], end[1] - start[1]);
+    const deg = (Math.atan2(end[1] - start[1], end[0] - start[0]) * 180) / Math.PI;
+    const near = Math.round(deg / 45) * 45;
+    const t = ((Math.abs(deg - near) <= 4 ? near : deg) * Math.PI) / 180;
+    return lineSpec(kind, start, [start[0] + Math.cos(t) * len, start[1] + Math.sin(t) * len], page);
+  }
+  const dx = end[0] - start[0];
+  const dy = end[1] - start[1];
+  const w = Math.max(4, Math.abs(dx));
+  let h = Math.max(4, Math.abs(dy));
+  const ratio = REGULAR_ASPECT[kind];
+  if (Math.abs(h / w - ratio) < ratio * 0.1) h = w * ratio;
+  const cx = start[0] + (dx < 0 ? -w : w) / 2;
+  const cy = start[1] + (dy < 0 ? -h : h) / 2;
+  return { kind, cx: cx / page.width, cy: cy / page.height, w: w / page.width, h: h / page.width, rot: 0 };
+}
+
 /** 선처럼 두 끝으로 고치는 도형 */
 export function isLineShape(kind: ShapeKind): boolean {
   return kind === "line" || kind === "arrow" || kind === "arrow2";

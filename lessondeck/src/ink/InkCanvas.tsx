@@ -5,7 +5,7 @@ import { beautifyStroke, pathLengthPx, snapLineEnd } from "./beautify";
 import { strokeHitsCircle, strokeToSvgPath, unitsToPx, type PageSize } from "./geometry";
 import { HIGHLIGHTER_ALPHA } from "./palette";
 import { recognizeShape, type ShapeGuess } from "./shapeRecognize";
-import { lineSpec, makeShapeStroke } from "./shapes";
+import { defaultShape, dragShape, lineSpec, makeShapeStroke, type ShapeTool } from "./shapes";
 import type { InkPoint, ShapeSpec, Stroke, Tool } from "./types";
 
 interface Props {
@@ -30,6 +30,8 @@ interface Props {
   onCommit: (strokes: Stroke[]) => void;
   /** 멈춰서 도형·직선이 된 획을 저장한 뒤 (그 도형을 골라 크기·회전을 고칠 수 있게) */
   onShapeDrawn?: (strokeId: string) => void;
+  /** 도형 모드: 고른 도형을 펜으로 끌어 그리기 / auto면 그린 획을 뗄 때 알아본 도형으로 */
+  shapeTool?: ShapeTool | null;
 }
 
 interface Gesture {
@@ -52,6 +54,8 @@ interface Gesture {
   straight: { start: [number, number] } | null;
   /** 닫힌 도형·화살표가 된 뒤 (그대로 둔다) */
   shaped: boolean;
+  /** 도형 모드로 끌어 그리는 중: 고른 도형과 펜을 댄 곳 (페이지 px) */
+  drag: { kind: Exclude<ShapeTool, "auto">; start: [number, number]; moved: boolean } | null;
 }
 
 interface Box {
@@ -257,6 +261,7 @@ export function InkCanvas(props: Props) {
         holdTimer: 0,
         straight: null,
         shaped: false,
+        drag: null,
         lastErase: null,
       };
       if (mode === "erase") {
@@ -273,6 +278,13 @@ export function InkCanvas(props: Props) {
         points: [toPoint(e, rect)],
         simulatePressure: e.pointerType !== "pen",
       };
+      const shapeTool = propsRef.current.shapeTool;
+      if (shapeTool && shapeTool !== "auto") {
+        // 도형 모드: 펜을 댄 곳에서부터 끌어 그린다 (움직이기 전에는 그리지 않음)
+        const { x, y } = toPagePx(e, rect);
+        gesture.drag = { kind: shapeTool, start: [x, y], moved: false };
+        return;
+      }
       renderLive(gesture.stroke, []);
       armHold(gesture);
     };
@@ -280,7 +292,7 @@ export function InkCanvas(props: Props) {
     // ── 도형 보정: 긋다가 멈추면 알아본 도형(원·사각형·삼각형·별·화살표 등), 모르면 시작점부터 지금 자리까지 직선 ──
     const armHold = (g: Gesture) => {
       clearTimeout(g.holdTimer);
-      if (!propsRef.current.straighten || g.straight || g.shaped) return;
+      if (!propsRef.current.straighten || g.straight || g.shaped || g.drag) return;
       g.holdTimer = window.setTimeout(() => snapShape(g), HOLD_MS);
     };
 
@@ -383,6 +395,15 @@ export function InkCanvas(props: Props) {
         return;
       }
       const stroke = gesture.stroke!;
+      if (gesture.drag) {
+        const { x, y } = toPagePx(e, gesture.rect);
+        const d = gesture.drag;
+        if (!d.moved && Math.hypot(x - d.start[0], y - d.start[1]) < 4) return;
+        d.moved = true;
+        gesture.stroke = makeShapeStroke(stroke.id, dragShape(d.kind, d.start, [x, y], page()), stroke, page());
+        renderLive(gesture.stroke, []);
+        return;
+      }
       // 도형이 된 뒤에는 그대로 (뗀 뒤 손잡이로 고친다)
       if (gesture.shaped) return;
       // 멈춘 자리에서 움직이면 다시 기다린다
@@ -424,7 +445,17 @@ export function InkCanvas(props: Props) {
         return;
       }
       if (cancelled && g.pointerType === "touch") return;
-      const stroke = g.stroke!;
+      let stroke = g.stroke!;
+      const p0 = page();
+      if (g.drag) {
+        if (cancelled) return;
+        // 끌지 않고 톡: 그 자리에 기본 크기로
+        if (!g.drag.moved) stroke = makeShapeStroke(stroke.id, defaultShape(g.drag.kind, g.drag.start, p0), stroke, p0);
+      } else if (!stroke.shape && propsRef.current.shapeTool === "auto") {
+        // 자동 도형: 뗄 때 알아본 도형으로 (모르면 쓴 그대로)
+        const guess = recognizeShape(stroke.points.map(([x, y]): [number, number] => [x * p0.width, y * p0.height]));
+        if (guess) stroke = makeShapeStroke(stroke.id, guessToSpec(guess, p0), stroke, p0);
+      }
       // 필기 보정: 펜 획(형광펜·도형 제외)을 반듯하게
       if (propsRef.current.beautify && !stroke.shape && stroke.tool === "pen") {
         stroke.points = beautifyStroke(stroke.points, page(), unitsToPx(stroke.width, page()));

@@ -99,7 +99,7 @@ import { DEFAULT_PRESETS, ERASER_LEVELS } from "./ink/palette";
 import type { InkTool, PenPreset, Stroke, Tool } from "./ink/types";
 import { safeFileName, shareOrDownload } from "./lib/files";
 import { onPenDown, onSideButtonChange, pointerKind } from "./lib/inputState";
-import { defaultShape, hasShape, makeShapeStroke, SHAPE_NAMES, shapeAt, withShape } from "./ink/shapes";
+import { hasShape, SHAPE_NAMES, shapeAt, withShape, type ShapeTool } from "./ink/shapes";
 import { ShapePicker } from "./ui/ShapePicker";
 import { followDetour, stepSkipping, type Detour } from "./doc/detours";
 import { josa } from "./lib/josa";
@@ -132,8 +132,8 @@ import { fittedSize } from "./view/textMeasure";
 type Popover =
   | { kind: "preset"; id: string; left: number; top: number }
   | { kind: "eraser"; left: number; top: number }
-  /** 도형 넣기. at: 길게 누른 자리(페이지 비율), 없으면 가운데 */
-  | { kind: "shapes"; left: number; top: number; at?: { x: number; y: number } }
+  /** 도형 고르기 (고르면 도형 모드) */
+  | { kind: "shapes"; left: number; top: number }
   | null;
 type FileTarget = { kind: "pdf" | "html" | "image" | "video" | "sticker"; index: number; at?: { x: number; y: number } };
 
@@ -240,6 +240,8 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   /** 고른 도형 획 (손잡이로 크기·회전·옮기기) / 끄는 중의 모양 */
   const [selectedShape, setSelectedShape] = useState<string | null>(null);
   const [shapeDraft, setShapeDraft] = useState<Stroke | null>(null);
+  /** 도형 모드: 고른 도형을 펜으로 끌어 그리기 (auto: 그린 획을 뗄 때 알아봄). 펜·형광펜·지우개·텍스트를 고르면 끝 */
+  const [shapeTool, setShapeTool] = useState<ShapeTool | null>(null);
   /** 복사·잘라낸 글상자·스티커·페이지 (문서를 바꿔도 남음) */
   const [clip, setClipState] = useState<AppClip | null>(getClip);
   const boxClip = clip?.kind === "boxes" ? clip.clip : null;
@@ -666,18 +668,23 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     if (!s || !hasShape(s) || !g) return;
     replaceStroke(withShape({ ...s, tool: activePreset.tool, color: activePreset.color, width: activePreset.width }, s.shape, g.size));
   };
-  /** 도형 넣기: 페이지 가운데(또는 길게 누른 자리)에 지금 펜으로, 넣고 바로 고른다 */
-  const insertShape = (kind: Parameters<typeof defaultShape>[0], at?: { x: number; y: number }) => {
-    const g = pageGeometry();
+  /** 도형 모드 켜기: 고른 도형(또는 자동)을 펜을 대는 곳에서부터 그린다 */
+  const enterShapeMode = (kind: ShapeTool) => {
     setPopover(null);
-    if (!g || !currentPage) return;
     if (textMode) leaveTextMode();
+    if (tool === "eraser") setTool(activePreset.tool);
     if (onInteractive) setWebMode("ink");
-    const pos: [number, number] = at ? [at.x * g.size.width, at.y * g.size.height] : [g.size.width / 2, g.size.height / 2];
-    const s = makeShapeStroke(newId("s"), defaultShape(kind, pos, g.size), { tool: activePreset.tool, color: activePreset.color, width: activePreset.width }, g.size);
-    inkAction({ type: "commit", strokes: [...strokesRef.current, s] });
-    setSelectedShape(s.id);
+    setShapeTool(kind);
+    showToast(
+      kind === "auto"
+        ? "자동 도형: 그린 획을 뗄 때 원·사각형 같은 도형으로 바꿉니다"
+        : `${SHAPE_NAMES[kind]}: 펜을 대고 끌어서 그리세요 (톡 누르면 기본 크기)`,
+    );
   };
+  // 텍스트 모드로 가면 도형 모드는 끝
+  useEffect(() => {
+    if (textMode) setShapeTool(null);
+  }, [textMode]);
   // 도형을 고른 채 다른 곳을 누르면 놓는다 (누름은 그대로 지나가 바로 이어 쓸 수 있다)
   useEffect(() => {
     if (!selectedShape) return;
@@ -1343,7 +1350,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
             {
               label: "도형",
               icon: <Shapes size={18} />,
-              onSelect: () => setPopover({ kind: "shapes", ...pickerAt(menu.x, menu.y), at }),
+              onSelect: () => setPopover({ kind: "shapes", ...pickerAt(menu.x, menu.y) }),
             },
           ],
           [
@@ -1481,6 +1488,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   const selectPreset = (id: string) => {
     const p = presets.find((x) => x.id === id);
     if (!p) return;
+    setShapeTool(null);
     leaveTextMode();
     setActivePresetId(id);
     setTool(p.tool);
@@ -1495,6 +1503,15 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   };
 
   const onToolButton = (t: Tool, e: MouseEvent<HTMLButtonElement>) => {
+    // 도형 모드에서 펜·형광펜·지우개를 누르면 도형 모드를 끝내고 그 도구로
+    if (shapeTool) {
+      setShapeTool(null);
+      setPopover(null);
+      if (t !== "eraser") {
+        selectPreset(lastByTool[t]);
+        return;
+      }
+    }
     if (textMode) {
       leaveTextMode();
       if (t !== "eraser") {
@@ -1753,11 +1770,11 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
           <Redo2 size={24} />
         </IconButton>
         <span className="toolrow-sep" />
-        <IconButton label="펜" active={tool === "pen" && !sideEraser && !textMode} onClick={(e) => onToolButton("pen", e)}>
+        <IconButton label="펜" active={tool === "pen" && !sideEraser && !textMode && !shapeTool} onClick={(e) => onToolButton("pen", e)}>
           <PenLine size={24} />
           {tool === "pen" && <span className="tool-color-dot" style={{ background: activePreset.color }} />}
         </IconButton>
-        <IconButton label="형광펜" active={tool === "highlighter" && !sideEraser && !textMode} onClick={(e) => onToolButton("highlighter", e)}>
+        <IconButton label="형광펜" active={tool === "highlighter" && !sideEraser && !textMode && !shapeTool} onClick={(e) => onToolButton("highlighter", e)}>
           <Highlighter size={24} />
           {tool === "highlighter" && <span className="tool-color-dot" style={{ background: activePreset.color }} />}
         </IconButton>
@@ -1788,8 +1805,8 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
           <ImagePlus size={23} />
         </IconButton>
         <IconButton
-          label="도형"
-          active={popover?.kind === "shapes"}
+          label={shapeTool ? `도형 모드 (${shapeTool === "auto" ? "자동" : SHAPE_NAMES[shapeTool]})` : "도형"}
+          active={!!shapeTool || popover?.kind === "shapes"}
           disabled={!currentPage}
           onClick={(e) => {
             const r = e.currentTarget.getBoundingClientRect();
@@ -1870,6 +1887,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
           pageIndex={pageIndex}
           strokes={canvasStrokes}
           onShapeDrawn={setSelectedShape}
+          shapeTool={shapeTool}
           tool={tool}
           color={activePreset.color}
           width={activePreset.width}
@@ -2072,7 +2090,19 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
           onClose={closePopover}
         />
       )}
-      {popover?.kind === "shapes" && <ShapePicker anchor={popover} onPick={(kind) => insertShape(kind, popover.at)} onClose={closePopover} />}
+      {popover?.kind === "shapes" && (
+        <ShapePicker
+          anchor={popover}
+          current={shapeTool}
+          onPick={enterShapeMode}
+          onOff={() => {
+            setShapeTool(null);
+            setPopover(null);
+            showToast("도형 모드를 껐습니다");
+          }}
+          onClose={closePopover}
+        />
+      )}
       {popover?.kind === "eraser" && (
         <ToolSettings
           kind="eraser"

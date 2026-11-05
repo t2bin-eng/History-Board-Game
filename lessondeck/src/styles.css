@@ -3570,3 +3570,52 @@ body:has(.select-bar) .toast {
 .lecture-skip .ls-count {
   color: var(--accent);
 }
+
+.shape-auto {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--hover);
+  color: var(--icon);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shape-auto strong {
+  margin-right: 4px;
+  font-size: 13px;
+}
+
+.shape-grid button.on,
+.shape-auto.on {
+  border-color: var(--accent);
+  background: var(--active-bg);
+  color: var(--accent);
+}
+
+.shape-off {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.shape-off:hover {
+  background: var(--hover);
+  color: var(--icon);
+}
