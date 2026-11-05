@@ -48,4 +48,10 @@ describe("normalizeUrl", () => {
     expect(normalizeUrl("javascript:alert(1)")).toBeNull();
     expect(normalizeUrl("퀴즈")).toBeNull();
   });
+
+  it("퍼가기로 복사한 <iframe> 코드는 그 주소만", () => {
+    expect(
+      normalizeUrl('<iframe src="https://www.google.com/maps/embed?pb=!1m18!1m12&amp;x=1" width="600" height="450" style="border:0;" allowfullscreen=""></iframe>'),
+    ).toBe("https://www.google.com/maps/embed?pb=!1m18!1m12&x=1");
+  });
 });

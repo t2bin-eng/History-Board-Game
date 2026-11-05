@@ -42,10 +42,17 @@ public class MainActivity extends BridgeActivity {
         hideSystemBars();
     }
 
-    /** S펜 버튼을 누른 채 쓰면 지우개: 펜 이벤트를 웹뷰가 알아듣는 모양으로 다듬어 넘긴다 (PenInput) */
+    /** 창 안에서 웹뷰의 위치 (닿은 자리를 웹 화면 좌표로 맞출 때) */
+    private final int[] webViewAt = new int[2];
+
+    /**
+     * S펜 버튼을 누른 채 쓰면 지우개: 펜 이벤트를 웹뷰가 알아듣는 모양으로 다듬어 넘긴다.
+     * 닿은 것마다 안드로이드가 알려 준 도구(S펜·손가락)를 기억해 웹 화면이 펜과 손을 가리게 한다 (PenInput)
+     */
     @Override
     public boolean dispatchTouchEvent(MotionEvent ev) {
-        MotionEvent clean = PenInput.normalizeTouch(ev);
+        if (getBridge() != null) getBridge().getWebView().getLocationInWindow(webViewAt);
+        MotionEvent clean = PenInput.normalizeTouch(ev, webViewAt[0], webViewAt[1]);
         showSideButton(PenInput.buttonDown);
         if (clean == null) return super.dispatchTouchEvent(ev);
         try {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, type RefObject } from "react";
-import { penRecentlyActive } from "../lib/inputState";
+import { penRecentlyActive, pointerKind } from "../lib/inputState";
 import { clampView, identity, zoomAt, type Size, type View } from "./viewport";
 
 interface Options {
@@ -94,7 +94,9 @@ export function useViewportGestures(opts: Options) {
     };
 
     const onDown = (e: PointerEvent) => {
-      if (e.pointerType === "pen") {
+      // 펜·손은 웹뷰의 pointerType이 아니라 inputState 판정으로 (손바닥처럼 종류를 알 수 없는 접촉도 손으로 본다)
+      const kind = pointerKind(e);
+      if (kind === "pen") {
         // 손바닥으로 화면을 끌던 중 펜이 닿으면 제스처를 멈춘다
         if (pointers.size) {
           pointers.clear();
@@ -102,7 +104,7 @@ export function useViewportGestures(opts: Options) {
         }
         return;
       }
-      if (e.pointerType !== "touch") return;
+      if (kind !== "touch") return;
       // 첫 손가락인데 남은 손가락이 있으면 그 뗌을 놓친 것이다 (남겨 두면 한 손가락을 두 손가락 확대로 잘못 본다)
       if (e.isPrimary && pointers.size) {
         pointers.clear();

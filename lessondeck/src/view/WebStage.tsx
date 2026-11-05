@@ -1,11 +1,11 @@
 import { ExternalLink, RotateCw, TriangleAlert, WifiOff, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { toEmbeddableUrl } from "../doc/embed";
 import { htmlAsset, mediaAsset, VIRTUAL_SCREEN, type Asset, type InteractivePage } from "../doc/types";
 import { youtubeEmbedUrl, youtubeErrorMessage, youtubeWatchUrl } from "../doc/youtube";
 import type { PageSize } from "../ink/geometry";
 import { captureFramePreview } from "../lib/framePreviews";
 import { isNativeApp } from "../lib/platform";
+import { pageFrameUrl, retryShortLink, shortLinkState, useShortLinks } from "../lib/shortLinks";
 import { frameErrorMessage, onFrameError, useFrameHosts } from "../lib/webFrames";
 
 interface Props {
@@ -61,6 +61,8 @@ export function WebStage({ pages, currentId, assets, size, reloads, frameUrls = 
   const videos = useRef(new Map<string, HTMLVideoElement>());
   const [ytErrors, setYtErrors] = useState<Record<string, number>>({});
   const hostsReady = useFrameHosts(frameUrls);
+  // 짧은 지도 공유 주소: 앱이 실제 주소를 알아낼 때까지 iframe을 만들지 않는다
+  useShortLinks(pages.flatMap((p) => (p.kind === "url" ? [p.url] : [])));
   // 이 화면 안의 다시 시도 횟수 (불러오기 실패 안내의 "다시 시도", 인터넷이 다시 연결될 때)
   const [retries, setRetries] = useState<Record<string, number>>({});
   // 새로고침하면 iframe을 새로 만든다 (srcdoc HTML은 다시 실행, 유튜브 오류 안내도 지움)
@@ -74,7 +76,11 @@ export function WebStage({ pages, currentId, assets, size, reloads, frameUrls = 
       else delete next[key];
       return next;
     });
-  const retry = (id: string) => setRetries((m) => ({ ...m, [id]: (m[id] ?? 0) + 1 }));
+  const retry = (id: string) => {
+    const page = pages.find((p) => p.id === id);
+    if (page?.kind === "url") retryShortLink(page.url);
+    setRetries((m) => ({ ...m, [id]: (m[id] ?? 0) + 1 }));
+  };
   const lastReloads = useRef(reloads);
   useEffect(() => {
     const prev = lastReloads.current;
@@ -114,7 +120,7 @@ export function WebStage({ pages, currentId, assets, size, reloads, frameUrls = 
       onFrameError((err) => {
         const host = hostOf(err.url);
         for (const p of pagesRef.current) {
-          if (p.kind === "url" && host && hostOf(toEmbeddableUrl(p.url)) === host) {
+          if (p.kind === "url" && host && hostOf(pageFrameUrl(p.url)) === host) {
             setLoad(keyRef.current(p.id), { state: "error", message: frameErrorMessage(err) });
           }
         }
@@ -203,6 +209,12 @@ export function WebStage({ pages, currentId, assets, size, reloads, frameUrls = 
           );
         }
         const screen = VIRTUAL_SCREEN[page.aspect];
+        // 짧은 지도 공유 주소를 실제 주소로 못 바꾼 경우(브라우저, 실패): "그래도 보기" 전에는 막히는 iframe 대신 안내
+        const link = page.kind === "url" ? shortLinkState(page.url) : null;
+        const linkNotice: FrameLoad | null =
+          link === "unresolved" && loads[reloadKey(page.id)]?.state !== "loaded"
+            ? { state: "error", message: SHORT_LINK_NOTICE }
+            : null;
         const style = { width: screen.width, height: screen.height, transform: `scale(${size.width / screen.width})` };
         return (
           <div key={page.id} className="web-frame" data-page-id={page.id} style={{ display: visible ? "block" : "none" }}>
@@ -217,11 +229,11 @@ export function WebStage({ pages, currentId, assets, size, reloads, frameUrls = 
                 onLoad={() => setLoad(reloadKey(page.id), { state: "loaded" })}
               />
             )}
-            {page.kind === "url" && hostsReady && (
+            {page.kind === "url" && hostsReady && link !== "pending" && !linkNotice && (
               <iframe
                 key={reloadKey(page.id)}
                 title={page.url}
-                src={toEmbeddableUrl(page.url)}
+                src={pageFrameUrl(page.url)}
                 sandbox={urlSandbox(page.url)}
                 allow={URL_ALLOW}
                 // 출처를 숨기면 삽입을 허용한 사이트 목록을 확인하는 서비스(지도·영상 등)가 하얗게 막는다
@@ -236,7 +248,7 @@ export function WebStage({ pages, currentId, assets, size, reloads, frameUrls = 
             )}
             {(page.kind === "url" || page.kind === "html") && visible && loads[reloadKey(page.id)]?.state !== "loaded" && (
               <FrameStatus
-                load={loads[reloadKey(page.id)]}
+                load={linkNotice ?? loads[reloadKey(page.id)]}
                 online={online}
                 kind={page.kind}
                 openUrl={page.kind === "url" ? page.url : undefined}
@@ -298,6 +310,10 @@ export function WebStage({ pages, currentId, assets, size, reloads, frameUrls = 
 }
 
 type FrameLoad = { state: "loaded" } | { state: "waiting" } | { state: "slow" } | { state: "error"; message: string };
+
+const SHORT_LINK_NOTICE = isNativeApp
+  ? "짧은 지도 공유 주소(maps.app.goo.gl)를 열어 보지 못했습니다. 인터넷 연결을 확인하고 다시 시도해 주세요."
+  : "짧은 지도 공유 주소(maps.app.goo.gl)는 레슨덱 앱에서만 지도로 바꿔 열 수 있습니다. 브라우저에서는 구글 지도의 공유 → '지도 퍼가기'로 복사한 코드나 주소창의 전체 주소를 넣어 주세요.";
 
 function hostOf(url: string): string | null {
   try {

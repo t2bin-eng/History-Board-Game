@@ -20,8 +20,14 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.json.JSONException;
 
 /**
@@ -29,6 +35,7 @@ import org.json.JSONException;
  * - setHosts: 지금 문서의 웹 주소 페이지 사이트 목록 (FrameProxy가 그 사이트에만 쓴다)
  * - openExternal: 바깥 브라우저(또는 그 주소를 여는 앱)로 열기
  * - snapshot: 화면의 한 부분(웹 주소 페이지)을 찍어 페이지 바 미리보기 그림으로
+ * - resolve: 짧은 공유 주소(maps.app.goo.gl 등)를 열어 보고 실제 주소를 알려 준다 (웹 화면은 다른 사이트의 이동을 볼 수 없다)
  */
 @CapacitorPlugin(name = "WebFrames")
 public class WebFramesPlugin extends Plugin {
@@ -48,6 +55,68 @@ public class WebFramesPlugin extends Plugin {
         }
         FrameProxy.setHosts(hosts);
         call.resolve();
+    }
+
+    /** 넘겨주기(리다이렉트)를 몇 번까지 따라갈지 */
+    private static final int MAX_REDIRECTS = 6;
+    /** 넘겨주기 대신 안내 페이지를 줄 때, 그 안의 구글 지도 주소 */
+    private static final Pattern MAPS_URL = Pattern.compile(
+        "https://(?:www\\.|maps\\.)?google\\.[a-z.]+/maps[^\"'\\s<>\\\\]*|https://maps\\.google\\.[a-z.]+/[^\"'\\s<>\\\\]*"
+    );
+
+    @PluginMethod
+    public void resolve(PluginCall call) {
+        String url = call.getString("url");
+        if (url == null || url.isEmpty()) {
+            call.reject("주소가 없습니다");
+            return;
+        }
+        new Thread(() -> {
+            try {
+                JSObject ret = new JSObject();
+                ret.put("url", follow(url));
+                call.resolve(ret);
+            } catch (Exception e) {
+                call.reject("주소를 열어 보지 못했습니다");
+            }
+        }).start();
+    }
+
+    private static String follow(String start) throws Exception {
+        String current = start;
+        for (int i = 0; i < MAX_REDIRECTS; i++) {
+            HttpURLConnection conn = (HttpURLConnection) new URL(current).openConnection();
+            try {
+                conn.setInstanceFollowRedirects(false);
+                conn.setConnectTimeout(10000);
+                conn.setReadTimeout(10000);
+                int status = conn.getResponseCode();
+                String location = conn.getHeaderField("Location");
+                if (status >= 300 && status < 400 && location != null) {
+                    current = new URL(new URL(current), location).toString();
+                    continue;
+                }
+                if (status == 200 && !current.contains("google.")) {
+                    // 넘겨주기 대신 "앱에서 열기" 안내 페이지를 주는 경우: 그 안의 지도 주소
+                    String found = findMapsUrl(conn.getInputStream());
+                    if (found != null) return found;
+                }
+                return current;
+            } finally {
+                conn.disconnect();
+            }
+        }
+        return current;
+    }
+
+    private static String findMapsUrl(InputStream in) throws Exception {
+        byte[] buf = new byte[64 * 1024];
+        int n = 0;
+        int r;
+        while (n < buf.length && (r = in.read(buf, n, buf.length - n)) > 0) n += r;
+        String html = new String(buf, 0, n, StandardCharsets.UTF_8).replace("\\u003d", "=").replace("\\u0026", "&").replace("&amp;", "&");
+        Matcher m = MAPS_URL.matcher(html);
+        return m.find() ? m.group() : null;
     }
 
     @PluginMethod

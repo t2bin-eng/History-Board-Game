@@ -9,6 +9,8 @@ interface WebFramesPlugin {
   setHosts(options: { hosts: string[] }): Promise<void>;
   openExternal(options: { url: string }): Promise<void>;
   snapshot(options: { x: number; y: number; width: number; height: number; outWidth: number }): Promise<{ dataUrl: string }>;
+  /** 0.17부터: 짧은 공유 주소를 열어 보고 실제 주소 */
+  resolve(options: { url: string }): Promise<{ url: string }>;
 }
 
 const WebFrames = registerPlugin<WebFramesPlugin>("WebFrames");
@@ -125,4 +127,10 @@ export async function snapshotRegion(rect: { x: number; y: number; width: number
   } catch {
     return null;
   }
+}
+
+/** 짧은 공유 주소(maps.app.goo.gl 등)가 실제로 넘어가는 주소 (안드로이드 앱만. 브라우저는 다른 사이트의 넘겨주기를 볼 수 없다) */
+export async function resolveRedirect(url: string): Promise<string> {
+  if (!isNativeApp) throw new Error("앱에서만 열어 볼 수 있습니다");
+  return (await WebFrames.resolve({ url })).url;
 }

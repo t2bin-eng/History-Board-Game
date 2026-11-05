@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { debugStats, recordPointer, recordRender } from "../lib/debugStore";
-import { activeTouchCount, isSideButtonDown, onSideButtonChange, penRecentlyActive, penStrokeErasing } from "../lib/inputState";
+import { activeTouchCount, isSideButtonDown, onSideButtonChange, penRecentlyActive, penStrokeErasing, pointerKind, type PointerKind } from "../lib/inputState";
 import { averagePressure, beautifyStroke, linePoints, pathLengthPx } from "./beautify";
 import { strokeHitsCircle, strokeToSvgPath, unitsToPx, type PageSize } from "./geometry";
 import { HIGHLIGHTER_ALPHA } from "./palette";
@@ -30,7 +30,8 @@ interface Props {
 
 interface Gesture {
   pointerId: number;
-  pointerType: string;
+  /** 펜·마우스·손 (inputState.pointerKind) */
+  pointerType: PointerKind;
   mode: "draw" | "erase";
   rect: DOMRect;
   stroke: Stroke | null;
@@ -218,8 +219,9 @@ export function InkCanvas(props: Props) {
 
     /** 이 이벤트가 화면에 닿은 상태(펜 끝 접촉, 손가락, 마우스 버튼)인지 */
     const isContact = (e: PointerEvent) => {
-      if (e.pointerType === "pen") return !!(e.buttons & 1) || e.pressure > 0;
-      if (e.pointerType === "mouse") return !!(e.buttons & 3);
+      const kind = pointerKind(e);
+      if (kind === "pen") return !!(e.buttons & 1) || e.pressure > 0;
+      if (kind === "mouse") return !!(e.buttons & 3);
       return true;
     };
 
@@ -237,7 +239,7 @@ export function InkCanvas(props: Props) {
       const mode = tool === "eraser" || penStrokeErasing(e) ? "erase" : "draw";
       gesture = {
         pointerId: e.pointerId,
-        pointerType: e.pointerType,
+        pointerType: pointerKind(e),
         mode,
         rect,
         stroke: null,
@@ -292,11 +294,12 @@ export function InkCanvas(props: Props) {
       if (e.pointerId === ignored) return;
       if (gesture) {
         // 두 번째 손가락은 onAnyDown이 이미 처리했다 (쓰던 획 취소 → 확대·이동)
-        if (e.pointerType === "touch") return;
-        if (e.pointerType === "pen" && gesture.pointerType === "touch") {
+        const kind = pointerKind(e);
+        if (kind === "touch") return;
+        if (kind === "pen" && gesture.pointerType === "touch") {
           // 손바닥이 먼저 닿고 펜이 나중에 오면 손바닥 획을 버리고 펜을 따른다
           cancelGesture();
-        } else if (e.pointerType === "pen" && gesture.pointerType === "pen" && gesture.viaDown) {
+        } else if (kind === "pen" && gesture.pointerType === "pen" && gesture.viaDown) {
           // 펜이 다시 닿았는데 지난 획이 열려 있으면 그 뗌을 놓친 것이다.
           // 그대로 두면 새로 긋는 점이 지난 획 끝에 이어 붙어 엉뚱한 선이 생기므로 지난 획은 여기서 마무리한다
           settle(gesture, false);
@@ -304,7 +307,7 @@ export function InkCanvas(props: Props) {
           return;
         }
       }
-      if (e.pointerType === "touch") {
+      if (pointerKind(e) === "touch") {
         // 펜을 쓰는 중에 닿은 터치는 손바닥 (손가락 필기를 꺼 두었으면 넘기기·확대용이라 여기서는 무시)
         if (penRecentlyActive()) {
           debugStats.rejectedTouches++;
@@ -326,9 +329,10 @@ export function InkCanvas(props: Props) {
 
       if (e.pointerId === ignored) return;
       if (!gesture) {
-        if (e.pointerType === "touch") return;
+        const kind = pointerKind(e);
+        if (kind === "touch") return;
         // 사이드 버튼을 누른 채 펜이 닿는 경우(버튼 → 접촉 순서)는 pointermove로만 들어온다
-        if (isContact(e) && e.pointerType === "pen") {
+        if (isContact(e) && kind === "pen") {
           begin(e);
           return;
         }
@@ -452,7 +456,7 @@ export function InkCanvas(props: Props) {
     const onContextMenu = (e: Event) => e.preventDefault();
     // 손가락으로 쓰는 중 화면 어디든 두 번째 손가락이 닿으면 확대·이동이므로 쓰던 획을 버린다
     const onAnyDown = (e: PointerEvent) => {
-      if (gesture?.pointerType === "touch" && e.pointerType === "touch" && e.pointerId !== gesture.pointerId) cancelGesture();
+      if (gesture?.pointerType === "touch" && pointerKind(e) === "touch" && e.pointerId !== gesture.pointerId) cancelGesture();
     };
     // 사이드 버튼을 누르거나 떼는 순간 지우개 표시를 바로 바꾼다
     const offSide = onSideButtonChange((down) => {

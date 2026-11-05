@@ -26,6 +26,8 @@ export interface DebugStats {
   nativeSideSeen: boolean;
   eraserTipSeen: boolean;
   penHoverSeen: boolean;
+  /** 마지막으로 닿은 것을 펜·손 중 무엇으로 정했는지와 그 까닭 (inputState.classify) */
+  lastJudgement: string;
   /** 펜을 쓰는 중(또는 직후) 손바닥으로 보고 무시한 터치 수 */
   rejectedTouches: number;
   strokesDrawn: number;
@@ -50,6 +52,7 @@ export const debugStats: DebugStats = {
   nativeSideSeen: false,
   eraserTipSeen: false,
   penHoverSeen: false,
+  lastJudgement: "",
   rejectedTouches: 0,
   strokesDrawn: 0,
   moveEventsPerSec: 0,

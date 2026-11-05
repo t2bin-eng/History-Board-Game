@@ -104,6 +104,9 @@ export function DebugPanel({ lowLatency, onLowLatency, pdfRenderMs, onClose }: P
       `- 화면: ${window.screen.width}×${window.screen.height}, devicePixelRatio ${window.devicePixelRatio}`,
       `- 저지연 캔버스: ${lowLatency ? "켬" : "끔"} · 입력 지연 ${s.inputDelayMs.toFixed(1)}ms · 획 렌더 ${s.renderMs.toFixed(2)}ms · move ${s.moveEventsPerSec}회/초 · 점 ${s.pointsPerSec}개/초`,
       ...checklist.map((c) => `- [${c.ok ? "x" : " "}] ${c.label} (${c.hint})`),
+      `- 마지막 펜/손 판정: ${s.lastJudgement || "-"}`,
+      "- 최근 입력:",
+      ...s.log.map((l) => `  - ${l}`),
     ];
     try {
       await navigator.clipboard.writeText(lines.join("\n"));
@@ -147,7 +150,9 @@ export function DebugPanel({ lowLatency, onLowLatency, pdfRenderMs, onClose }: P
 
       <dl className="debug-grid">
         <dt>pointerType</dt>
-        <dd className="mono">{last?.pointerType ?? "-"}</dd>
+        <dd className="mono">{last ? last.pointerType || "(알 수 없음)" : "-"}</dd>
+        <dt>펜/손 판정</dt>
+        <dd className="mono">{s.lastJudgement || "-"}</dd>
         <dt>pressure</dt>
         <dd>
           <span className="mono">{last ? last.pressure.toFixed(3) : "-"}</span>

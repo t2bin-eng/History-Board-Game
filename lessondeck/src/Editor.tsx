@@ -96,7 +96,7 @@ import { applyInk, type InkAction, type InkBook } from "./ink/history";
 import { DEFAULT_PRESETS, ERASER_LEVELS } from "./ink/palette";
 import type { InkTool, PenPreset, Stroke, Tool } from "./ink/types";
 import { safeFileName, shareOrDownload } from "./lib/files";
-import { onSideButtonChange } from "./lib/inputState";
+import { onPenDown, onSideButtonChange } from "./lib/inputState";
 import { isNativeApp, showToast } from "./lib/platform";
 import { usePersistentFlag } from "./lib/usePersistentFlag";
 import { thumbnailFor } from "./pdf/thumbnails";
@@ -591,6 +591,21 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
 
   // S펜 사이드 버튼을 누르는 동안 툴바의 지우개를 켠다
   useEffect(() => onSideButtonChange(setSideEraser), []);
+  // 펜 모드 (오픈소스 화이트보드 Excalidraw·tldraw와 같은 방식): 손가락 필기를 켜 둔 채 S펜을 쓰면 손가락 필기를 끈다.
+  // S펜이 있으면 손은 넘기기·확대에만 쓰여 손가락·손바닥이 글씨를 쓰는 일이 없다. 끈 뒤 ✋로 다시 켜면 이번 실행 동안은 그대로 둔다.
+  const fingerDrawRef = useRef(fingerDraw);
+  fingerDrawRef.current = fingerDraw;
+  const penModeApplied = useRef(false);
+  useEffect(
+    () =>
+      onPenDown(() => {
+        if (!fingerDrawRef.current || penModeApplied.current) return;
+        penModeApplied.current = true;
+        setFingerDraw(false);
+        showToast("S펜을 써서 손가락 필기를 껐습니다 (손가락은 넘기기·확대, ✋로 다시 켜기)");
+      }),
+    [setFingerDraw],
+  );
 
   // ── 강의 모드 ──────────────────────────────────────────
   const enterLecture = useCallback(() => {

@@ -40,6 +40,9 @@ export function analyzeHtml(html: string): string[] {
 export function normalizeUrl(input: string): string | null {
   let s = input.trim();
   if (!s) return null;
+  // 지도·문서의 "퍼가기"로 복사한 <iframe src="…"> 코드면 그 주소만
+  const frame = s.match(/<iframe\b[^>]*\ssrc\s*=\s*["']([^"']+)["']/i);
+  if (frame) s = frame[1].replace(/&amp;/g, "&").trim();
   if (!/^[a-z][a-z\d+.-]*:/i.test(s)) s = `https://${s}`;
   try {
     const url = new URL(s);

@@ -1,6 +1,7 @@
 import { MousePointer2, PenLine } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { toEmbeddableUrl } from "../doc/embed";
+import { isMadeForEmbedding } from "../doc/embed";
+import { pageFrameUrl, useShortLinks } from "../lib/shortLinks";
 import { stepVisible, visiblePosition } from "../doc/pages";
 import { isInteractivePage, mediaAsset, pageAspect, pdfAsset, type DocState, type InteractivePage, type Page } from "../doc/types";
 import { fitPage, type PageSize } from "../ink/geometry";
@@ -9,7 +10,7 @@ import type { Stroke, Tool } from "../ink/types";
 import { PdfPageView } from "../pdf/PdfPageView";
 import { PageNav } from "./PageNav";
 import { useViewportGestures } from "./useViewportGestures";
-import { penStrokeErasing } from "../lib/inputState";
+import { penStrokeErasing, pointerKind } from "../lib/inputState";
 import { WebStage } from "./WebStage";
 
 interface Props {
@@ -129,8 +130,9 @@ export function PageView(props: Props) {
       longPressRef.current?.({ clientX: p.x, clientY: p.y, pointerType: p.type, target: p.target });
     };
     const onDown = (e: PointerEvent) => {
+      const kind = pointerKind(e);
       tap =
-        e.pointerType === "touch" && !tap
+        kind === "touch" && !tap
           ? { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now(), onInk: !!(e.target as Element).closest?.(".ink-live") }
           : null;
       if (press) {
@@ -138,11 +140,11 @@ export function PageView(props: Props) {
         cancel();
         return;
       }
-      if (!longPressRef.current || e.pointerType === "mouse") return;
-      if (e.pointerType === "pen" && (!penLongPressRef.current || penStrokeErasing(e))) return;
+      if (!longPressRef.current || kind === "mouse") return;
+      if (kind === "pen" && (!penLongPressRef.current || penStrokeErasing(e))) return;
       const target = e.target as Element;
       if (!eligible(target)) return;
-      const ms = e.pointerType === "pen" ? LONG_PRESS_MS.pen : LONG_PRESS_MS.touch;
+      const ms = kind === "pen" ? LONG_PRESS_MS.pen : LONG_PRESS_MS.touch;
       const r = area.getBoundingClientRect();
       const x = e.clientX;
       const y = e.clientY;
@@ -150,7 +152,7 @@ export function PageView(props: Props) {
         id: e.pointerId,
         x,
         y,
-        type: e.pointerType,
+        type: kind,
         target,
         // 잠깐 지나면 누른 자리에 원이 차오르며 곧 메뉴가 열린다는 걸 보여 준다
         ringTimer: window.setTimeout(() => setRing({ x: x - r.left, y: y - r.top, ms: ms - 150 }), 150),
@@ -275,7 +277,13 @@ export function PageView(props: Props) {
     .filter((p): p is InteractivePage => isInteractivePage(p));
 
   // 안드로이드 앱이 미리 알아 둘 웹 주소 페이지 주소들 (띄우기 거부 머리글 처리)
-  const frameUrls = useMemo(() => doc.pages.flatMap((p) => (p.kind === "url" ? [toEmbeddableUrl(p.url)] : [])), [doc.pages]);
+  // 짧은 지도 공유 주소는 앱이 실제 주소를 알아낸 뒤에, 삽입용으로 만든 주소(구글 지도)는 앱이 대신 받아 오지 않게 빼고 알린다
+  const shortLinks = useShortLinks(useMemo(() => doc.pages.flatMap((p) => (p.kind === "url" ? [p.url] : [])), [doc.pages]));
+  const frameUrls = useMemo(
+    () => doc.pages.flatMap((p) => (p.kind === "url" ? [pageFrameUrl(p.url)] : [])).filter((u) => !isMadeForEmbedding(u)),
+    // shortLinks: 짧은 링크의 실제 주소를 알게 되면 다시 계산
+    [doc.pages, shortLinks],
+  );
 
   const pos = page ? visiblePosition(doc.pages, doc.hidden, page.id) : { index: -1, count: 0 };
   const hasPrev = !!page && stepVisible(doc.pages, doc.hidden, page.id, -1) !== null;
