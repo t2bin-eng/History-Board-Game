@@ -23,7 +23,7 @@ interface Props {
   eraserSize: number;
   fingerDraw: boolean;
   lowLatency: boolean;
-  /** 직선 보정·필기 보정 (InkCanvas) */
+  /** 도형 보정·필기 보정 (InkCanvas) */
   straighten?: boolean;
   beautify?: boolean;
   /** HTML·URL 페이지의 판서/조작 모드 (SPEC F6). 조작 모드면 터치·펜이 웹앱으로 간다. */
@@ -51,6 +51,8 @@ interface Props {
   onFingerTapWeb?: () => void;
   /** 페이지 영역 위에 떠 있는 것들 (펜 팔레트, 디버그 패널) */
   children?: ReactNode;
+  /** 멈춰서 도형·직선이 된 획 (고를 수 있게) */
+  onShapeDrawn?: (strokeId: string) => void;
 }
 
 export interface LongPress {
@@ -315,6 +317,7 @@ export function PageView(props: Props) {
             beautify={props.beautify}
             active={inkActive}
             onCommit={props.onCommit}
+            onShapeDrawn={props.onShapeDrawn}
           />
           {props.pageOverlay?.(size)}
           {web && (

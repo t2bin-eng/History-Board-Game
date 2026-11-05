@@ -14,7 +14,7 @@ type Props =
       anchor: Anchor;
       preset: PenPreset;
       onChange: (patch: Partial<PenPreset>) => void;
-      /** 직선 보정·필기 보정 켜고 끄기 (기기 설정) */
+      /** 도형 보정·필기 보정 켜고 끄기 (기기 설정) */
       correction: { straighten: boolean; beautify: boolean; onStraighten: (on: boolean) => void; onBeautify: (on: boolean) => void };
       onClose: () => void;
     }
@@ -99,7 +99,7 @@ export function ToolSettings(props: Props) {
             ))}
           </div>
           <div className="ts-row ts-toggles" aria-label="보정">
-            <Toggle on={props.correction.straighten} onChange={props.correction.onStraighten} label="직선 보정" hint="멈추면 직선" />
+            <Toggle on={props.correction.straighten} onChange={props.correction.onStraighten} label="도형 보정" hint="멈추면 도형·직선" />
             {props.preset.tool === "pen" && (
               <Toggle on={props.correction.beautify} onChange={props.correction.onBeautify} label="필기 보정" hint="글씨를 반듯하게" />
             )}

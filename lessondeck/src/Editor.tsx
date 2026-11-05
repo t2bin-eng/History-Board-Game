@@ -1,6 +1,8 @@
 import {
   Activity,
   BringToFront,
+  Shapes,
+  SkipForward,
   ChevronLeft,
   Crop,
   ImagePlus,
@@ -36,7 +38,7 @@ import {
   Type,
   Undo2,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import {
   addBox,
   BOX_COLORS,
@@ -96,7 +98,12 @@ import { applyInk, type InkAction, type InkBook } from "./ink/history";
 import { DEFAULT_PRESETS, ERASER_LEVELS } from "./ink/palette";
 import type { InkTool, PenPreset, Stroke, Tool } from "./ink/types";
 import { safeFileName, shareOrDownload } from "./lib/files";
-import { onPenDown, onSideButtonChange } from "./lib/inputState";
+import { onPenDown, onSideButtonChange, pointerKind } from "./lib/inputState";
+import { defaultShape, hasShape, makeShapeStroke, SHAPE_NAMES, shapeAt, withShape } from "./ink/shapes";
+import { ShapePicker } from "./ui/ShapePicker";
+import { followDetour, stepSkipping, type Detour } from "./doc/detours";
+import { josa } from "./lib/josa";
+import { ShapeEditor } from "./view/ShapeEditor";
 import { isNativeApp, showToast } from "./lib/platform";
 import { usePersistentFlag } from "./lib/usePersistentFlag";
 import { thumbnailFor } from "./pdf/thumbnails";
@@ -122,7 +129,12 @@ import { stickerBox } from "./view/stickerGeometry";
 import { StickerLayer } from "./view/StickerLayer";
 import { fittedSize } from "./view/textMeasure";
 
-type Popover = { kind: "preset"; id: string; left: number; top: number } | { kind: "eraser"; left: number; top: number } | null;
+type Popover =
+  | { kind: "preset"; id: string; left: number; top: number }
+  | { kind: "eraser"; left: number; top: number }
+  /** 도형 넣기. at: 길게 누른 자리(페이지 비율), 없으면 가운데 */
+  | { kind: "shapes"; left: number; top: number; at?: { x: number; y: number } }
+  | null;
 type FileTarget = { kind: "pdf" | "html" | "image" | "video" | "sticker"; index: number; at?: { x: number; y: number } };
 
 const NO_STROKES: Stroke[] = [];
@@ -200,7 +212,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
 
   const [fingerDraw, setFingerDraw] = usePersistentFlag("lessondeck.fingerDraw", false);
   const [lowLatency, setLowLatency] = usePersistentFlag("lessondeck.lowLatency", true);
-  /** 직선 보정(긋다 멈추면 직선)·필기 보정(뗄 때 글씨를 반듯하게) */
+  /** 도형 보정(긋다 멈추면 도형·직선)·필기 보정(뗄 때 글씨를 반듯하게) */
   const [straighten, setStraighten] = usePersistentFlag("lessondeck.straighten", true);
   const [beautify, setBeautify] = usePersistentFlag("lessondeck.beautify", true);
   const [debugOpen, setDebugOpen] = usePersistentFlag("lessondeck.debugOpen", false);
@@ -219,11 +231,15 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   const [menu, setMenu] = useState<
     | { kind: "box"; x: number; y: number; boxId: string }
     | { kind: "sticker"; x: number; y: number; stickerId: string }
+    | { kind: "shape"; x: number; y: number; strokeId: string }
     | { kind: "page"; x: number; y: number; at?: { x: number; y: number } }
     | { kind: "pageItem"; x: number; y: number; pageId: string }
     | { kind: "more"; x: number; y: number }
     | null
   >(null);
+  /** 고른 도형 획 (손잡이로 크기·회전·옮기기) / 끄는 중의 모양 */
+  const [selectedShape, setSelectedShape] = useState<string | null>(null);
+  const [shapeDraft, setShapeDraft] = useState<Stroke | null>(null);
   /** 복사·잘라낸 글상자·스티커·페이지 (문서를 바꿔도 남음) */
   const [clip, setClipState] = useState<AppClip | null>(getClip);
   const boxClip = clip?.kind === "boxes" ? clip.clip : null;
@@ -238,6 +254,16 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   const [stickerStyleReq, setStickerStyleReq] = useState(0);
   /** 강의 모드: 도구 막대·페이지 바를 숨기고 페이지를 화면 가득 */
   const [lecture, setLecture] = useState(false);
+  const lectureRef = useRef(lecture);
+  lectureRef.current = lecture;
+  // 강의 모드: 페이지 링크로 보고 돌아온 쪽은 다음·이전으로 넘길 때 건너뛴다 (화면 위 단추로 켜고 끔, 기기에 저장)
+  const [skipLinked, setSkipLinked] = usePersistentFlag("lessondeck.skipLinkedPages", true);
+  const skipLinkedRef = useRef(skipLinked);
+  skipLinkedRef.current = skipLinked;
+  const detours = useRef<Detour[]>([]);
+  const [seenViaLink, setSeenViaLink] = useState<string[]>([]);
+  const seenRef = useRef(seenViaLink);
+  seenRef.current = seenViaLink;
   /** 강의 모드에 들어가며 브라우저 전체 화면을 켰는지 (나올 때 같이 끈다) */
   const lectureFs = useRef(false);
 
@@ -253,6 +279,10 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   const currentPage: Page | undefined = doc.pages[pageIndex];
   const pageInk = currentPage ? ink[currentPage.id] : undefined;
   const strokes = pageInk?.present ?? NO_STROKES;
+  const strokesRef = useRef(strokes);
+  strokesRef.current = strokes;
+  // 도형을 끄는 동안은 원래 획을 빼고 그린다 (고치는 화면이 바뀐 모양을 보여 준다)
+  const canvasStrokes = useMemo(() => (shapeDraft ? strokes.filter((s) => s.id !== shapeDraft.id) : strokes), [strokes, shapeDraft]);
   const erasing = tool === "eraser" || sideEraser;
   const onInteractive = isInteractivePage(currentPage);
 
@@ -423,11 +453,22 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   };
 
   // ── 페이지 관리 ─────────────────────────────────────────
-  /** 숨긴 페이지는 건너뛰고 넘긴다 */
+  /** 숨긴 페이지는 건너뛰고 넘긴다. 강의 모드에서는 링크로 보고 돌아온 쪽도 (켜 둔 경우) */
   const goTo = useCallback((delta: 1 | -1) => {
     const { pages, hidden } = docRef.current;
-    const next = stepVisible(pages, hidden, currentIdRef.current, delta);
-    if (next) setCurrentId(next);
+    const skip = lectureRef.current && skipLinkedRef.current ? seenRef.current : [];
+    if (!skip.length) {
+      const next = stepVisible(pages, hidden, currentIdRef.current, delta);
+      if (next) setCurrentId(next);
+      return;
+    }
+    const { next, skipped } = stepSkipping(pages, hidden, skip, currentIdRef.current, delta);
+    if (!next) return;
+    if (skipped.length) {
+      const labels = skipped.map((id) => pageNumberLabel(pages, hidden, id)).join("·");
+      showToast(`링크로 본 ${josa(labels, "은", "는")} 건너뜁니다`);
+    }
+    setCurrentId(next);
   }, []);
 
   // 다른 페이지로 넘어가면 웹앱·동영상 페이지는 다시 조작 모드로
@@ -438,6 +479,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     setEditingBox(null);
     setSelectedSticker(null);
     setCropping(false);
+    setSelectedShape(null);
   }, [currentId]);
 
   const addBlank = (index: number, background: BlankBackground) => {
@@ -589,6 +631,92 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   }, []);
   const onCommit = useCallback((next: Stroke[]) => inkAction({ type: "commit", strokes: next }), [inkAction]);
 
+  // ── 도형 ───────────────────────────────────────────────
+  /** 화면의 페이지: 확대돼 있어도 페이지 px로 바꾸려고 (rect는 화면, size는 페이지 px) */
+  const pageGeometry = () => {
+    const el = document.querySelector<HTMLElement>(".page");
+    if (!el || !el.offsetWidth) return null;
+    return { rect: el.getBoundingClientRect(), size: { width: el.offsetWidth, height: el.offsetHeight } };
+  };
+  /** 화면 좌표에 있는 도형 획 (선에서 화면 14px 안) */
+  const shapeAtClient = (clientX: number, clientY: number): Stroke | null => {
+    const g = pageGeometry();
+    if (!g || !g.rect.width) return null;
+    const k = g.size.width / g.rect.width;
+    return shapeAt(strokesRef.current, (clientX - g.rect.left) * k, (clientY - g.rect.top) * k, g.size, 14 * k);
+  };
+  const replaceStroke = (next: Stroke) => inkAction({ type: "commit", strokes: strokesRef.current.map((s) => (s.id === next.id ? next : s)) });
+  const deleteShape = (id: string) => {
+    inkAction({ type: "commit", strokes: strokesRef.current.filter((s) => s.id !== id) });
+    setSelectedShape(null);
+  };
+  const duplicateShape = (id: string) => {
+    const s = strokesRef.current.find((x) => x.id === id);
+    const g = pageGeometry();
+    if (!s || !hasShape(s) || !g) return;
+    const shift = 0.03;
+    const copy = withShape({ ...s, id: newId("s") }, { ...s.shape, cx: s.shape.cx + shift, cy: s.shape.cy + (shift * g.size.width) / g.size.height }, g.size);
+    inkAction({ type: "commit", strokes: [...strokesRef.current, copy] });
+    setSelectedShape(copy.id);
+  };
+  /** 지금 고른 펜의 색·굵기로 */
+  const restyleShape = (id: string) => {
+    const s = strokesRef.current.find((x) => x.id === id);
+    const g = pageGeometry();
+    if (!s || !hasShape(s) || !g) return;
+    replaceStroke(withShape({ ...s, tool: activePreset.tool, color: activePreset.color, width: activePreset.width }, s.shape, g.size));
+  };
+  /** 도형 넣기: 페이지 가운데(또는 길게 누른 자리)에 지금 펜으로, 넣고 바로 고른다 */
+  const insertShape = (kind: Parameters<typeof defaultShape>[0], at?: { x: number; y: number }) => {
+    const g = pageGeometry();
+    setPopover(null);
+    if (!g || !currentPage) return;
+    if (textMode) leaveTextMode();
+    if (onInteractive) setWebMode("ink");
+    const pos: [number, number] = at ? [at.x * g.size.width, at.y * g.size.height] : [g.size.width / 2, g.size.height / 2];
+    const s = makeShapeStroke(newId("s"), defaultShape(kind, pos, g.size), { tool: activePreset.tool, color: activePreset.color, width: activePreset.width }, g.size);
+    inkAction({ type: "commit", strokes: [...strokesRef.current, s] });
+    setSelectedShape(s.id);
+  };
+  // 도형을 고른 채 다른 곳을 누르면 놓는다 (누름은 그대로 지나가 바로 이어 쓸 수 있다)
+  useEffect(() => {
+    if (!selectedShape) return;
+    const onDown = (e: PointerEvent) => {
+      if ((e.target as Element).closest?.(".se-ui")) return;
+      setSelectedShape(null);
+    };
+    window.addEventListener("pointerdown", onDown, true);
+    return () => window.removeEventListener("pointerdown", onDown, true);
+  }, [selectedShape]);
+  // 손가락으로 도형을 톡 누르면 고른다 (손가락 필기가 꺼져 있을 때: 손가락은 넘기기·확대·고르기)
+  const shapeTapOff = useRef(false);
+  shapeTapOff.current = fingerDraw || textMode || !!selectedSticker || (onInteractive && webMode === "interact");
+  const shapeAtClientRef = useRef(shapeAtClient);
+  shapeAtClientRef.current = shapeAtClient;
+  useEffect(() => {
+    let tap: { id: number; x: number; y: number; t: number } | null = null;
+    const onDown = (e: PointerEvent) => {
+      tap =
+        pointerKind(e) === "touch" && e.isPrimary && (e.target as Element).closest?.(".page .ink-live")
+          ? { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() }
+          : null;
+    };
+    const onUp = (e: PointerEvent) => {
+      const t = tap;
+      tap = null;
+      if (!t || t.id !== e.pointerId || shapeTapOff.current) return;
+      if (performance.now() - t.t > 350 || Math.hypot(e.clientX - t.x, e.clientY - t.y) > 10) return;
+      const s = shapeAtClientRef.current(e.clientX, e.clientY);
+      if (s) setSelectedShape(s.id);
+    };
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("pointerup", onUp, true);
+    return () => {
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("pointerup", onUp, true);
+    };
+  }, []);
+
   // S펜 사이드 버튼을 누르는 동안 툴바의 지우개를 켠다
   useEffect(() => onSideButtonChange(setSideEraser), []);
   // 펜 모드 (오픈소스 화이트보드 Excalidraw·tldraw와 같은 방식): 손가락 필기를 켜 둔 채 S펜을 쓰면 손가락 필기를 끈다.
@@ -616,6 +744,9 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     setEditingBox(null);
     setSelectedSticker(null);
     setCropping(false);
+    setSelectedShape(null);
+    detours.current = [];
+    setSeenViaLink([]);
     setLecture(true);
     // APK는 처음부터 상태 표시줄 없는 전체 화면이다. 브라우저에서는 전체 화면도 켠다
     if (!isNativeApp && !document.fullscreenElement && document.documentElement.requestFullscreen) {
@@ -1028,6 +1159,12 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
       setMenu({ kind: "box", ...menuAt, boxId: hit.dataset.boxId! });
       return;
     }
+    const shape = shapeAtClient(p.clientX, p.clientY);
+    if (shape) {
+      setEditingBox(null);
+      setMenu({ kind: "shape", ...menuAt, strokeId: shape.id });
+      return;
+    }
     const sticker = stickerAt(p.clientX, p.clientY);
     if (sticker) {
       setEditingBox(null);
@@ -1099,6 +1236,22 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
             { label: pasteHereLabel(), icon: <ClipboardPaste size={18} />, hint: "Ctrl+V", onSelect: () => void pasteHere() },
           ],
           [{ label: "지우기", icon: <Trash2 size={18} />, danger: true, onSelect: () => deleteBox(id) }],
+        ],
+      };
+    }
+    if (menu.kind === "shape") {
+      const s = strokes.find((x) => x.id === menu.strokeId);
+      if (!s || !hasShape(s)) return { groups: [] };
+      const id = s.id;
+      return {
+        title: SHAPE_NAMES[s.shape.kind],
+        groups: [
+          [
+            { label: "크기·회전", icon: <Move size={18} />, onSelect: () => setSelectedShape(id) },
+            { label: "지금 펜 색·굵기로", icon: <Paintbrush size={18} />, onSelect: () => restyleShape(id) },
+            { label: "복제", icon: <CopyPlus size={18} />, onSelect: () => duplicateShape(id) },
+          ],
+          [{ label: "지우기", icon: <Trash2 size={18} />, danger: true, onSelect: () => deleteShape(id) }],
         ],
       };
     }
@@ -1187,6 +1340,11 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
               icon: <ImagePlus size={18} />,
               onSelect: () => pickFile("sticker", pageIndex, at),
             },
+            {
+              label: "도형",
+              icon: <Shapes size={18} />,
+              onSelect: () => setPopover({ kind: "shapes", ...pickerAt(menu.x, menu.y), at }),
+            },
           ],
           [
             {
@@ -1233,7 +1391,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
           { label: "내보내기", icon: <Share2 size={18} />, onSelect: exportDoc },
         ],
         [
-          { label: "직선 보정", icon: <Ruler size={18} />, checked: straighten, onSelect: () => setStraighten((v) => !v) },
+          { label: "도형 보정", icon: <Ruler size={18} />, checked: straighten, onSelect: () => setStraighten((v) => !v) },
           { label: "필기 보정", icon: <Sparkles size={18} />, checked: beautify, onSelect: () => setBeautify((v) => !v) },
         ],
         [
@@ -1308,7 +1466,15 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   };
 
   const followLink = (link: BoxLink) => {
-    if (link.type === "page" && docRef.current.pages.some((p) => p.id === link.pageId)) setCurrentId(link.pageId);
+    if (link.type !== "page" || !docRef.current.pages.some((p) => p.id === link.pageId)) return;
+    if (lectureRef.current) {
+      // 강의 중 링크로 갔다가 돌아오면 그 쪽은 "본 쪽" (다음·이전으로 넘길 때 건너뜀)
+      const r = followDetour(detours.current, currentIdRef.current, link.pageId);
+      detours.current = r.trail;
+      const seen = r.seen;
+      if (seen) setSeenViaLink((list) => (list.includes(seen) ? list : [...list, seen]));
+    }
+    setCurrentId(link.pageId);
   };
 
   // ── 도구 ───────────────────────────────────────────────
@@ -1360,6 +1526,11 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   };
 
   const closePopover = useCallback(() => setPopover(null), []);
+  /** 도형 고르기 창 자리 (화면 안으로) */
+  const pickerAt = (x: number, y: number) => ({
+    left: Math.max(8, Math.min(x, window.innerWidth - 316)),
+    top: Math.max(8, Math.min(y, window.innerHeight - 330)),
+  });
   const closeAddMenu = useCallback(() => setAddMenu(null), []);
 
   // PC 키보드: 고른 상자·스티커 Ctrl+C·Ctrl+X, 어디서든 Ctrl+V (글 입력 중에는 평소대로)
@@ -1490,6 +1661,25 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
 
   return (
     <div className={`app${lecture ? " lecture" : ""}`}>
+      {lecture && (
+        // 강의 모드 화면 위: 링크로 보고 돌아온 쪽을 다음·이전에서 건너뛸지
+        <button
+          className={`lecture-skip${skipLinked ? " on" : ""}`}
+          aria-pressed={skipLinked}
+          title="페이지 링크로 보고 돌아온 쪽은 다음·이전으로 넘길 때 건너뜁니다"
+          data-no-gesture
+          onClick={() => {
+            const on = !skipLinked;
+            setSkipLinked(on);
+            showToast(on ? "링크로 보고 돌아온 쪽은 다음으로 넘길 때 건너뜁니다" : "링크로 본 쪽도 다음으로 넘길 때 보여 줍니다");
+          }}
+        >
+          <SkipForward size={14} />
+          링크로 본 쪽 건너뛰기
+          <span className="ls-state">{skipLinked ? "켬" : "끔"}</span>
+          {skipLinked && seenViaLink.length > 0 && <span className="ls-count">{seenViaLink.length}쪽</span>}
+        </button>
+      )}
       <header className="topbar">
         <div className="topbar-left">
           <IconButton label="문서 목록" onClick={goHome}>
@@ -1597,6 +1787,17 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
         <IconButton label="이미지 스티커" disabled={!currentPage} onClick={() => pickFile("sticker", pageIndex)}>
           <ImagePlus size={23} />
         </IconButton>
+        <IconButton
+          label="도형"
+          active={popover?.kind === "shapes"}
+          disabled={!currentPage}
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            setPopover(popover?.kind === "shapes" ? null : { kind: "shapes", ...pickerAt(r.left - 120, r.bottom + 8) });
+          }}
+        >
+          <Shapes size={23} />
+        </IconButton>
         <IconButton label={pasteHereLabel()} disabled={!currentPage} onClick={() => void pasteHere()}>
           <ClipboardPaste size={22} />
         </IconButton>
@@ -1667,7 +1868,8 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
         <PageView
           doc={doc}
           pageIndex={pageIndex}
-          strokes={strokes}
+          strokes={canvasStrokes}
+          onShapeDrawn={setSelectedShape}
           tool={tool}
           color={activePreset.color}
           width={activePreset.width}
@@ -1758,6 +1960,22 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
                     />
                   );
                 })()}
+                {(() => {
+                  const s = selectedShape ? strokes.find((x) => x.id === selectedShape) : undefined;
+                  if (!s || !hasShape(s)) return null;
+                  return (
+                    <ShapeEditor
+                      key={s.id}
+                      stroke={s}
+                      size={size}
+                      onLive={setShapeDraft}
+                      onChange={replaceStroke}
+                      onDuplicate={() => duplicateShape(s.id)}
+                      onDelete={() => deleteShape(s.id)}
+                      onDone={() => setSelectedShape(null)}
+                    />
+                  );
+                })()}
               </>
             )
           }
@@ -1844,7 +2062,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
             beautify,
             onStraighten: (on) => {
               setStraighten(on);
-              showToast(on ? "직선 보정: 긋다가 떼지 않고 멈추면 직선이 됩니다" : "직선 보정을 껐습니다");
+              showToast(on ? "도형 보정: 긋다가 떼지 않고 멈추면 원·사각형 같은 도형이나 직선이 됩니다" : "도형 보정을 껐습니다");
             },
             onBeautify: (on) => {
               setBeautify(on);
@@ -1854,6 +2072,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
           onClose={closePopover}
         />
       )}
+      {popover?.kind === "shapes" && <ShapePicker anchor={popover} onPick={(kind) => insertShape(kind, popover.at)} onClose={closePopover} />}
       {popover?.kind === "eraser" && (
         <ToolSettings
           kind="eraser"

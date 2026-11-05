@@ -1,10 +1,12 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { debugStats, recordPointer, recordRender } from "../lib/debugStore";
 import { activeTouchCount, isSideButtonDown, onSideButtonChange, penRecentlyActive, penStrokeErasing, pointerKind, type PointerKind } from "../lib/inputState";
-import { averagePressure, beautifyStroke, linePoints, pathLengthPx } from "./beautify";
+import { beautifyStroke, pathLengthPx, snapLineEnd } from "./beautify";
 import { strokeHitsCircle, strokeToSvgPath, unitsToPx, type PageSize } from "./geometry";
 import { HIGHLIGHTER_ALPHA } from "./palette";
-import type { InkPoint, Stroke, Tool } from "./types";
+import { recognizeShape, type ShapeGuess } from "./shapeRecognize";
+import { lineSpec, makeShapeStroke } from "./shapes";
+import type { InkPoint, ShapeSpec, Stroke, Tool } from "./types";
 
 interface Props {
   page: PageSize;
@@ -21,11 +23,13 @@ interface Props {
   lowLatency: boolean;
   /** false면 필기층을 통과시킨다 (HTML 페이지 조작 모드: 필기는 보이지만 터치·펜은 웹앱으로) */
   active: boolean;
-  /** 직선 보정: 긋다가 떼지 않고 멈추면 직선, 떼기 전까지 끝점 조절 */
+  /** 도형 보정: 긋다가 떼지 않고 멈추면 도형(원·사각형 등)이나 직선, 직선은 떼기 전까지 끝점 조절 */
   straighten?: boolean;
   /** 필기 보정: 펜 획을 뗄 때 반듯하게 다듬는다 */
   beautify?: boolean;
   onCommit: (strokes: Stroke[]) => void;
+  /** 멈춰서 도형·직선이 된 획을 저장한 뒤 (그 도형을 골라 크기·회전을 고칠 수 있게) */
+  onShapeDrawn?: (strokeId: string) => void;
 }
 
 interface Gesture {
@@ -41,10 +45,13 @@ interface Gesture {
   viaDown: boolean;
   /** 지우개가 마지막으로 지나간 자리 (페이지 px). 빠르게 쓸어도 사이를 빠뜨리지 않게 이어서 지운다 */
   lastErase: { x: number; y: number } | null;
-  /** 직선 보정: 멈춘 자리(화면 px)와 타이머, 직선이 된 뒤의 시작점·필압 */
+  /** 도형 보정: 멈춘 자리(화면 px)와 타이머 */
   holdAt: { x: number; y: number };
   holdTimer: number;
-  straight: { start: InkPoint; pressure: number } | null;
+  /** 직선이 된 뒤의 시작점 (페이지 px). 떼기 전까지 끝점이 펜을 따라온다 */
+  straight: { start: [number, number] } | null;
+  /** 닫힌 도형·화살표가 된 뒤 (그대로 둔다) */
+  shaped: boolean;
 }
 
 interface Box {
@@ -56,7 +63,7 @@ interface Box {
 
 /** 필기 캔버스 한 장의 픽셀 수 상한 (확대 시 메모리 보호) */
 const MAX_INK_PIXELS = 8_000_000;
-/** 직선 보정: 이만큼 멈추면 직선 (떨림은 HOLD_SLOP px까지 멈춘 것으로) */
+/** 도형 보정: 이만큼 멈추면 도형·직선 (떨림은 HOLD_SLOP px까지 멈춘 것으로) */
 const HOLD_MS = 500;
 const HOLD_SLOP = 4;
 
@@ -249,6 +256,7 @@ export function InkCanvas(props: Props) {
         holdAt: { x: e.clientX, y: e.clientY },
         holdTimer: 0,
         straight: null,
+        shaped: false,
         lastErase: null,
       };
       if (mode === "erase") {
@@ -269,24 +277,38 @@ export function InkCanvas(props: Props) {
       armHold(gesture);
     };
 
-    // ── 직선 보정: 긋다가 멈추면 시작점부터 지금 자리까지 직선 ──
+    // ── 도형 보정: 긋다가 멈추면 알아본 도형(원·사각형·삼각형·별·화살표 등), 모르면 시작점부터 지금 자리까지 직선 ──
     const armHold = (g: Gesture) => {
       clearTimeout(g.holdTimer);
-      if (!propsRef.current.straighten || g.straight) return;
-      g.holdTimer = window.setTimeout(() => straighten(g), HOLD_MS);
+      if (!propsRef.current.straighten || g.straight || g.shaped) return;
+      g.holdTimer = window.setTimeout(() => snapShape(g), HOLD_MS);
     };
 
-    const straighten = (g: Gesture) => {
+    const snapShape = (g: Gesture) => {
       const stroke = g.stroke;
-      if (gesture !== g || !stroke || g.straight) return;
+      if (gesture !== g || !stroke || g.straight || g.shaped) return;
       const p = page();
       // 짧은 획(점, 짧은 삐침)은 그대로
       if (pathLengthPx(stroke.points, p) < Math.max(24, unitsToPx(stroke.width, p) * 4)) return;
-      const start = stroke.points[0];
-      g.straight = { start, pressure: averagePressure(stroke.points) };
-      stroke.points = linePoints(start, stroke.points[stroke.points.length - 1], g.straight.pressure, p);
+      const px = stroke.points.map(([x, y]): [number, number] => [x * p.width, y * p.height]);
+      const guess = recognizeShape(px);
+      if (guess) {
+        g.shaped = true;
+        g.stroke = makeShapeStroke(stroke.id, guessToSpec(guess, p), stroke, p);
+      } else {
+        g.straight = { start: px[0] };
+        g.stroke = lineStroke(g, px[px.length - 1]);
+      }
       navigator.vibrate?.(10);
-      renderLive(stroke, []);
+      renderLive(g.stroke, []);
+    };
+
+    /** 직선: 시작점에서 end(페이지 px)까지, 가로·세로·45° 근처는 딱 맞춤 */
+    const lineStroke = (g: Gesture, end: [number, number]): Stroke => {
+      const p = page();
+      const [sx, sy] = g.straight!.start;
+      const e = snapLineEnd(sx, sy, end[0], end[1]);
+      return makeShapeStroke(g.stroke!.id, lineSpec("line", [sx, sy], [e.x, e.y], p), g.stroke!, p);
     };
 
     const onDown = (e: PointerEvent) => {
@@ -361,6 +383,8 @@ export function InkCanvas(props: Props) {
         return;
       }
       const stroke = gesture.stroke!;
+      // 도형이 된 뒤에는 그대로 (뗀 뒤 손잡이로 고친다)
+      if (gesture.shaped) return;
       // 멈춘 자리에서 움직이면 다시 기다린다
       if (Math.hypot(e.clientX - gesture.holdAt.x, e.clientY - gesture.holdAt.y) > HOLD_SLOP) {
         gesture.holdAt = { x: e.clientX, y: e.clientY };
@@ -368,8 +392,9 @@ export function InkCanvas(props: Props) {
       }
       if (gesture.straight) {
         // 직선이 된 뒤: 떼기 전까지 끝점(각도·길이)이 따라온다
-        stroke.points = linePoints(gesture.straight.start, toPoint(e, gesture.rect), gesture.straight.pressure, page());
-        renderLive(stroke, []);
+        const { x, y } = toPagePx(e, gesture.rect);
+        gesture.stroke = lineStroke(gesture, [x, y]);
+        renderLive(gesture.stroke, []);
         return;
       }
       for (const ev of events) {
@@ -400,8 +425,8 @@ export function InkCanvas(props: Props) {
       }
       if (cancelled && g.pointerType === "touch") return;
       const stroke = g.stroke!;
-      // 필기 보정: 펜 획(형광펜·직선 제외)을 반듯하게
-      if (propsRef.current.beautify && !g.straight && stroke.tool === "pen") {
+      // 필기 보정: 펜 획(형광펜·도형 제외)을 반듯하게
+      if (propsRef.current.beautify && !stroke.shape && stroke.tool === "pen") {
         stroke.points = beautifyStroke(stroke.points, page(), unitsToPx(stroke.width, page()));
       }
       const s = scale();
@@ -412,6 +437,7 @@ export function InkCanvas(props: Props) {
       const next = [...renderedRef.current, stroke];
       renderedRef.current = next;
       propsRef.current.onCommit(next);
+      if (stroke.shape) propsRef.current.onShapeDrawn?.(stroke.id);
     };
 
     const cancelGesture = () => {
@@ -529,4 +555,17 @@ function newId() {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
     : `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** 알아본 도형(페이지 px) → 저장하는 모양 (비율 좌표, 크기는 페이지 가로 비율) */
+function guessToSpec(g: ShapeGuess, page: PageSize): ShapeSpec {
+  return {
+    kind: g.kind,
+    cx: g.cx / page.width,
+    cy: g.cy / page.height,
+    w: g.w / page.width,
+    h: g.h / page.width,
+    rot: g.rot,
+    ...(g.pts ? { pts: g.pts } : {}),
+  };
 }

@@ -1,4 +1,5 @@
 import { getStroke, type StrokeOptions } from "perfect-freehand";
+import { hasShape, shapeDistance, shapeStrokePath } from "./shapes";
 import { PAGE_UNITS, type InkPoint, type InkTool, type Stroke } from "./types";
 
 export interface PageSize {
@@ -69,6 +70,7 @@ function avg(a: number, b: number): string {
 
 /** 획 하나의 외곽선 path (CSS 픽셀 기준) */
 export function strokeToSvgPath(stroke: Stroke, page: PageSize, last = true, extra: InkPoint[] = []): string {
+  if (hasShape(stroke)) return shapeStrokePath(stroke, page);
   const pts = toPagePx(extra.length ? stroke.points.concat(extra) : stroke.points, page);
   const outline = getStroke(pts, strokeOptions(stroke.tool, unitsToPx(stroke.width, page), !!stroke.simulatePressure, last));
   return outlineToSvgPath(outline);
@@ -88,6 +90,7 @@ export function distToSegment(px: number, py: number, ax: number, ay: number, bx
 
 /** 지우개 원(CSS 픽셀 중심·반경)이 획에 닿는지 */
 export function strokeHitsCircle(stroke: Stroke, cx: number, cy: number, radius: number, page: PageSize): boolean {
+  if (hasShape(stroke)) return shapeDistance(stroke, cx, cy, page) <= radius;
   const reach = radius + unitsToPx(stroke.width, page) / 2;
   const pts = stroke.points;
   if (pts.length === 0) return false;

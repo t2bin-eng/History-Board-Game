@@ -16,6 +16,39 @@ export interface Stroke {
   points: InkPoint[];
   /** 펜이 아닌 입력(마우스·손가락)은 실제 필압이 없어서 속도로 필압을 흉내 낸다 */
   simulatePressure?: boolean;
+  /** 도형 획 (v0.18): 이 모양에서 다시 만든 선으로 그린다. points에는 그 선의 꼭짓점 */
+  shape?: ShapeSpec;
+}
+
+export type ShapeKind =
+  | "line"
+  | "arrow"
+  | "arrow2"
+  | "ellipse"
+  | "rect"
+  | "roundrect"
+  | "triangle"
+  | "rtriangle"
+  | "diamond"
+  | "pentagon"
+  | "hexagon"
+  | "star"
+  | "heart"
+  | "polygon";
+
+/** 도형 (SPEC 5장 "도형 획") */
+export interface ShapeSpec {
+  kind: ShapeKind;
+  /** 중심 — 점과 같은 0~1 비율 좌표 */
+  cx: number;
+  cy: number;
+  /** 크기 — 둘 다 페이지 가로 대비 비율. 선·화살표는 w = 길이, h = 0 */
+  w: number;
+  h: number;
+  /** 시계 방향 회전 (도) */
+  rot: number;
+  /** polygon의 꼭짓점: w×h 상자 안의 -0.5~0.5 좌표 */
+  pts?: [number, number][];
 }
 
 export interface PenPreset {

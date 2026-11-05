@@ -65,3 +65,33 @@ describe("svg path", () => {
     expect(d.endsWith("Z")).toBe(true);
   });
 });
+
+describe("도형 획", () => {
+  const page = { width: 1000, height: 1400 };
+  it("원은 고른 굵기 외곽선(같은 방향 조각들)으로 그리고, 선에 가까운 지우개만 닿는다", async () => {
+    const { makeShapeStroke } = await import("./shapes");
+    const s = makeShapeStroke("s1", { kind: "ellipse", cx: 0.5, cy: 0.5, w: 0.2, h: 0.2, rot: 0 }, { tool: "pen", color: "#000", width: 3 }, page);
+    const d = strokeToSvgPath(s, page);
+    expect(d.startsWith("M")).toBe(true);
+    expect(d.split("Z").length).toBeGreaterThan(72);
+    // 원 위(가장 오른쪽 점 500+100, 700)는 닿고, 한가운데는 닿지 않는다
+    expect(strokeHitsCircle(s, 600, 700, 4, page)).toBe(true);
+    expect(strokeHitsCircle(s, 500, 700, 20, page)).toBe(false);
+    // 옛 버전용 points도 원 위
+    expect(s.points.every(([x, y]) => Math.abs(Math.hypot(x * 1000 - 500, y * 1400 - 700) - 100) < 0.5)).toBe(true);
+  });
+
+  it("회전·화살표: 끝점과 날개", async () => {
+    const { lineEnds, lineSpec, shapePathsPx } = await import("./shapes");
+    const spec = lineSpec("arrow", [100, 100], [300, 300], page);
+    expect(spec.rot).toBeCloseTo(45, 5);
+    const [a, b] = lineEnds(spec, page);
+    expect(a[0]).toBeCloseTo(100, 3);
+    expect(b[1]).toBeCloseTo(300, 3);
+    const paths = shapePathsPx(spec, page, 3);
+    expect(paths).toHaveLength(2);
+    // 날개의 가운데 점이 화살 끝
+    expect(paths[1][1][0]).toBeCloseTo(300, 3);
+    expect(paths[1][1][1]).toBeCloseTo(300, 3);
+  });
+});
