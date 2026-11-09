@@ -108,6 +108,15 @@ export async function placeDoc(docId: string, folderId: string | null) {
   });
 }
 
+/** 문서 카드 표지 바꾸기 ("auto" · "#rrggbb" · "page") */
+export async function setDocCovers(docIds: string[], cover: string) {
+  const lib = await loadLibrary();
+  if (docIds.every((id) => (lib.covers[id]?.cover ?? "auto") === cover)) return;
+  await change((l, _v, now) => {
+    for (const docId of docIds) l.covers[docId] = { cover, updatedAt: now };
+  });
+}
+
 export async function docFolder(docId: string): Promise<string | null> {
   return viewLibrary(await loadLibrary()).folderOfDoc(docId);
 }

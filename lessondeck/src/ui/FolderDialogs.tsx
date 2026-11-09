@@ -14,7 +14,7 @@ function useEscape(onClose: () => void) {
   }, [onClose]);
 }
 
-function Dialog({ title, icon, className, onClose, children }: { title: string; icon: ReactNode; className?: string; onClose: () => void; children: ReactNode }) {
+export function Dialog({ title, icon, className, onClose, children }: { title: string; icon: ReactNode; className?: string; onClose: () => void; children: ReactNode }) {
   useEscape(onClose);
   return (
     <div className="modal-backdrop" onClick={onClose}>

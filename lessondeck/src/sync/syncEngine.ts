@@ -3,7 +3,7 @@ import { newId } from "../doc/types";
 import type { Stroke } from "../ink/types";
 import { db, getMeta, setMeta, type DocRecord, type Manifest, type SyncRecord } from "../store/db";
 import { deleteDoc, getAsset, getDoc, hasAsset, listDocs, loadInk, onDocChange, writeDoc } from "../store/docStore";
-import { hasFolders, libraryKey, parseLibrary } from "../store/folders";
+import { hasOrganization, libraryKey, parseLibrary } from "../store/folders";
 import { docFolder, loadLibrary, mergeRemoteLibrary, onLibraryChange, placeDoc } from "../store/library";
 import { AuthRequiredError, driveAvailability, getAccessToken, revokeAccess } from "./auth";
 import { aboutEmail, createFile, deleteFile, downloadFile, listAppFiles, updateFile, type DriveFile } from "./drive";
@@ -467,7 +467,7 @@ async function syncLibrary(files: DriveFile[]): Promise<DriveFile[]> {
   const localKey = libraryKey(local);
   let fileId = main?.id;
   let remoteUpdatedAt = main ? updatedOf(main) : undefined;
-  if (localKey !== remoteKey && (main || hasFolders(local))) {
+  if (localKey !== remoteKey && (main || hasOrganization(local))) {
     setState({ message: "폴더 정리 올리는 중…" });
     const updatedAt = Date.now();
     const data = await gzipJson(local);

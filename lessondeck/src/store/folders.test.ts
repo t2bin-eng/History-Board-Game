@@ -14,6 +14,7 @@ const lib = (folders: Folder[], placements: Record<string, [string | null, numbe
   version: 1,
   folders: Object.fromEntries(folders.map((f) => [f.id, f])),
   placements: Object.fromEntries(Object.entries(placements).map(([d, [folderId, updatedAt]]) => [d, { folderId, updatedAt }])),
+  covers: {},
 });
 
 describe("mergeLibrary", () => {
@@ -34,6 +35,17 @@ describe("mergeLibrary", () => {
     expect(libraryKey(mergeLibrary(a, b))).toBe(libraryKey(mergeLibrary(b, a)));
     expect(mergeLibrary(a, b).folders.x.deleted).toBe(true);
     expect(libraryKey(mergeLibrary(a, a))).toBe(libraryKey(a));
+  });
+
+  it("표지는 문서마다 더 최근 것, 표지가 없으면 키가 0.20과 같다", () => {
+    const a = lib([], { d: [null, 1] });
+    expect(libraryKey(a)).toBe(JSON.stringify([[], [["d", null, 1]]]));
+    const b = { ...lib([]), covers: { d1: { cover: "#24497a", updatedAt: 5 }, d2: { cover: "page", updatedAt: 2 } } };
+    const c = { ...lib([]), covers: { d1: { cover: "auto", updatedAt: 9 }, d3: { cover: "#0d6b6e", updatedAt: 1 } } };
+    const m = mergeLibrary(b, c);
+    expect(m.covers).toEqual({ d1: { cover: "auto", updatedAt: 9 }, d2: { cover: "page", updatedAt: 2 }, d3: { cover: "#0d6b6e", updatedAt: 1 } });
+    expect(libraryKey(mergeLibrary(b, c))).toBe(libraryKey(mergeLibrary(c, b)));
+    expect(libraryKey(m)).not.toBe(libraryKey(lib([])));
   });
 
   it("지운 뒤에 다른 기기에서 고친 폴더는 되살아난다", () => {
@@ -83,5 +95,7 @@ describe("parseLibrary", () => {
     expect(p.folders.a).toEqual({ id: "a", name: "가", parentId: null, createdAt: 0, updatedAt: 7 });
     expect(p.folders.b).toBeUndefined();
     expect(p.placements.d).toEqual({ folderId: null, updatedAt: 0 });
+    const q = parseLibrary({ covers: { a: { cover: "#24497A", updatedAt: 3 }, b: { cover: "red" }, c: { cover: "page" }, d: null } });
+    expect(q.covers).toEqual({ a: { cover: "#24497A", updatedAt: 3 }, c: { cover: "page", updatedAt: 0 } });
   });
 });

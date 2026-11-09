@@ -21,24 +21,35 @@ export interface Placement {
   updatedAt: number;
 }
 
+/** 문서 카드 표지 (v0.21): "auto" · "#rrggbb" · "page"(첫 페이지 그림) */
+export interface CoverChoice {
+  cover: string;
+  updatedAt: number;
+}
+
 export interface Library {
   version: 1;
   folders: Record<string, Folder>;
   placements: Record<string, Placement>;
+  covers: Record<string, CoverChoice>;
 }
 
 export const FOLDER_COLORS = ["#4dabf7", "#ff6b6b", "#ffa94d", "#ffd43b", "#69db7c", "#38d9a9", "#b197fc", "#f783ac"];
 export const DEFAULT_FOLDER_COLOR = "#8fa3b8";
 
 export function emptyLibrary(): Library {
-  return { version: 1, folders: {}, placements: {} };
+  return { version: 1, folders: {}, placements: {}, covers: {} };
 }
 
 /** 드라이브·저장소에서 읽은 값을 믿을 수 있는 모양으로 */
 export function parseLibrary(raw: unknown): Library {
   const lib = emptyLibrary();
   if (!raw || typeof raw !== "object") return lib;
-  const r = raw as { folders?: Record<string, Partial<Folder>>; placements?: Record<string, Partial<Placement>> };
+  const r = raw as {
+    folders?: Record<string, Partial<Folder>>;
+    placements?: Record<string, Partial<Placement>>;
+    covers?: Record<string, Partial<CoverChoice>>;
+  };
   for (const [id, f] of Object.entries(r.folders ?? {})) {
     if (!f || typeof f.name !== "string") continue;
     lib.folders[id] = {
@@ -55,6 +66,10 @@ export function parseLibrary(raw: unknown): Library {
     if (!p) continue;
     lib.placements[docId] = { folderId: typeof p.folderId === "string" ? p.folderId : null, updatedAt: Number(p.updatedAt) || 0 };
   }
+  for (const [docId, c] of Object.entries(r.covers ?? {})) {
+    if (!c || typeof c.cover !== "string" || !isCoverValue(c.cover)) continue;
+    lib.covers[docId] = { cover: c.cover, updatedAt: Number(c.updatedAt) || 0 };
+  }
   return lib;
 }
 
@@ -68,7 +83,22 @@ export function libraryKey(lib: Library): string {
   const placements = Object.keys(lib.placements)
     .sort()
     .map((id) => [id, lib.placements[id].folderId, lib.placements[id].updatedAt]);
-  return JSON.stringify([folders, placements]);
+  const covers = Object.keys(lib.covers)
+    .sort()
+    .map((id) => [id, lib.covers[id].cover, lib.covers[id].updatedAt]);
+  // 표지가 없으면 0.20까지와 같은 키 (괜히 다시 올리지 않게)
+  return JSON.stringify(covers.length ? [folders, placements, covers] : [folders, placements]);
+}
+
+export function isCoverValue(v: string): boolean {
+  return v === "auto" || v === "page" || /^#[0-9a-f]{6}$/i.test(v);
+}
+
+function pickCover(a: CoverChoice | undefined, b: CoverChoice | undefined): CoverChoice {
+  if (!a) return b!;
+  if (!b) return a;
+  if (a.updatedAt !== b.updatedAt) return a.updatedAt > b.updatedAt ? a : b;
+  return a.cover >= b.cover ? a : b;
 }
 
 function pickFolder(a: Folder | undefined, b: Folder | undefined): Folder {
@@ -93,11 +123,13 @@ export function mergeLibrary(a: Library, b: Library): Library {
   for (const id of new Set([...Object.keys(a.folders), ...Object.keys(b.folders)])) out.folders[id] = pickFolder(a.folders[id], b.folders[id]);
   for (const id of new Set([...Object.keys(a.placements), ...Object.keys(b.placements)]))
     out.placements[id] = pickPlacement(a.placements[id], b.placements[id]);
+  for (const id of new Set([...Object.keys(a.covers), ...Object.keys(b.covers)])) out.covers[id] = pickCover(a.covers[id], b.covers[id]);
   return out;
 }
 
-export function hasFolders(lib: Library): boolean {
-  return Object.keys(lib.folders).length > 0;
+/** 드라이브에 올릴 정리가 있나 (폴더를 만들었거나 표지를 고친 적이 있음) */
+export function hasOrganization(lib: Library): boolean {
+  return Object.keys(lib.folders).length > 0 || Object.keys(lib.covers).length > 0;
 }
 
 // ── 화면에 보일 모양 ───────────────────────────────────────

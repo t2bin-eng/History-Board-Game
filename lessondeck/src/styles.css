@@ -1442,6 +1442,134 @@ button.doc-title:hover {
   background: #fff;
 }
 
+/* ── 문서 표지 (v0.21, src/ui/DocCover.tsx): 카드 폭에 맞춰 커지고 작아지게 cqw ── */
+.doc-open,
+.cover-option {
+  container-type: inline-size;
+}
+
+.doc-cover {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 11cqw 9cqw 8cqw 15cqw;
+  color: #fff;
+  text-align: left;
+  background:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.24) 0 6cqw, rgba(255, 255, 255, 0.16) 6cqw calc(6cqw + 1px), transparent calc(6cqw + 1px)),
+    linear-gradient(165deg, rgba(255, 255, 255, 0.13) 0%, rgba(255, 255, 255, 0) 45%, rgba(0, 0, 0, 0.2) 100%),
+    var(--cover);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07), 0 6px 16px rgba(0, 0, 0, 0.32);
+}
+
+.cover-num {
+  font-size: 30cqw;
+  font-weight: 800;
+  line-height: 0.9;
+  letter-spacing: -0.045em;
+  white-space: nowrap;
+}
+
+.cover-num small {
+  margin-left: 1.5cqw;
+  font-size: 9cqw;
+  font-weight: 700;
+  letter-spacing: 0;
+  opacity: 0.85;
+}
+
+.cover-rule {
+  flex: none;
+  width: 13cqw;
+  height: max(2px, 1.1cqw);
+  margin: 7cqw 0 6cqw;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.75);
+}
+
+.cover-title {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 9.2cqw;
+  font-weight: 700;
+  line-height: 1.32;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+}
+
+.doc-cover.no-num .cover-rule {
+  margin-top: 2cqw;
+}
+
+.doc-cover.no-num .cover-title {
+  font-size: 11cqw;
+  -webkit-line-clamp: 6;
+}
+
+.cover-kind {
+  margin-top: auto;
+  padding-top: 4cqw;
+  font-size: 4.8cqw;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  opacity: 0.72;
+}
+
+.cover-dialog {
+  width: min(600px, 100%);
+}
+
+.cover-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 14px 12px;
+  margin-top: 12px;
+}
+
+.cover-option {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.cover-option .doc-thumb {
+  border-radius: 7px;
+  outline: 2px solid transparent;
+  outline-offset: 3px;
+}
+
+.cover-option.on .doc-thumb {
+  outline-color: var(--accent);
+}
+
+.cover-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.cover-option.on .cover-label {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.cover-note {
+  margin: 16px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
 .doc-info {
   display: flex;
   flex-direction: column;

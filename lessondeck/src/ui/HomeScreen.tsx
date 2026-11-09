@@ -5,14 +5,12 @@ import {
   CircleCheck,
   EllipsisVertical,
   File,
-  FileCode2,
   FileText,
-  Film,
   FolderInput,
   FolderOpen,
   FolderPlus,
   House,
-  Image,
+  Palette,
   Pencil,
   Search,
   Share2,
@@ -30,9 +28,10 @@ import type { DocRecord } from "../store/db";
 import { deleteDoc, listDocs, onDocChange, renameDoc } from "../store/docStore";
 import { createBlankDoc, createDocFromPdf, createSampleDoc } from "../store/create";
 import { byName, emptyLibrary, uniqueName, viewLibrary, type Folder } from "../store/folders";
-import { createFolder, deleteFolders, editFolder, moveItems, placeDoc, useLibraryView } from "../store/library";
+import { createFolder, deleteFolders, editFolder, moveItems, placeDoc, setDocCovers, useLibraryView } from "../store/library";
 import { exportProject, importProject, PROJECT_ACCEPT, PROJECT_EXT } from "../store/projectFile";
 import { ContextMenu, type MenuGroups } from "./ContextMenu";
+import { CoverDialog, DocCover } from "./DocCover";
 import { DeleteDialog, FolderIcon, MoveDialog, NameDialog } from "./FolderDialogs";
 import { itemKey, useCardDrag, type CardItem } from "./useCardDrag";
 
@@ -50,7 +49,8 @@ type DialogState =
   | { type: "editFolder"; folder: Folder }
   | { type: "renameDoc"; doc: DocRecord }
   | { type: "move"; docIds: string[]; folderIds: string[] }
-  | { type: "delete"; docIds: string[]; folderIds: string[] };
+  | { type: "delete"; docIds: string[]; folderIds: string[] }
+  | { type: "cover"; docIds: string[] };
 
 /** 문서를 열었다 돌아오면 보던 폴더 (앱을 켜 둔 동안) */
 let rememberedFolder: string | null = null;
@@ -286,6 +286,7 @@ export function HomeScreen({ onOpen, headerExtra }: Props) {
       return [
         [
           { label: `${many.length}개 옮기기`, icon: <FolderInput size={18} />, onSelect: () => setDialog({ type: "move", ...split(many) }) },
+          split(many).docIds.length > 0 && { label: `문서 ${split(many).docIds.length}개 표지`, icon: <Palette size={18} />, onSelect: () => setDialog({ type: "cover", docIds: split(many).docIds }) },
           { label: `${many.length}개 삭제`, icon: <Trash2 size={18} />, danger: true, onSelect: () => askDelete(many) },
         ],
       ];
@@ -322,6 +323,7 @@ export function HomeScreen({ onOpen, headerExtra }: Props) {
           onSelect: () => go(docFolderOf.get(doc.id) ?? null),
         },
         { label: "이름 바꾸기", icon: <Pencil size={18} />, onSelect: () => setDialog({ type: "renameDoc", doc }) },
+        { label: "표지", icon: <Palette size={18} />, onSelect: () => setDialog({ type: "cover", docIds: [doc.id] }) },
         { label: "옮기기", icon: <FolderInput size={18} />, onSelect: () => setDialog({ type: "move", docIds: [doc.id], folderIds: [] }) },
         { label: "내보내기", icon: <Share2 size={18} />, onSelect: () => onExport(doc) },
         select,
@@ -511,7 +513,7 @@ export function HomeScreen({ onOpen, headerExtra }: Props) {
               return (
                 <article key={doc.id} className={cardClass("doc-card", item)} {...bind(item)}>
                   <button className="doc-open" onClick={() => activate(item)} aria-label={`${doc.title} ${selecting ? "선택" : "열기"}`}>
-                    <span className="doc-thumb">{doc.thumb ? <img src={doc.thumb} alt="" draggable={false} /> : <KindIcon doc={doc} />}</span>
+                    <DocCover doc={doc} choice={view.lib.covers[doc.id]?.cover} />
                     <span className="doc-info">
                       <strong>{doc.title}</strong>
                       <small>
@@ -536,6 +538,9 @@ export function HomeScreen({ onOpen, headerExtra }: Props) {
           </button>
           <button disabled={!nSelected} onClick={() => setDialog({ type: "move", ...split(selectedItems()) })}>
             <FolderInput size={18} /> 옮기기
+          </button>
+          <button disabled={!split(selectedItems()).docIds.length} onClick={() => setDialog({ type: "cover", docIds: split(selectedItems()).docIds })}>
+            <Palette size={18} /> 표지
           </button>
           <button className="danger" disabled={!nSelected} onClick={() => askDelete(selectedItems())}>
             <Trash2 size={18} /> 삭제
@@ -617,6 +622,26 @@ export function HomeScreen({ onOpen, headerExtra }: Props) {
           }}
         />
       )}
+      {dialog?.type === "cover" &&
+        (() => {
+          const chosen = dialog.docIds.flatMap((id) => docById.get(id) ?? []);
+          if (!chosen.length) return null;
+          return (
+            <CoverDialog
+              docs={chosen}
+              current={view.lib.covers[chosen[0].id]?.cover ?? "auto"}
+              onClose={() => setDialog(null)}
+              onPick={(cover) => {
+                setDialog(null);
+                if (chosen.length > 1) setSelecting(false);
+                void setDocCovers(
+                  chosen.map((d) => d.id),
+                  cover,
+                );
+              }}
+            />
+          );
+        })()}
       {dialog?.type === "delete" &&
         (() => {
           const { docIds, folderIds } = dialog;
@@ -683,23 +708,6 @@ function ActionCard({ icon, title, desc, onClick }: { icon: ReactNode; title: st
       <small>{desc}</small>
     </button>
   );
-}
-
-/** 축소 이미지가 없으면 첫 페이지 종류 아이콘 */
-function KindIcon({ doc }: { doc: DocRecord }) {
-  const first = doc.manifest.pages[0];
-  switch (first?.kind) {
-    case "html":
-    case "url":
-    case "youtube":
-      return <FileCode2 size={32} />;
-    case "image":
-      return <Image size={32} />;
-    case "video":
-      return <Film size={32} />;
-    default:
-      return <FileText size={32} />;
-  }
 }
 
 export function relativeTime(ms: number): string {
