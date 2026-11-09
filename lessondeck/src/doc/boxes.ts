@@ -1,3 +1,4 @@
+import { dropArrowsOf, remapArrows } from "./arrows";
 import { autoBackground } from "./colors";
 import { visiblePosition } from "./pages";
 import { newId, type BoxLink, type Page, type TextBox } from "./types";
@@ -37,10 +38,10 @@ export function patchBox(pages: Page[], pageId: string, boxId: string, patch: Pa
   return mapBoxes(pages, pageId, (boxes) => boxes.map((b) => (b.id === boxId ? { ...b, ...patch } : b)));
 }
 
-/** 상자를 지운다. 이 상자의 페이지 링크가 만든 돌아가기 링크도 함께 지운다 */
+/** 상자를 지운다. 이 상자의 페이지 링크가 만든 돌아가기 링크, 이 상자에 닿은 화살표도 함께 지운다 */
 export function removeBox(pages: Page[], pageId: string, boxId: string): Page[] {
   return removeBackLinks(
-    mapBoxes(pages, pageId, (boxes) => boxes.filter((b) => b.id !== boxId)),
+    mapBoxes(pages, pageId, (boxes) => boxes.filter((b) => b.id !== boxId)).map((p) => (p.id === pageId ? dropArrowsOf(p, boxId) : p)),
     boxId,
   );
 }
@@ -87,9 +88,24 @@ function backSlot(existing: TextBox[]): { x: number; y: number } {
   return { x: 0.68, y: Math.min(0.9, 0.03 + k * 0.07) };
 }
 
-/** 페이지를 복제할 때 상자도 새 id로 복사한다. 돌아가기 링크는 원래 링크와의 연결을 뗀다 */
-export function copyBoxes(boxes: TextBox[] | undefined): TextBox[] | undefined {
-  return boxes?.map(({ backOf: _backOf, ...b }) => ({ ...b, id: newId("b") }));
+/** 페이지를 복제할 때 상자도 새 id로 복사한다. 돌아가기 링크는 원래 링크와의 연결을 뗀다. 상자 잇는 화살표도 새 id로 */
+export function copyBoxes(page: Page): Pick<Page, "boxes" | "arrows"> {
+  const idMap = new Map<string, string>();
+  const boxes = page.boxes?.map(({ backOf: _backOf, ...b }) => {
+    const id = newId("b");
+    idMap.set(b.id, id);
+    return { ...b, id };
+  });
+  return { boxes, arrows: remapArrows(page.arrows, idMap) };
+}
+
+/** 테두리 굵기 단계 → 글자 크기 대비 (em) */
+export const BORDER_EM = { 1: 0.05, 2: 0.09, 3: 0.14 } as const;
+
+/** 화면에 그릴 테두리 (없으면 null). 링크 상자는 쓰지 않는다 */
+export function boxBorder(box: Pick<TextBox, "border" | "color" | "link">): { color: string; em: number } | null {
+  if (!box.border || box.link) return null;
+  return { color: box.border.color === "auto" ? box.color : box.border.color, em: BORDER_EM[box.border.w] ?? BORDER_EM[1] };
 }
 
 /** 연결한 페이지가 없어진 페이지 링크 */

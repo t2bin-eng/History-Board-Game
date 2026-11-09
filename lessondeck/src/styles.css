@@ -3691,3 +3691,68 @@ body:has(.select-bar) .toast {
   height: 100%;
   cursor: pointer;
 }
+
+/* 상자 잇는 화살표 (v0.20): 상자 아래 층, 텍스트 모드에서만 눌러 고른다 */
+.arrow-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.arrow-layer .arrow-hit {
+  fill: none;
+  stroke: transparent;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.arrow-layer .arrow-glow {
+  fill: none;
+  stroke: var(--accent);
+  stroke-linecap: round;
+  opacity: 0.45;
+}
+
+.box-toolbar.arrow-toolbar {
+  bottom: auto;
+}
+
+.box-layer.connecting .text-box {
+  cursor: crosshair;
+  outline: 1.5px dashed rgba(56, 189, 248, 0.7);
+  outline-offset: 3px;
+}
+
+.box-layer.connecting .text-box.connect-from {
+  outline: 2px solid var(--accent);
+}
+
+.connect-hint {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(24, 24, 24, 0.9);
+  color: #fff;
+  font-size: 13px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.box-sep {
+  width: 1px;
+  height: 22px;
+  margin: 0 3px;
+  background: var(--panel-border);
+}
+
+.box-border-sample {
+  display: block;
+  width: 18px;
+  border-top: 2px solid currentColor;
+}

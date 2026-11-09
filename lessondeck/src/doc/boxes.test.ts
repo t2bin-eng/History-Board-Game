@@ -79,11 +79,11 @@ describe("페이지 링크와 돌아가기 링크", () => {
   it("페이지 복제: 상자는 새 id, 돌아가기 링크는 원래 링크와 떨어진다", () => {
     const pages = setBoxLink(setup(), "a", "link1", { type: "page", pageId: "c" });
     const original = boxesOf(page(pages, "c"));
-    const copied = copyBoxes(original)!;
+    const copied = copyBoxes(page(pages, "c")).boxes!;
     expect(copied[0].id).not.toBe(original[0].id);
     expect(copied[0].backOf).toBeUndefined();
     expect(copied[0].role).toBe("back");
-    expect(copyBoxes(undefined)).toBeUndefined();
+    expect(copyBoxes({ ...page(pages, "c"), boxes: undefined }).boxes).toBeUndefined();
   });
 });
 

@@ -1,5 +1,6 @@
 import type { Stroke } from "../ink/types";
 import type { PageClip } from "./clipboard";
+import { remapArrows } from "./arrows";
 import { newId, newPageId, type Page, type TextBox } from "./types";
 
 // 페이지 복사·붙여넣기 (SPEC 5장 "앱 안 클립보드"). 원본 파일 옮기기는 store/assetTransfer.ts.
@@ -64,8 +65,10 @@ export function planPaste(
           : { ...page, asset };
     }
     if (src.boxes) {
+      const idMap = new Map<string, string>();
       page.boxes = src.boxes.map(({ backOf: _backOf, ...b }) => {
         const box: TextBox = { ...b, id: newId("b") };
+        idMap.set(b.id, box.id);
         if (box.link?.type !== "page") return box;
         const inClip = pageIdMap.get(box.link.pageId);
         if (inClip) return { ...box, link: { type: "page", pageId: inClip } };
@@ -74,6 +77,9 @@ export function planPaste(
         const { link: _link, role: _role, ...rest } = box;
         return { ...rest, text: rest.text || clip.labels[b.id] || "" };
       });
+      page.arrows = remapArrows(src.arrows, idMap);
+    } else {
+      delete page.arrows;
     }
     if (src.stickers)
       page.stickers = src.stickers.map((s) => ({

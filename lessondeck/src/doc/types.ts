@@ -70,11 +70,28 @@ export interface TextBox {
   color: string;
   /** 배경색 (v0.19): 없으면 배경 없음, "auto"면 글자색에 맞춰 잘 보이는 색, "#rrggbb"면 그 색. 링크 상자는 쓰지 않는다 */
   bg?: string;
+  /** 테두리 (v0.20): color "auto"면 글자색, w는 굵기 단계 1·2·3. 링크 상자는 쓰지 않는다 */
+  border?: BoxBorder;
   link?: BoxLink;
   /** 페이지 링크를 걸 때 연결한 페이지에 자동으로 생긴 "돌아가기" 링크 */
   role?: "back";
   /** 이 돌아가기 링크를 만든 원래 링크 상자 id (원래 링크를 지우면 같이 지운다) */
   backOf?: string;
+}
+
+export interface BoxBorder {
+  color: string;
+  w: 1 | 2 | 3;
+}
+
+/** 상자 잇는 화살표 (v0.20, SPEC 5장 arrows). from·to는 같은 페이지의 상자 id */
+export interface BoxArrow {
+  id: string;
+  from: string;
+  to: string;
+  color: string;
+  /** 양쪽 화살표 */
+  both?: boolean;
 }
 
 /** 이미지 스티커 꾸미기: 모양 */
@@ -118,6 +135,8 @@ export type Page = (
 ) & {
   /** 텍스트 상자·하이퍼링크 */
   boxes?: TextBox[];
+  /** 상자 잇는 화살표 (v0.20) */
+  arrows?: BoxArrow[];
   /** 이미지 스티커 */
   stickers?: Sticker[];
 };

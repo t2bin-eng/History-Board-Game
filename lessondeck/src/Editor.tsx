@@ -7,6 +7,7 @@ import {
   Crop,
   ImagePlus,
   Move,
+  MoveUpRight,
   Paintbrush,
   SendToBack,
   Copy,
@@ -92,6 +93,8 @@ import {
   type Page,
   type Sticker,
   type TextBox,
+  type BoxArrow,
+  type BoxBorder,
 } from "./doc/types";
 import { parseYouTube } from "./doc/youtube";
 import { applyInk, type InkAction, type InkBook } from "./ink/history";
@@ -102,6 +105,7 @@ import { onPenDown, onSideButtonChange, penButtonRecently, pointerKind } from ".
 import { hasShape, SHAPE_NAMES, shapeAt, withShape, type ShapeTool } from "./ink/shapes";
 import { ShapePicker } from "./ui/ShapePicker";
 import { followDetour, stepSkipping, type Detour } from "./doc/detours";
+import { addArrow, flipArrow, patchArrow, removeArrow } from "./doc/arrows";
 import { josa } from "./lib/josa";
 import { ShapeEditor } from "./view/ShapeEditor";
 import { isNativeApp, showToast } from "./lib/platform";
@@ -229,6 +233,11 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   const [textColor, setTextColor] = useState(BOX_COLORS[0]);
   /** 새 글상자 배경 (기본 자동: 글자가 잘 보이는 색). 상자에서 고르면 다음 상자도 그 배경 */
   const [boxBg, setBoxBg] = useState<string | undefined>("auto");
+  /** 새 글상자 테두리 (상자에서 고르면 다음 상자도) */
+  const [boxBorderStyle, setBoxBorderStyle] = useState<BoxBorder | undefined>(undefined);
+  /** 화살표로 잇는 중인 시작 상자 / 고른 화살표 (텍스트 모드) */
+  const [connectFrom, setConnectFrom] = useState<string | null>(null);
+  const [selectedArrow, setSelectedArrow] = useState<string | null>(null);
   /** 길게 누르기·더보기 메뉴 */
   const [menu, setMenu] = useState<
     | { kind: "box"; x: number; y: number; boxId: string }
@@ -484,6 +493,8 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     setSelectedSticker(null);
     setCropping(false);
     setSelectedShape(null);
+    setConnectFrom(null);
+    setSelectedArrow(null);
   }, [currentId]);
 
   const addBlank = (index: number, background: BlankBackground) => {
@@ -515,7 +526,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     const index = doc.pages.findIndex((p) => p.id === id);
     const page = doc.pages[index];
     if (!page) return;
-    const copy: Page = { ...page, id: newPageId(), boxes: copyBoxes(page.boxes), stickers: copyStickers(page.stickers) };
+    const copy: Page = { ...page, id: newPageId(), ...copyBoxes(page), stickers: copyStickers(page.stickers) };
     setDoc((d) => ({ ...d, pages: insertPages(d.pages, index + 1, [copy]) }));
     setInk((b) => (b[id] ? { ...b, [copy.id]: { past: [], present: b[id].present, future: [] } } : b));
     setCurrentId(copy.id);
@@ -792,6 +803,47 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     setTextMode(false);
     setSelectedBox(null);
     setEditingBox(null);
+    setConnectFrom(null);
+    setSelectedArrow(null);
+  };
+
+  // ── 상자 잇는 화살표 ──
+  /** 이 상자에서 화살표 잇기 시작: 다음에 누른 상자로 잇는다 */
+  const startConnect = (boxId: string) => {
+    setTextMode(true);
+    setSelectedBox(boxId);
+    setEditingBox(null);
+    setSelectedArrow(null);
+    setConnectFrom(boxId);
+  };
+  const connectTo = (toId: string) => {
+    const from = connectFrom;
+    setConnectFrom(null);
+    if (!from || !currentPage) return;
+    const pageId = currentPage.id;
+    const color = findBox(from)?.color ?? "#111111";
+    const id = newId("a");
+    setDoc((d) => ({ ...d, pages: addArrow(d.pages, pageId, from, toId, color, id).pages }));
+    setSelectedBox(null);
+    setSelectedArrow(id);
+    showToast("화살표로 이었습니다. 화살표를 누르면 방향·색을 바꿀 수 있습니다");
+  };
+  const editArrows = (fn: (pages: Page[], pageId: string) => Page[]) => {
+    if (!currentPage) return;
+    const pageId = currentPage.id;
+    setDoc((d) => ({ ...d, pages: fn(d.pages, pageId) }));
+  };
+  const deleteArrow = (id: string) => {
+    const pageId = currentPage?.id;
+    const arrow = currentPage?.arrows?.find((a) => a.id === id);
+    editArrows((pages, pid) => removeArrow(pages, pid, id));
+    setSelectedArrow(null);
+    showToast("화살표를 지웠습니다", {
+      label: "되돌리기",
+      run: () =>
+        arrow &&
+        setDoc((d) => ({ ...d, pages: d.pages.map((p) => (p.id === pageId ? { ...p, arrows: [...(p.arrows ?? []), arrow] } : p)) })),
+    });
   };
 
   /** 상자가 들어 있는 페이지를 찾아 목록을 바꾼다 (편집 중에 페이지를 넘겨도 맞는 페이지에) */
@@ -806,7 +858,16 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
 
   const createBox = (x: number, y: number) => {
     if (!currentPage) return;
-    const box: TextBox = { id: newId("b"), x, y, text: "", size: DEFAULT_BOX_SIZE, color: textColor, ...(boxBg ? { bg: boxBg } : {}) };
+    const box: TextBox = {
+      id: newId("b"),
+      x,
+      y,
+      text: "",
+      size: DEFAULT_BOX_SIZE,
+      color: textColor,
+      ...(boxBg ? { bg: boxBg } : {}),
+      ...(boxBorderStyle ? { border: boxBorderStyle } : {}),
+    };
     setDoc((d) => ({ ...d, pages: addBox(d.pages, currentPage.id, box) }));
     setSelectedBox(box.id);
     setEditingBox(box.id);
@@ -843,15 +904,29 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     });
 
   const deleteBox = (id: string, message = "상자를 지웠습니다") => {
-    // 되돌리기용: 이 상자와, 이 상자가 만든 돌아가기 링크
+    // 되돌리기용: 이 상자와, 이 상자가 만든 돌아가기 링크, 이 상자에 닿은 화살표
     const removed: { pageId: string; box: TextBox }[] = [];
-    for (const p of docRef.current.pages) for (const b of p.boxes ?? []) if (b.id === id || b.backOf === id) removed.push({ pageId: p.id, box: b });
+    const removedArrows: { pageId: string; arrow: BoxArrow }[] = [];
+    for (const p of docRef.current.pages) {
+      for (const b of p.boxes ?? []) if (b.id === id || b.backOf === id) removed.push({ pageId: p.id, box: b });
+      for (const a of p.arrows ?? []) if (a.from === id || a.to === id) removedArrows.push({ pageId: p.id, arrow: a });
+    }
     editBoxes(id, (pages, pageId) => removeBox(pages, pageId, id));
     setSelectedBox(null);
     setEditingBox(null);
     showToast(message, {
       label: "되돌리기",
-      run: () => setDoc((d) => ({ ...d, pages: removed.reduce((ps, r) => addBox(ps, r.pageId, r.box), d.pages) })),
+      run: () =>
+        setDoc((d) => {
+          const pages = removed.reduce((ps, r) => addBox(ps, r.pageId, r.box), d.pages);
+          return {
+            ...d,
+            pages: pages.map((p) => {
+              const back = removedArrows.filter((r) => r.pageId === p.id).map((r) => r.arrow);
+              return back.length ? { ...p, arrows: [...(p.arrows ?? []), ...back] } : p;
+            }),
+          };
+        }),
     });
   };
 
@@ -1220,6 +1295,14 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
               label: "링크",
               icon: <Link2 size={18} />,
               onSelect: () => setLinkDialog({ boxId: id, created: false }),
+            },
+            {
+              label: "화살표로 잇기",
+              icon: <MoveUpRight size={18} />,
+              onSelect: () => {
+                startConnect(id);
+                showToast("화살표로 이을 상자를 누르세요");
+              },
             },
             {
               label: "크기·위치",
@@ -1640,6 +1723,8 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   // PC에서 시험할 때 쓰는 단축키
   const stickerKeys = useRef({ selectedSticker, cropping, deleteSticker, deselectSticker });
   stickerKeys.current = { selectedSticker, cropping, deleteSticker, deselectSticker };
+  const arrowKeys = useRef({ selectedArrow, connectFrom, deleteArrow });
+  arrowKeys.current = { selectedArrow, connectFrom, deleteArrow };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // 주소 입력 중에는 단축키를 쓰지 않는다
@@ -1664,6 +1749,12 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
       } else if (e.key === "Escape" && stickerKeys.current.selectedSticker) {
         if (stickerKeys.current.cropping) setCropping(false);
         else stickerKeys.current.deselectSticker();
+      } else if ((e.key === "Delete" || e.key === "Backspace") && arrowKeys.current.selectedArrow) {
+        e.preventDefault();
+        arrowKeys.current.deleteArrow(arrowKeys.current.selectedArrow);
+      } else if (e.key === "Escape" && (arrowKeys.current.connectFrom || arrowKeys.current.selectedArrow)) {
+        setConnectFrom(null);
+        setSelectedArrow(null);
       } else if ((e.key === "Delete" || e.key === "Backspace") && selectedBox && !editingBox) {
         e.preventDefault();
         deleteBox(selectedBox);
@@ -1961,6 +2052,25 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
                     setBoxBg(bg);
                     editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { bg }));
                   }}
+                  onBorder={(id, border) => {
+                    setBoxBorderStyle(border);
+                    editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { border }));
+                  }}
+                  onStartConnect={(id) => {
+                    startConnect(id);
+                    showToast("화살표로 이을 상자를 누르세요");
+                  }}
+                  connectFrom={connectFrom}
+                  onConnect={connectTo}
+                  onCancelConnect={() => setConnectFrom(null)}
+                  selectedArrow={selectedArrow}
+                  onSelectArrow={(id) => {
+                    setSelectedArrow(id);
+                    if (id) setSelectedBox(null);
+                  }}
+                  onArrowFlip={(id) => editArrows((pages, pid) => flipArrow(pages, pid, id))}
+                  onArrowPatch={(id, patch) => editArrows((pages, pid) => patchArrow(pages, pid, id, patch))}
+                  onArrowDelete={deleteArrow}
                   onCopy={(id) => {
                     copyBox(id);
                     showToast("상자를 복사했습니다. 붙일 곳에서 붙여넣기");

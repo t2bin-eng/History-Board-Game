@@ -1,7 +1,9 @@
-import { boxBackground, boxLabel, boxesOf, isDangling } from "../doc/boxes";
+import { arrowShape, arrowsOf, type Rect } from "../doc/arrows";
+import { boxBackground, boxBorder, boxLabel, boxesOf, isDangling } from "../doc/boxes";
 import { chromeWidth, layoutBox, LINE_HEIGHT } from "../doc/textLayout";
 import type { Page } from "../doc/types";
 import type { PageSize } from "../ink/geometry";
+import { boxRectPx } from "./boxGeometry";
 import { BOX_FONT, measureText } from "./textMeasure";
 
 // 페이지 바 축소 이미지에 텍스트 상자를 그린다 (화면의 BoxLayer와 같은 배치: 같은 줄·글자 크기·링크 단추 모양)
@@ -10,6 +12,30 @@ export function paintBoxes(ctx: CanvasRenderingContext2D, page: Page, pages: Pag
   ctx.textBaseline = "top";
   const heightRatio = size.height / Math.max(1, size.width);
   const scale = size.width / 1000;
+  // 상자 잇는 화살표 (상자 아래)
+  const rects = new Map<string, Rect>();
+  for (const b of boxesOf(page)) rects.set(b.id, boxRectPx(b, boxLabel(b, pages, hidden), size));
+  const lineW = 3 * scale;
+  for (const a of arrowsOf(page)) {
+    const A = rects.get(a.from);
+    const B = rects.get(a.to);
+    const shape = A && B ? arrowShape(A, B, lineW, a.both) : null;
+    if (!shape) continue;
+    ctx.strokeStyle = a.color;
+    ctx.fillStyle = a.color;
+    ctx.lineWidth = lineW;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(shape.line[0], shape.line[1]);
+    ctx.lineTo(shape.line[2], shape.line[3]);
+    ctx.stroke();
+    for (const head of shape.heads) {
+      ctx.beginPath();
+      head.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
   for (const b of boxesOf(page)) {
     const dangling = isDangling(b, pages);
     if (b.role === "back" && dangling) continue;
@@ -63,6 +89,16 @@ export function paintBoxes(ctx: CanvasRenderingContext2D, page: Page, pages: Pag
       ctx.roundRect(x, y, boxW, boxH, fs * 0.25);
       ctx.fillStyle = bg;
       ctx.fill();
+    }
+    const border = boxBorder(b);
+    if (border) {
+      // 상자 안쪽에 (화면의 inset 그림자와 같은 자리)
+      const bw = border.em * fs;
+      ctx.beginPath();
+      ctx.roundRect(x + bw / 2, y + bw / 2, boxW - bw, boxH - bw, Math.max(0, fs * 0.25 - bw / 2));
+      ctx.strokeStyle = border.color;
+      ctx.lineWidth = bw;
+      ctx.stroke();
     }
     ctx.font = `500 ${fs}px ${BOX_FONT}`;
     ctx.fillStyle = b.color;

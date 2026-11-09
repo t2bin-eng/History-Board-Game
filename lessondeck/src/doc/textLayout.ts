@@ -22,9 +22,9 @@ export interface BoxChrome {
   trail: number;
 }
 
-export function boxChrome(box: Pick<TextBox, "link" | "role" | "text" | "bg">): BoxChrome {
-  // 배경이 있으면 글자 둘레에 여백
-  if (!box.link) return box.bg ? { padX: 0.3, padY: 0.1, icon: 0, trail: 0 } : { padX: 0, padY: 0, icon: 0, trail: 0 };
+export function boxChrome(box: Pick<TextBox, "link" | "role" | "text" | "bg" | "border">): BoxChrome {
+  // 배경·테두리가 있으면 글자 둘레에 여백
+  if (!box.link) return box.bg || box.border ? { padX: 0.3, padY: 0.1, icon: 0, trail: 0 } : { padX: 0, padY: 0, icon: 0, trail: 0 };
   const trail = box.link.type === "page" && !box.text.trim() ? 1.1 : 0;
   return { padX: box.role === "back" ? 0.45 : 0.4, padY: 0.12, icon: 1.15, trail };
 }

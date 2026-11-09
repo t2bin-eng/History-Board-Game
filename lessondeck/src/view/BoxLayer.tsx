@@ -1,9 +1,28 @@
-import { ArrowRight, Copy, ExternalLink, Link2, Minus, PaintBucket, Pencil, Plus, Scissors, Trash2, Undo2, Wand2 } from "lucide-react";
+import {
+  ArrowLeftRight,
+  ArrowRight,
+  Copy,
+  ExternalLink,
+  Link2,
+  Minus,
+  MoveHorizontal,
+  MoveUpRight,
+  PaintBucket,
+  Pencil,
+  Plus,
+  Scissors,
+  Square,
+  Trash2,
+  Undo2,
+  Wand2,
+} from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { BOX_BG_COLORS, BOX_COLORS, boxBackground, boxLabel, boxesOf, boxPlainLabel, isAutoPageLink, isDangling } from "../doc/boxes";
+import { arrowShape, arrowsOf, type Rect } from "../doc/arrows";
+import { BOX_BG_COLORS, BOX_COLORS, boxBackground, boxBorder, boxLabel, boxesOf, boxPlainLabel, isAutoPageLink, isDangling } from "../doc/boxes";
 import { layoutBox } from "../doc/textLayout";
-import type { BoxLink, Page, TextBox } from "../doc/types";
+import type { BoxArrow, BoxBorder, BoxLink, Page, TextBox } from "../doc/types";
 import type { PageSize } from "../ink/geometry";
+import { boxRectPx } from "./boxGeometry";
 import { measureText } from "./textMeasure";
 
 interface Props {
@@ -29,6 +48,20 @@ interface Props {
   onColor: (id: string, color: string) => void;
   /** 배경색: "auto"(글자가 잘 보이는 색) · "#rrggbb" · undefined(없음) */
   onBg: (id: string, bg: string | undefined) => void;
+  /** 테두리 (undefined면 없음) */
+  onBorder: (id: string, border: BoxBorder | undefined) => void;
+  /** 화살표로 잇기: 이 상자에서 시작 (다음에 누른 상자로 잇는다) */
+  onStartConnect: (id: string) => void;
+  /** 잇는 중이면 시작 상자 id */
+  connectFrom?: string | null;
+  onConnect: (toId: string) => void;
+  onCancelConnect: () => void;
+  /** 고른 화살표 (텍스트 모드) */
+  selectedArrow?: string | null;
+  onSelectArrow: (id: string | null) => void;
+  onArrowFlip: (id: string) => void;
+  onArrowPatch: (id: string, patch: Partial<Pick<BoxArrow, "both" | "color">>) => void;
+  onArrowDelete: (id: string) => void;
   onCopy: (id: string) => void;
   onCut: (id: string) => void;
   onDelete: (id: string) => void;
@@ -73,6 +106,15 @@ export function BoxLayer(props: Props) {
 
   const onLayerClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!editMode || e.target !== e.currentTarget) return;
+    // 잇는 중에 빈 곳을 누르면 그만, 화살표를 골랐으면 놓기만
+    if (props.connectFrom) {
+      props.onCancelConnect();
+      return;
+    }
+    if (props.selectedArrow) {
+      props.onSelectArrow(null);
+      return;
+    }
     // 고른 상자가 있으면 이번 누름은 고르기만 푼다 (이미 지워진 상자면 바로 새로 만든다)
     if (boxes.some((b) => b.id === selectedId || b.id === editingId)) {
       props.onSelect(null);
@@ -120,6 +162,12 @@ export function BoxLayer(props: Props) {
       return;
     }
     if (e.type !== "pointerup") return;
+    // 화살표로 잇는 중: 누른 상자로 잇는다 (시작 상자를 다시 누르면 그만)
+    if (props.connectFrom) {
+      if (b.id !== props.connectFrom) props.onConnect(b.id);
+      else props.onCancelConnect();
+      return;
+    }
     // 고른 상자를 한 번 더 누르면 글 고치기
     if (selectedId === b.id) props.onStartEdit(b.id);
     else props.onSelect(b.id);
@@ -164,8 +212,71 @@ export function BoxLayer(props: Props) {
     setLiveSize(null);
   };
 
+  // 화살표가 이을 상자 자리 (끄는 중·크기를 바꾸는 중의 모양 그대로)
+  const rects = new Map<string, Rect>();
+  for (const b of boxes) {
+    const pos = dragPos?.id === b.id ? dragPos : b;
+    const live = liveSize?.id === b.id ? { ...b, w: liveSize.w, h: liveSize.h } : b;
+    const label = boxLabel(b, pages, hidden);
+    rects.set(b.id, boxRectPx({ ...live, x: pos.x, y: pos.y }, editingId === b.id ? b.text || label : label, size));
+  }
+  const arrows = arrowsOf(page);
+  const lineW = (3 * size.width) / 1000;
+  const shapes = arrows.flatMap((a) => {
+    const A = rects.get(a.from);
+    const B = rects.get(a.to);
+    const shape = A && B ? arrowShape(A, B, lineW, a.both) : null;
+    return shape ? [{ arrow: a, shape }] : [];
+  });
+  const picked = editMode && props.selectedArrow ? shapes.find((s) => s.arrow.id === props.selectedArrow) : undefined;
+
   return (
-    <div ref={layerRef} className={`box-layer${editMode ? " edit" : ""}`} data-no-gesture={editMode || undefined} onClick={onLayerClick}>
+    <div
+      ref={layerRef}
+      className={`box-layer${editMode ? " edit" : ""}${props.connectFrom ? " connecting" : ""}`}
+      data-no-gesture={editMode || undefined}
+      onClick={onLayerClick}
+    >
+      {shapes.length > 0 && (
+        <svg className="arrow-layer" width={size.width} height={size.height} aria-hidden={!editMode}>
+          {shapes.map(({ arrow: a, shape: s }) => {
+            const d = `M${s.line[0].toFixed(1)},${s.line[1].toFixed(1)}L${s.line[2].toFixed(1)},${s.line[3].toFixed(1)}`;
+            return (
+              <g key={a.id} data-arrow-id={a.id}>
+                {picked?.arrow.id === a.id && <path d={d} className="arrow-glow" strokeWidth={lineW + 10} />}
+                <path d={d} stroke={a.color} strokeWidth={lineW} strokeLinecap="round" fill="none" />
+                {s.heads.map((h, i) => (
+                  <polygon key={i} points={h.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ")} fill={a.color} stroke={a.color} strokeWidth={lineW * 0.4} strokeLinejoin="round" />
+                ))}
+                {editMode && !props.connectFrom && (
+                  <path
+                    d={d}
+                    className="arrow-hit"
+                    strokeWidth={Math.max(22, lineW * 7)}
+                    aria-label="화살표"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      props.onSelectArrow(a.id);
+                    }}
+                  />
+                )}
+              </g>
+            );
+          })}
+        </svg>
+      )}
+      {props.connectFrom && editMode && <div className="connect-hint">화살표로 이을 상자를 누르세요 · 빈 곳을 누르면 그만</div>}
+      {picked && (
+        <ArrowToolbar
+          arrow={picked.arrow}
+          at={{ x: (picked.shape.line[0] + picked.shape.line[2]) / 2, y: (picked.shape.line[1] + picked.shape.line[3]) / 2 }}
+          pageWidth={size.width}
+          onFlip={() => props.onArrowFlip(picked.arrow.id)}
+          onBoth={() => props.onArrowPatch(picked.arrow.id, { both: !picked.arrow.both })}
+          onColor={(color) => props.onArrowPatch(picked.arrow.id, { color })}
+          onDelete={() => props.onArrowDelete(picked.arrow.id)}
+        />
+      )}
       {boxes.map((b) => {
         const pos = dragPos?.id === b.id ? dragPos : b;
         const live = liveSize?.id === b.id ? { ...b, w: liveSize.w, h: liveSize.h } : b;
@@ -184,6 +295,7 @@ export function BoxLayer(props: Props) {
           dangling && "dangling",
           selected && "selected",
           editing && "editing",
+          props.connectFrom === b.id && "connect-from",
         ]
           .filter(Boolean)
           .join(" ");
@@ -193,7 +305,9 @@ export function BoxLayer(props: Props) {
           fontSize,
           color: b.color,
           padding: `${layout.chrome.padY}em ${layout.chrome.padX}em`,
-          ...(boxBackground(b) ? { background: boxBackground(b)!, borderRadius: "0.25em" } : {}),
+          ...(boxBackground(b) || boxBorder(b) ? { borderRadius: "0.25em" } : {}),
+          ...(boxBackground(b) ? { background: boxBackground(b)! } : {}),
+          ...(boxBorder(b) ? { boxShadow: `inset 0 0 0 ${boxBorder(b)!.em}em ${boxBorder(b)!.color}` } : {}),
           ...(layout.fitted ? { width: live.w! * size.width, height: live.h! * size.height } : {}),
         };
         const common = {
@@ -273,6 +387,8 @@ export function BoxLayer(props: Props) {
             onResize={(s) => props.onResize(b.id, s)}
             onColor={(c) => props.onColor(b.id, c)}
             onBg={(bg) => props.onBg(b.id, bg)}
+            onBorder={(border) => props.onBorder(b.id, border)}
+            onStartConnect={() => props.onStartConnect(b.id)}
             onCopy={() => props.onCopy(b.id)}
             onCut={() => props.onCut(b.id)}
             onDelete={() => props.onDelete(b.id)}
@@ -318,6 +434,8 @@ function BoxToolbar({
   onResize,
   onColor,
   onBg,
+  onBorder,
+  onStartConnect,
   onCopy,
   onCut,
   onDelete,
@@ -332,6 +450,8 @@ function BoxToolbar({
   onResize: (step: 1 | -1) => void;
   onColor: (color: string) => void;
   onBg: (bg: string | undefined) => void;
+  onBorder: (border: BoxBorder | undefined) => void;
+  onStartConnect: () => void;
   onCopy: () => void;
   onCut: () => void;
   onDelete: () => void;
@@ -341,7 +461,7 @@ function BoxToolbar({
   const ref = useRef<HTMLDivElement>(null);
   const [left, setLeft] = useState(-2);
   /** 펼친 색 고르기 줄: 글자색 / 배경색 */
-  const [panel, setPanel] = useState<"color" | "bg" | null>(null);
+  const [panel, setPanel] = useState<"color" | "bg" | "border" | null>(null);
   useLayoutEffect(() => {
     const w = ref.current!.offsetWidth;
     setLeft(Math.max(4 - boxLeft, Math.min(-2, pageWidth - 4 - boxLeft - w)));
@@ -379,6 +499,14 @@ function BoxToolbar({
           <span className="box-bg-mark" style={{ background: bg ?? "transparent" }} />
         </button>
       )}
+      {!box.link && (
+        <button aria-label="테두리" title="테두리" className={panel === "border" || box.border ? "on" : undefined} onClick={() => setPanel(panel === "border" ? null : "border")}>
+          <Square size={16} />
+        </button>
+      )}
+      <button aria-label="화살표로 잇기" title="화살표로 잇기 (다음에 누른 상자로)" onClick={onStartConnect}>
+        <MoveUpRight size={16} />
+      </button>
       <button aria-label="상자 복사" title="복사 (Ctrl+C)" onClick={onCopy}>
         <Copy size={16} />
       </button>
@@ -393,6 +521,47 @@ function BoxToolbar({
           {BOX_COLORS.map((c) => (
             <button key={c} role="radio" aria-checked={box.color === c} className={`box-color${box.color === c ? " on" : ""}`} aria-label={`글자색 ${c}`} onClick={() => onColor(c)}>
               <span style={{ background: c }} />
+            </button>
+          ))}
+        </div>
+      )}
+      {panel === "border" && (
+        <div className="box-palette" role="radiogroup" aria-label="테두리 고르기">
+          <button role="radio" aria-checked={!box.border} className={`box-bg-opt${!box.border ? " on" : ""}`} onClick={() => onBorder(undefined)}>
+            없음
+          </button>
+          <button
+            role="radio"
+            aria-checked={box.border?.color === "auto"}
+            className={`box-bg-opt${box.border?.color === "auto" ? " on" : ""}`}
+            title="글자색과 같게"
+            onClick={() => onBorder({ color: "auto", w: box.border?.w ?? 2 })}
+          >
+            글자색
+          </button>
+          {BOX_COLORS.map((c) => (
+            <button
+              key={c}
+              role="radio"
+              aria-checked={box.border?.color === c}
+              className={`box-color${box.border?.color === c ? " on" : ""}`}
+              aria-label={`테두리 ${c}`}
+              onClick={() => onBorder({ color: c, w: box.border?.w ?? 2 })}
+            >
+              <span style={{ background: c }} />
+            </button>
+          ))}
+          <span className="box-sep" />
+          {([1, 2, 3] as const).map((w) => (
+            <button
+              key={w}
+              role="radio"
+              aria-checked={box.border?.w === w}
+              className={`box-bg-opt${box.border?.w === w ? " on" : ""}`}
+              aria-label={`테두리 ${["얇게", "보통", "굵게"][w - 1]}`}
+              onClick={() => onBorder({ color: box.border?.color ?? "auto", w })}
+            >
+              <span className="box-border-sample" style={{ borderTopWidth: w + 1 }} />
             </button>
           ))}
         </div>
@@ -418,4 +587,46 @@ function BoxToolbar({
 
 function clamp(v: number, min: number, max: number) {
   return Math.min(max, Math.max(min, v));
+}
+
+/** 고른 화살표의 막대: 방향 바꾸기 · 양쪽 화살표 · 색 · 지우기 (화살표 가운데 위) */
+function ArrowToolbar({
+  arrow,
+  at,
+  pageWidth,
+  onFlip,
+  onBoth,
+  onColor,
+  onDelete,
+}: {
+  arrow: BoxArrow;
+  at: { x: number; y: number };
+  pageWidth: number;
+  onFlip: () => void;
+  onBoth: () => void;
+  onColor: (color: string) => void;
+  onDelete: () => void;
+}) {
+  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+  const width = 330;
+  const left = clamp(at.x - width / 2, 4, Math.max(4, pageWidth - width - 4));
+  const top = at.y > 70 ? at.y - 64 : at.y + 18;
+  return (
+    <div className="box-toolbar arrow-toolbar" style={{ left, top }} onPointerDown={stop} onPointerUp={stop} onClick={stop}>
+      <button aria-label="방향 바꾸기" title="방향 바꾸기" onClick={onFlip}>
+        <ArrowLeftRight size={16} />
+      </button>
+      <button aria-label="양쪽 화살표" title="양쪽 화살표" className={arrow.both ? "on" : undefined} onClick={onBoth}>
+        <MoveHorizontal size={16} />
+      </button>
+      {BOX_COLORS.filter((c) => c !== "#ffffff").map((c) => (
+        <button key={c} className={`box-color${arrow.color === c ? " on" : ""}`} aria-label={`화살표 색 ${c}`} onClick={() => onColor(c)}>
+          <span style={{ background: c }} />
+        </button>
+      ))}
+      <button aria-label="화살표 지우기" title="지우기" onClick={onDelete}>
+        <Trash2 size={16} />
+      </button>
+    </div>
+  );
 }
