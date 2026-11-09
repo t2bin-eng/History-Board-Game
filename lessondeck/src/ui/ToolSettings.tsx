@@ -64,18 +64,30 @@ export function ToolSettings(props: Props) {
       {props.kind === "preset" ? (
         <>
           <div className="ts-title">{props.preset.tool === "highlighter" ? "형광펜" : "펜"}</div>
-          <div className="ts-row" role="radiogroup" aria-label="색상">
+          <div className="ts-row ts-colors" role="radiogroup" aria-label="색상">
             {(props.preset.tool === "highlighter" ? HIGHLIGHTER_COLORS : PEN_COLORS).map((c) => (
               <button
                 key={c}
                 role="radio"
-                aria-checked={props.preset.color === c}
+                aria-checked={props.preset.color.toLowerCase() === c}
                 aria-label={c}
-                className={`ts-swatch${props.preset.color === c ? " active" : ""}`}
+                className={`ts-swatch${props.preset.color.toLowerCase() === c ? " active" : ""}`}
                 style={{ background: c }}
                 onClick={() => props.onChange({ color: c })}
               />
             ))}
+            {/* 다른 색: 기기의 색 고르기 창 (목록에 없는 색이면 그 색으로 보여 준다) */}
+            <label
+              className={`ts-swatch ts-custom${(props.preset.tool === "highlighter" ? HIGHLIGHTER_COLORS : PEN_COLORS).includes(props.preset.color.toLowerCase()) ? "" : " active"}`}
+              title="다른 색"
+              style={
+                (props.preset.tool === "highlighter" ? HIGHLIGHTER_COLORS : PEN_COLORS).includes(props.preset.color.toLowerCase())
+                  ? undefined
+                  : { background: props.preset.color }
+              }
+            >
+              <input type="color" aria-label="다른 색" value={props.preset.color} onChange={(e) => props.onChange({ color: e.target.value })} />
+            </label>
           </div>
           <div className="ts-row" role="radiogroup" aria-label="굵기">
             {WIDTH_LEVELS[props.preset.tool].map((w, i) => (

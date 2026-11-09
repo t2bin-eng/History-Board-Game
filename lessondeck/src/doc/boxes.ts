@@ -1,10 +1,21 @@
+import { autoBackground } from "./colors";
 import { visiblePosition } from "./pages";
 import { newId, type BoxLink, type Page, type TextBox } from "./types";
 
 // 텍스트 상자·하이퍼링크 (SPEC 5장 boxes). 페이지 목록을 받아 새 목록을 돌려주는 순수 함수만 둔다.
 
 /** 글자 색 (검정·파랑·빨강·초록) */
-export const BOX_COLORS = ["#1a1a1a", "#1565c0", "#d32f2f", "#2e7d32"];
+/** 글상자 글자색 (펜처럼 쨍한 색, 흰색은 짙은 배경과 함께) */
+export const BOX_COLORS = ["#111111", "#0050ff", "#ff1e1e", "#00a844", "#ff7b00", "#8f2bff", "#ff2d95", "#ffffff"];
+
+/** 글상자 배경 고르기: 자동 · 없음 다음에 놓는 색 (흰색 · 옅은 노랑·하늘·연두·분홍 · 회색 · 형광 노랑 · 짙은 남색) */
+export const BOX_BG_COLORS = ["#ffffff", "#fff4b0", "#dcefff", "#ddf7d8", "#ffe1ef", "#ececec", "#ffe600", "#1d2433"];
+
+/** 화면에 칠할 배경색 (없으면 null). 링크 상자는 링크 단추 모양이라 쓰지 않는다 */
+export function boxBackground(box: Pick<TextBox, "bg" | "color" | "link">): string | null {
+  if (!box.bg || box.link) return null;
+  return box.bg === "auto" ? autoBackground(box.color) : box.bg;
+}
 export const LINK_COLOR = "#1565c0";
 /** 글자 크기 단계 ("페이지 가로 = 1000" 단위) */
 export const BOX_SIZES = [16, 20, 24, 30, 38, 48, 60];

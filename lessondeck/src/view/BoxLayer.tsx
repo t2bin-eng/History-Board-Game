@@ -1,6 +1,6 @@
-import { ArrowRight, Copy, ExternalLink, Link2, Minus, Pencil, Plus, Scissors, Trash2, Undo2 } from "lucide-react";
+import { ArrowRight, Copy, ExternalLink, Link2, Minus, PaintBucket, Pencil, Plus, Scissors, Trash2, Undo2, Wand2 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { BOX_COLORS, boxLabel, boxesOf, boxPlainLabel, isAutoPageLink, isDangling } from "../doc/boxes";
+import { BOX_BG_COLORS, BOX_COLORS, boxBackground, boxLabel, boxesOf, boxPlainLabel, isAutoPageLink, isDangling } from "../doc/boxes";
 import { layoutBox } from "../doc/textLayout";
 import type { BoxLink, Page, TextBox } from "../doc/types";
 import type { PageSize } from "../ink/geometry";
@@ -27,6 +27,8 @@ interface Props {
   /** 손잡이로 상자 크기를 바꿈 (그 크기에 맞춘 글자 크기 함께) */
   onBoxSize: (id: string, w: number, h: number, size: number) => void;
   onColor: (id: string, color: string) => void;
+  /** 배경색: "auto"(글자가 잘 보이는 색) · "#rrggbb" · undefined(없음) */
+  onBg: (id: string, bg: string | undefined) => void;
   onCopy: (id: string) => void;
   onCut: (id: string) => void;
   onDelete: (id: string) => void;
@@ -191,6 +193,7 @@ export function BoxLayer(props: Props) {
           fontSize,
           color: b.color,
           padding: `${layout.chrome.padY}em ${layout.chrome.padX}em`,
+          ...(boxBackground(b) ? { background: boxBackground(b)!, borderRadius: "0.25em" } : {}),
           ...(layout.fitted ? { width: live.w! * size.width, height: live.h! * size.height } : {}),
         };
         const common = {
@@ -269,6 +272,7 @@ export function BoxLayer(props: Props) {
             onLink={() => props.onLink(b.id)}
             onResize={(s) => props.onResize(b.id, s)}
             onColor={(c) => props.onColor(b.id, c)}
+            onBg={(bg) => props.onBg(b.id, bg)}
             onCopy={() => props.onCopy(b.id)}
             onCut={() => props.onCut(b.id)}
             onDelete={() => props.onDelete(b.id)}
@@ -313,6 +317,7 @@ function BoxToolbar({
   onLink,
   onResize,
   onColor,
+  onBg,
   onCopy,
   onCut,
   onDelete,
@@ -326,6 +331,7 @@ function BoxToolbar({
   onLink: () => void;
   onResize: (step: 1 | -1) => void;
   onColor: (color: string) => void;
+  onBg: (bg: string | undefined) => void;
   onCopy: () => void;
   onCut: () => void;
   onDelete: () => void;
@@ -334,10 +340,13 @@ function BoxToolbar({
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
   const ref = useRef<HTMLDivElement>(null);
   const [left, setLeft] = useState(-2);
+  /** 펼친 색 고르기 줄: 글자색 / 배경색 */
+  const [panel, setPanel] = useState<"color" | "bg" | null>(null);
   useLayoutEffect(() => {
     const w = ref.current!.offsetWidth;
     setLeft(Math.max(4 - boxLeft, Math.min(-2, pageWidth - 4 - boxLeft - w)));
-  }, [boxLeft, pageWidth]);
+  }, [boxLeft, pageWidth, panel]);
+  const bg = boxBackground(box);
   return (
     <div
       ref={ref}
@@ -359,11 +368,17 @@ function BoxToolbar({
       <button aria-label="글자 크게" title="글자 크게" onClick={() => onResize(1)}>
         <Plus size={16} />
       </button>
-      {BOX_COLORS.map((c) => (
-        <button key={c} className={`box-color${box.color === c ? " on" : ""}`} aria-label={`글자색 ${c}`} onClick={() => onColor(c)}>
-          <span style={{ background: c }} />
+      <button aria-label="글자색" title="글자색" className={panel === "color" ? "on" : undefined} onClick={() => setPanel(panel === "color" ? null : "color")}>
+        <span className="box-glyph" style={{ color: box.color, background: bg ?? "transparent" }}>
+          가
+        </span>
+      </button>
+      {!box.link && (
+        <button aria-label="배경색" title="배경색" className={`box-bg-btn${panel === "bg" ? " on" : ""}`} onClick={() => setPanel(panel === "bg" ? null : "bg")}>
+          <PaintBucket size={16} />
+          <span className="box-bg-mark" style={{ background: bg ?? "transparent" }} />
         </button>
-      ))}
+      )}
       <button aria-label="상자 복사" title="복사 (Ctrl+C)" onClick={onCopy}>
         <Copy size={16} />
       </button>
@@ -373,6 +388,30 @@ function BoxToolbar({
       <button aria-label="상자 지우기" title="지우기" onClick={onDelete}>
         <Trash2 size={16} />
       </button>
+      {panel === "color" && (
+        <div className="box-palette" role="radiogroup" aria-label="글자색 고르기">
+          {BOX_COLORS.map((c) => (
+            <button key={c} role="radio" aria-checked={box.color === c} className={`box-color${box.color === c ? " on" : ""}`} aria-label={`글자색 ${c}`} onClick={() => onColor(c)}>
+              <span style={{ background: c }} />
+            </button>
+          ))}
+        </div>
+      )}
+      {panel === "bg" && (
+        <div className="box-palette" role="radiogroup" aria-label="배경색 고르기">
+          <button role="radio" aria-checked={box.bg === "auto"} className={`box-bg-opt${box.bg === "auto" ? " on" : ""}`} title="글자가 잘 보이는 색을 저절로" onClick={() => onBg("auto")}>
+            <Wand2 size={15} /> 자동
+          </button>
+          <button role="radio" aria-checked={!box.bg} className={`box-bg-opt${!box.bg ? " on" : ""}`} onClick={() => onBg(undefined)}>
+            없음
+          </button>
+          {BOX_BG_COLORS.map((c) => (
+            <button key={c} role="radio" aria-checked={box.bg === c} className={`box-color${box.bg === c ? " on" : ""}`} aria-label={`배경색 ${c}`} onClick={() => onBg(c)}>
+              <span style={{ background: c }} />
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -227,6 +227,8 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   /** 링크 걸기 창. created: "링크 만들기"로 방금 만든 상자 (취소하면 지우고 원래 모드로) */
   const [linkDialog, setLinkDialog] = useState<{ boxId: string; created: boolean; wasTextMode?: boolean } | null>(null);
   const [textColor, setTextColor] = useState(BOX_COLORS[0]);
+  /** 새 글상자 배경 (기본 자동: 글자가 잘 보이는 색). 상자에서 고르면 다음 상자도 그 배경 */
+  const [boxBg, setBoxBg] = useState<string | undefined>("auto");
   /** 길게 누르기·더보기 메뉴 */
   const [menu, setMenu] = useState<
     | { kind: "box"; x: number; y: number; boxId: string }
@@ -804,7 +806,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
 
   const createBox = (x: number, y: number) => {
     if (!currentPage) return;
-    const box: TextBox = { id: newId("b"), x, y, text: "", size: DEFAULT_BOX_SIZE, color: textColor };
+    const box: TextBox = { id: newId("b"), x, y, text: "", size: DEFAULT_BOX_SIZE, color: textColor, ...(boxBg ? { bg: boxBg } : {}) };
     setDoc((d) => ({ ...d, pages: addBox(d.pages, currentPage.id, box) }));
     setSelectedBox(box.id);
     setEditingBox(box.id);
@@ -888,7 +890,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     if (!currentPage) return;
     const trimmed = text.trim().slice(0, 2000);
     if (!trimmed) return;
-    const box = textToBox(trimmed, textColor);
+    const box = textToBox(trimmed, textColor, undefined, boxBg);
     const clip: BoxClip = { docId: docRef.current.id, boxes: [box], labels: [trimmed] };
     pasteClip(clip, at);
   };
@@ -1109,7 +1111,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
       addLink(index, trimmed, "url");
       return;
     }
-    const page = { ...blankPage(index), boxes: [textToBox(trimmed, textColor, { x: 0.06, y: 0.05 })] };
+    const page = { ...blankPage(index), boxes: [textToBox(trimmed, textColor, { x: 0.06, y: 0.05 }, boxBg)] };
     addAssetAndPages(null, index, [page]);
     showToast("복사한 글로 새 페이지를 만들었습니다");
   };
@@ -1955,6 +1957,10 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
                     setTextColor(color);
                     editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { color }));
                   }}
+                  onBg={(id, bg) => {
+                    setBoxBg(bg);
+                    editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { bg }));
+                  }}
                   onCopy={(id) => {
                     copyBox(id);
                     showToast("상자를 복사했습니다. 붙일 곳에서 붙여넣기");
@@ -2170,12 +2176,12 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   );
 }
 
-/** 붙인 글 → 글상자 (웹 주소 하나면 웹 주소 링크 상자) */
-function textToBox(text: string, color: string, at = { x: 0.08, y: 0.08 }): TextBox {
+/** 붙인 글 → 글상자 (웹 주소 하나면 웹 주소 링크 상자). bg: 새 글상자 배경 (기본 자동) */
+function textToBox(text: string, color: string, at = { x: 0.08, y: 0.08 }, bg: string | undefined = "auto"): TextBox {
   const url = !/\s/.test(text) ? normalizeUrl(text) : null;
   return url
     ? { id: newId("b"), ...at, text: "", size: DEFAULT_BOX_SIZE, color: LINK_COLOR, link: { type: "url", url } }
-    : { id: newId("b"), ...at, text, size: DEFAULT_BOX_SIZE, color };
+    : { id: newId("b"), ...at, text, size: DEFAULT_BOX_SIZE, color, ...(bg ? { bg } : {}) };
 }
 
 function missingNotice(count: number): string | null {

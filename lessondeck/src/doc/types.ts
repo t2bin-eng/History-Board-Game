@@ -68,6 +68,8 @@ export interface TextBox {
   text: string;
   size: number;
   color: string;
+  /** 배경색 (v0.19): 없으면 배경 없음, "auto"면 글자색에 맞춰 잘 보이는 색, "#rrggbb"면 그 색. 링크 상자는 쓰지 않는다 */
+  bg?: string;
   link?: BoxLink;
   /** 페이지 링크를 걸 때 연결한 페이지에 자동으로 생긴 "돌아가기" 링크 */
   role?: "back";

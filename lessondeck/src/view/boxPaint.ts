@@ -1,4 +1,4 @@
-import { boxLabel, boxesOf, isDangling } from "../doc/boxes";
+import { boxBackground, boxLabel, boxesOf, isDangling } from "../doc/boxes";
 import { chromeWidth, layoutBox, LINE_HEIGHT } from "../doc/textLayout";
 import type { Page } from "../doc/types";
 import type { PageSize } from "../ink/geometry";
@@ -56,6 +56,13 @@ export function paintBoxes(ctx: CanvasRenderingContext2D, page: Page, pages: Pag
         ctx.lineTo(cx + d * fs * 0.1, cy + fs * 0.22);
         ctx.stroke();
       }
+    }
+    const bg = boxBackground(b);
+    if (bg) {
+      ctx.beginPath();
+      ctx.roundRect(x, y, boxW, boxH, fs * 0.25);
+      ctx.fillStyle = bg;
+      ctx.fill();
     }
     ctx.font = `500 ${fs}px ${BOX_FONT}`;
     ctx.fillStyle = b.color;
