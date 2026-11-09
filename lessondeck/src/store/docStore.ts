@@ -6,7 +6,8 @@ import { db, type AssetMeta, type DocRecord, type Manifest } from "./db";
 
 // 문서 저장·불러오기. 화면(App)은 DocState로 일하고, 여기서 Manifest·Blob·필기 레코드로 바꿔 저장한다.
 
-type ChangeKind = "local" | "remote" | "deleted";
+/** thumb: 홈 카드 그림만 바뀜 (동기화할 내용 아님) */
+type ChangeKind = "local" | "remote" | "deleted" | "thumb";
 type Listener = (docId: string, kind: ChangeKind) => void;
 const listeners = new Set<Listener>();
 
@@ -53,6 +54,7 @@ export async function writeDoc(input: NewDocInput, kind: ChangeKind = "local"): 
   const tx = d.transaction(["docs", "assets", "ink"], "readwrite");
   const old = await tx.objectStore("docs").get(input.id);
   if (old?.thumb) record.thumb = old.thumb;
+  if (old?.thumbPage) record.thumbPage = old.thumbPage;
   // 바꿔 쓰는 경우 예전 필기는 지운다 (원본 Blob은 같은 id면 덮어쓴다)
   for (const key of await tx.objectStore("ink").index("byDoc").getAllKeys(input.id)) await tx.objectStore("ink").delete(key);
   for (const [assetId, data] of Object.entries(input.assets)) {
@@ -113,13 +115,18 @@ export async function renameDoc(docId: string, title: string): Promise<void> {
   await saveManifest(docId, { ...rec.manifest, title });
 }
 
-/** 목록용 축소 이미지만 바꾼다 (내용 변경이 아니므로 updatedAt은 그대로) */
-export async function setThumb(docId: string, thumb: string | undefined): Promise<void> {
+/** 홈 카드 그림만 바꾼다 (내용 변경이 아니므로 updatedAt은 그대로, 동기화도 안 함) */
+export async function setThumb(docId: string, thumb: string | undefined, pageId?: string): Promise<void> {
   const d = await db();
   const tx = d.transaction("docs", "readwrite");
   const rec = await tx.store.get(docId);
-  if (rec && rec.thumb !== thumb) await tx.store.put({ ...rec, thumb });
+  const changed = !!rec && (rec.thumb !== thumb || rec.thumbPage !== pageId);
+  if (rec && changed) {
+    const { thumb: _t, thumbPage: _p, ...rest } = rec;
+    await tx.store.put({ ...rest, ...(thumb ? { thumb } : {}), ...(thumb && pageId ? { thumbPage: pageId } : {}) });
+  }
   await tx.done;
+  if (changed) emitDocChange(docId, "thumb");
 }
 
 /** 문서 삭제. 드라이브에 올라간 적이 있으면 다음 동기화 때 드라이브에서도 지우도록 표시한다 */

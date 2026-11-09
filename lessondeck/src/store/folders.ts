@@ -21,9 +21,10 @@ export interface Placement {
   updatedAt: number;
 }
 
-/** 문서 카드 표지 (v0.21): "auto" · "#rrggbb" · "page"(첫 페이지 그림) */
+/** 문서 카드 표지 (v0.21): "auto" · "#rrggbb" · "page"(썸네일 그림을 통째로). page: 표지 아래 꽂을 페이지 id (v0.22) */
 export interface CoverChoice {
   cover: string;
+  page?: string;
   updatedAt: number;
 }
 
@@ -68,7 +69,7 @@ export function parseLibrary(raw: unknown): Library {
   }
   for (const [docId, c] of Object.entries(r.covers ?? {})) {
     if (!c || typeof c.cover !== "string" || !isCoverValue(c.cover)) continue;
-    lib.covers[docId] = { cover: c.cover, updatedAt: Number(c.updatedAt) || 0 };
+    lib.covers[docId] = { cover: c.cover, ...(typeof c.page === "string" && c.page ? { page: c.page } : {}), updatedAt: Number(c.updatedAt) || 0 };
   }
   return lib;
 }
@@ -85,7 +86,10 @@ export function libraryKey(lib: Library): string {
     .map((id) => [id, lib.placements[id].folderId, lib.placements[id].updatedAt]);
   const covers = Object.keys(lib.covers)
     .sort()
-    .map((id) => [id, lib.covers[id].cover, lib.covers[id].updatedAt]);
+    .map((id) => {
+      const c = lib.covers[id];
+      return c.page ? [id, c.cover, c.updatedAt, c.page] : [id, c.cover, c.updatedAt];
+    });
   // 표지가 없으면 0.20까지와 같은 키 (괜히 다시 올리지 않게)
   return JSON.stringify(covers.length ? [folders, placements, covers] : [folders, placements]);
 }
@@ -98,7 +102,9 @@ function pickCover(a: CoverChoice | undefined, b: CoverChoice | undefined): Cove
   if (!a) return b!;
   if (!b) return a;
   if (a.updatedAt !== b.updatedAt) return a.updatedAt > b.updatedAt ? a : b;
-  return a.cover >= b.cover ? a : b;
+  const ka = `${a.cover}\u0000${a.page ?? ""}`;
+  const kb = `${b.cover}\u0000${b.page ?? ""}`;
+  return ka >= kb ? a : b;
 }
 
 function pickFolder(a: Folder | undefined, b: Folder | undefined): Folder {

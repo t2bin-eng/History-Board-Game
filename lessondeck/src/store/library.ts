@@ -108,13 +108,33 @@ export async function placeDoc(docId: string, folderId: string | null) {
   });
 }
 
-/** 문서 카드 표지 바꾸기 ("auto" · "#rrggbb" · "page") */
+/** 문서 카드 표지 바꾸기 ("auto" · "#rrggbb" · "page"). 꽂힌 썸네일 페이지는 그대로 */
 export async function setDocCovers(docIds: string[], cover: string) {
   const lib = await loadLibrary();
   if (docIds.every((id) => (lib.covers[id]?.cover ?? "auto") === cover)) return;
   await change((l, _v, now) => {
-    for (const docId of docIds) l.covers[docId] = { cover, updatedAt: now };
+    for (const docId of docIds) {
+      const page = l.covers[docId]?.page;
+      l.covers[docId] = { cover, ...(page ? { page } : {}), updatedAt: now };
+    }
   });
+}
+
+/** 표지 아래 꽂을 썸네일 페이지 (null = 빼기). 표지 색은 그대로 */
+export async function setDocThumbPage(docIds: string[], pageId: string | null) {
+  const lib = await loadLibrary();
+  if (docIds.every((id) => (lib.covers[id]?.page ?? null) === pageId)) return;
+  await change((l, _v, now) => {
+    for (const docId of docIds) {
+      const cover = l.covers[docId]?.cover ?? "auto";
+      l.covers[docId] = { cover, ...(pageId ? { page: pageId } : {}), updatedAt: now };
+    }
+  });
+}
+
+/** 지금 고른 썸네일 페이지 */
+export async function docThumbPage(docId: string): Promise<string | undefined> {
+  return (await loadLibrary()).covers[docId]?.page;
 }
 
 export async function docFolder(docId: string): Promise<string | null> {

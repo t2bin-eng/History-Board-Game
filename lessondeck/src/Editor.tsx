@@ -1,5 +1,6 @@
 import {
   Activity,
+  BookImage,
   BringToFront,
   Shapes,
   SkipForward,
@@ -85,7 +86,6 @@ import {
   newId,
   newPageId,
   pageAspect,
-  pdfAsset,
   type Asset,
   type BlankBackground,
   type BoxLink,
@@ -98,6 +98,8 @@ import {
 } from "./doc/types";
 import { parseYouTube } from "./doc/youtube";
 import { applyInk, type InkAction, type InkBook } from "./ink/history";
+import { docThumbPage, setDocThumbPage, useLibraryView } from "./store/library";
+import { snapshotPage, thumbTarget } from "./view/pageSnapshot";
 import { DEFAULT_PRESETS, ERASER_LEVELS } from "./ink/palette";
 import type { InkTool, PenPreset, Stroke, Tool } from "./ink/types";
 import { safeFileName, shareOrDownload } from "./lib/files";
@@ -110,7 +112,6 @@ import { josa } from "./lib/josa";
 import { ShapeEditor } from "./view/ShapeEditor";
 import { isNativeApp, showToast } from "./lib/platform";
 import { usePersistentFlag } from "./lib/usePersistentFlag";
-import { thumbnailFor } from "./pdf/thumbnails";
 import { collectAssets, importAssets } from "./store/assetTransfer";
 import { putAsset, saveInk, saveManifest, setThumb, toManifest, type OpenedDoc } from "./store/docStore";
 import { readSystemClipboard, type SystemClip } from "./lib/systemClipboard";
@@ -313,7 +314,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     if (current === savedDocRef.current) return Promise.resolve();
     savedDocRef.current = current;
     return saveManifest(current.id, toManifest(current))
-      .then(() => updateThumb(current))
+      .then(() => updateThumb(current, savedInkRef.current))
       .catch((err) => {
         console.error(err);
         showToast("저장하지 못했습니다. 기기 저장 공간을 확인해 주세요.");
@@ -327,6 +328,11 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
 
   // 필기: 바뀐 페이지만 바로 저장 (실행 취소·지우기·복제 포함)
   const savedInkRef = useRef(opened.ink);
+  /** 홈 카드 썸네일 그림을 지금 필기로 다시 만든다 (너무 오래 걸리면 기다리지 않음) */
+  const refreshThumb = useCallback(
+    () => Promise.race([updateThumb(docRef.current, savedInkRef.current), new Promise<void>((r) => setTimeout(r, 1500))]).catch(() => undefined),
+    [],
+  );
   useEffect(() => {
     const prev = savedInkRef.current;
     savedInkRef.current = ink;
@@ -351,7 +357,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
 
   // 앱이 백그라운드로 가거나 문서를 닫기 전에 바로 저장
   useEffect(() => {
-    const onHide = () => document.visibilityState === "hidden" && flushManifest();
+    const onHide = () => document.visibilityState === "hidden" && flushManifest().then(refreshThumb);
     document.addEventListener("visibilitychange", onHide);
     return () => {
       document.removeEventListener("visibilitychange", onHide);
@@ -361,7 +367,19 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
 
   const goHome = async () => {
     await flushManifest();
+    await refreshThumb();
     onHome();
+  };
+
+  // ── 홈 카드 썸네일 (v0.22) ──
+  const libraryView = useLibraryView();
+  const thumbPageId = libraryView?.lib.covers[doc.id]?.page;
+  const chooseThumb = async (pageId: string) => {
+    const removing = thumbPageId === pageId;
+    await setDocThumbPage([doc.id], removing ? null : pageId);
+    await refreshThumb();
+    const label = pageNumberLabel(docRef.current.pages, docRef.current.hidden, pageId) ?? "이 페이지";
+    showToast(removing ? "썸네일을 뺐습니다. 문서 목록에 표지만 보입니다" : `${josa(label, "을", "를")} 문서 목록 썸네일로 골랐습니다. 표지 아래에 반쯤 보입니다`);
   };
 
   const rename = () => {
@@ -1399,6 +1417,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
             { label: "복사", icon: <Copy size={18} />, onSelect: () => void copyPage(id) },
             { label: "잘라내기", icon: <Scissors size={18} />, disabled: doc.pages.length <= 1, onSelect: () => void copyPage(id, true) },
             { label: "복제", icon: <CopyPlus size={18} />, onSelect: () => duplicatePage(id) },
+            { label: thumbPageId === id ? "썸네일에서 빼기" : "썸네일로 고르기", icon: <BookImage size={18} />, onSelect: () => void chooseThumb(id) },
           ],
           [
             { label: "앞에 붙여넣기", icon: <ClipboardPaste size={18} />, onSelect: () => void pasteAsNewPage(i) },
@@ -1464,6 +1483,11 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
               icon: <Scissors size={18} />,
               disabled: doc.pages.length <= 1,
               onSelect: () => void copyPage(currentPage.id, true),
+            },
+            currentPage && {
+              label: thumbPageId === currentPage.id ? "썸네일에서 빼기" : "썸네일로 고르기",
+              icon: <BookImage size={18} />,
+              onSelect: () => void chooseThumb(currentPage.id),
             },
             isWebPage(currentPage) && { label: "새로고침", icon: <RotateCw size={18} />, onSelect: reloadWebPage },
           ],
@@ -1981,6 +2005,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
               setPopover(null);
               setMenu({ kind: "pageItem", x, y, pageId: id });
             }}
+            thumbPageId={thumbPageId}
             onClose={() => setPagePanelOpen(false)}
           />
         )}
@@ -2298,41 +2323,22 @@ function missingNotice(count: number): string | null {
   return count ? `원본 파일 ${count}개를 아직 받지 못했습니다. 동기화가 끝나면 다시 열어 주세요.` : null;
 }
 
-/** 문서 목록에 보일 첫 페이지 축소 이미지 */
-async function updateThumb(doc: DocState) {
-  const first = doc.pages.find((p) => !doc.hidden.includes(p.id)) ?? doc.pages[0];
-  let thumb: string | undefined;
-  try {
-    if (first?.kind === "pdf") {
-      const asset = pdfAsset(doc.assets, first.asset);
-      if (asset) thumb = await thumbnailFor(asset.doc, asset.id, first.pageIndex);
-    } else if (first?.kind === "image") {
-      const asset = mediaAsset(doc.assets, first.asset);
-      if (asset) thumb = await imageThumb(asset.url);
-    } else if (first?.kind === "video") {
-      thumb = mediaAsset(doc.assets, first.asset)?.poster;
-    }
-  } catch {
-    // 축소 이미지는 없어도 된다
-  }
-  await setThumb(doc.id, thumb);
-}
+/** 홈 카드 썸네일 그림이 마지막으로 무엇으로 만들어졌는지 (같으면 다시 만들지 않는다) */
+const thumbMade = new Map<string, { page: Page; strokes: unknown; pages: Page[]; assets: unknown; hidden: string[] }>();
 
-function imageThumb(url: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const w = 240;
-      const canvas = document.createElement("canvas");
-      canvas.width = w;
-      canvas.height = Math.max(1, Math.round((w * img.naturalHeight) / Math.max(1, img.naturalWidth)));
-      const ctx = canvas.getContext("2d")!;
-      ctx.fillStyle = "#fff";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL("image/jpeg", 0.8));
-    };
-    img.onerror = reject;
-    img.src = url;
-  });
+/** 홈 카드 썸네일 그림: 고른 페이지(없으면 처음 보이는 페이지)를 스티커·필기·글상자까지 */
+async function updateThumb(doc: DocState, ink: InkBook) {
+  try {
+    const target = thumbTarget(doc, await docThumbPage(doc.id));
+    if (!target) return;
+    const strokes = ink[target.id]?.present ?? [];
+    const last = thumbMade.get(doc.id);
+    if (last && last.page === target && last.strokes === strokes && last.pages === doc.pages && last.assets === doc.assets && last.hidden === doc.hidden) return;
+    const url = await snapshotPage(target, doc, strokes);
+    if (!url) return;
+    thumbMade.set(doc.id, { page: target, strokes, pages: doc.pages, assets: doc.assets, hidden: doc.hidden });
+    await setThumb(doc.id, url, target.id);
+  } catch {
+    // 썸네일은 없어도 된다
+  }
 }

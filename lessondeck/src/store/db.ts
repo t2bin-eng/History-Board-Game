@@ -28,8 +28,10 @@ export interface DocRecord {
   updatedAt: number;
   pageCount: number;
   manifest: Manifest;
-  /** 문서 목록에 보일 첫 페이지 축소 이미지 (data URL) */
+  /** 홈 카드에 쓰는 썸네일 페이지 그림 (data URL, 기기마다) */
   thumb?: string;
+  /** thumb이 어느 페이지인지 (v0.22) */
+  thumbPage?: string;
 }
 
 export interface AssetRecord {

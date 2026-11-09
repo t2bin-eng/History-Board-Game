@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Copy, Ellipsis, Eye, EyeOff, Plus, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, BookImage, Copy, Ellipsis, Eye, EyeOff, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { isWebPage, type DocState } from "../doc/types";
 import type { InkBook } from "../ink/history";
@@ -22,6 +22,8 @@ interface Props {
   onCycleAspect: (id: string) => void;
   /** 페이지 메뉴 (복사·잘라내기·붙여넣기 등): ⋯ 단추, PC 오른쪽 클릭 */
   onPageMenu: (id: string, x: number, y: number) => void;
+  /** 문서 목록 썸네일로 고른 페이지 (v0.22) */
+  thumbPageId?: string;
   onClose: () => void;
 }
 
@@ -59,6 +61,7 @@ export function PagePanel({
   onToggleHidden,
   onCycleAspect,
   onPageMenu,
+  thumbPageId,
   onClose,
 }: Props) {
   const listRef = useRef<HTMLDivElement>(null);
@@ -218,6 +221,11 @@ export function PagePanel({
                   {isHidden && (
                     <span className="pp-hidden-badge">
                       <EyeOff size={12} /> 숨김
+                    </span>
+                  )}
+                  {thumbPageId === page.id && (
+                    <span className="pp-thumb-badge" title="문서 목록 썸네일">
+                      <BookImage size={12} /> 썸네일
                     </span>
                   )}
                 </button>

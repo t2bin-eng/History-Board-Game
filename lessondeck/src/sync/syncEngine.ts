@@ -145,7 +145,7 @@ const onOnline = () => scheduleSync(1000);
 function startAuto() {
   stopAuto();
   offChange = onDocChange((_id, kind) => {
-    if (kind !== "remote") scheduleSync(CHANGE_DELAY);
+    if (kind !== "remote" && kind !== "thumb") scheduleSync(CHANGE_DELAY);
   });
   offLibrary = onLibraryChange((kind) => {
     if (kind === "local") scheduleSync(CHANGE_DELAY);

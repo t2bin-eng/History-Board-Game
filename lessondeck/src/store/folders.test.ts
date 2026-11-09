@@ -48,6 +48,17 @@ describe("mergeLibrary", () => {
     expect(libraryKey(m)).not.toBe(libraryKey(lib([])));
   });
 
+  it("썸네일 페이지도 표지와 함께 합치고, 있을 때만 키에 들어간다", () => {
+    const plain = { ...lib([]), covers: { d: { cover: "auto", updatedAt: 3 } } };
+    const withPage = { ...lib([]), covers: { d: { cover: "auto", page: "p-7", updatedAt: 3 } } };
+    expect(libraryKey(plain)).toBe(JSON.stringify([[], [], [["d", "auto", 3]]]));
+    expect(libraryKey(withPage)).not.toBe(libraryKey(plain));
+    // 같은 시각이면 어느 쪽에서 합쳐도 같은 결과
+    expect(libraryKey(mergeLibrary(plain, withPage))).toBe(libraryKey(mergeLibrary(withPage, plain)));
+    const later = { ...lib([]), covers: { d: { cover: "#24497a", page: "p-9", updatedAt: 4 } } };
+    expect(mergeLibrary(withPage, later).covers.d).toEqual({ cover: "#24497a", page: "p-9", updatedAt: 4 });
+  });
+
   it("지운 뒤에 다른 기기에서 고친 폴더는 되살아난다", () => {
     const a = lib([folder("a", null, 5, { deleted: true })]);
     const b = lib([folder("a", null, 8, { name: "고친 이름" })]);
@@ -97,5 +108,7 @@ describe("parseLibrary", () => {
     expect(p.placements.d).toEqual({ folderId: null, updatedAt: 0 });
     const q = parseLibrary({ covers: { a: { cover: "#24497A", updatedAt: 3 }, b: { cover: "red" }, c: { cover: "page" }, d: null } });
     expect(q.covers).toEqual({ a: { cover: "#24497A", updatedAt: 3 }, c: { cover: "page", updatedAt: 0 } });
+    const r = parseLibrary({ covers: { a: { cover: "auto", page: "p-1", updatedAt: 1 }, b: { cover: "auto", page: 5 } } });
+    expect(r.covers).toEqual({ a: { cover: "auto", page: "p-1", updatedAt: 1 }, b: { cover: "auto", updatedAt: 0 } });
   });
 });

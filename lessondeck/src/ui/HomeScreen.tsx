@@ -28,7 +28,8 @@ import type { DocRecord } from "../store/db";
 import { deleteDoc, listDocs, onDocChange, renameDoc } from "../store/docStore";
 import { createBlankDoc, createDocFromPdf, createSampleDoc } from "../store/create";
 import { byName, emptyLibrary, uniqueName, viewLibrary, type Folder } from "../store/folders";
-import { createFolder, deleteFolders, editFolder, moveItems, placeDoc, setDocCovers, useLibraryView } from "../store/library";
+import { createFolder, deleteFolders, editFolder, moveItems, placeDoc, setDocCovers, setDocThumbPage, useLibraryView } from "../store/library";
+import { useThumbRebuild } from "../view/thumbJob";
 import { exportProject, importProject, PROJECT_ACCEPT, PROJECT_EXT } from "../store/projectFile";
 import { ContextMenu, type MenuGroups } from "./ContextMenu";
 import { CoverDialog, DocCover } from "./DocCover";
@@ -202,6 +203,8 @@ export function HomeScreen({ onOpen, headerExtra }: Props) {
   };
 
   const docById = useMemo(() => new Map((docs ?? []).map((d) => [d.id, d])), [docs]);
+  // 다른 기기에서 고른 썸네일 페이지 등: 이 기기에 그림이 없으면 문서를 열어 만든다 (v0.22)
+  useThumbRebuild(docs, view.lib.covers);
 
   const openItem = (item: CardItem) => {
     if (item.kind === "folder") go(item.id);
@@ -513,7 +516,7 @@ export function HomeScreen({ onOpen, headerExtra }: Props) {
               return (
                 <article key={doc.id} className={cardClass("doc-card", item)} {...bind(item)}>
                   <button className="doc-open" onClick={() => activate(item)} aria-label={`${doc.title} ${selecting ? "선택" : "열기"}`}>
-                    <DocCover doc={doc} choice={view.lib.covers[doc.id]?.cover} />
+                    <DocCover doc={doc} choice={view.lib.covers[doc.id]} />
                     <span className="doc-info">
                       <strong>{doc.title}</strong>
                       <small>
@@ -629,7 +632,15 @@ export function HomeScreen({ onOpen, headerExtra }: Props) {
           return (
             <CoverDialog
               docs={chosen}
-              current={view.lib.covers[chosen[0].id]?.cover ?? "auto"}
+              current={view.lib.covers[chosen[0].id]}
+              onRemoveThumb={() => {
+                setDialog(null);
+                if (chosen.length > 1) setSelecting(false);
+                void setDocThumbPage(
+                  chosen.map((d) => d.id),
+                  null,
+                );
+              }}
               onClose={() => setDialog(null)}
               onPick={(cover) => {
                 setDialog(null);
