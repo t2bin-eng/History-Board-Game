@@ -98,7 +98,7 @@ import { applyInk, type InkAction, type InkBook } from "./ink/history";
 import { DEFAULT_PRESETS, ERASER_LEVELS } from "./ink/palette";
 import type { InkTool, PenPreset, Stroke, Tool } from "./ink/types";
 import { safeFileName, shareOrDownload } from "./lib/files";
-import { onPenDown, onSideButtonChange, pointerKind } from "./lib/inputState";
+import { onPenDown, onSideButtonChange, penButtonRecently, pointerKind } from "./lib/inputState";
 import { hasShape, SHAPE_NAMES, shapeAt, withShape, type ShapeTool } from "./ink/shapes";
 import { ShapePicker } from "./ui/ShapePicker";
 import { followDetour, stepSkipping, type Detour } from "./doc/detours";
@@ -1642,6 +1642,13 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     const onKey = (e: KeyboardEvent) => {
       // 주소 입력 중에는 단축키를 쓰지 않는다
       if ((e.target as Element)?.closest?.("input, textarea, [contenteditable]")) return;
+      // 누르고 있어 반복되는 넘김 키는 무시한다: S펜 버튼·리모컨·키보드를 누르고 있으면 키가 자동으로 되풀이돼
+      // 끝 쪽까지 쭉 넘어갔다 (Enter·Space도 막아 고른 단추가 되풀이해 눌리지 않게)
+      const pageKey = e.key === "ArrowRight" || e.key === "ArrowLeft" || e.key === "PageDown" || e.key === "PageUp";
+      if (e.repeat && (pageKey || e.key === "Enter" || e.key === " ")) {
+        e.preventDefault();
+        return;
+      }
       const mod = e.ctrlKey || e.metaKey;
       if (mod && e.key.toLowerCase() === "z") {
         e.preventDefault();
@@ -1664,6 +1671,9 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
         enterLecture();
       } else if (e.key === "Escape" && lecture) {
         exitLecture();
+      } else if (pageKey && penButtonRecently()) {
+        // 화면 가까이에서 S펜 버튼(지우개)을 누를 때 블루투스 S펜이 함께 보내는 넘김 키는 무시
+        e.preventDefault();
       } else if (e.key === "ArrowRight" || e.key === "PageDown") {
         goTo(1);
       } else if (e.key === "ArrowLeft" || e.key === "PageUp") {

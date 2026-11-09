@@ -12,6 +12,8 @@ const PALM_GUARD_MS = 800;
 
 let lastPenTime = -Infinity;
 let sideButton = false;
+/** S펜 버튼을 마지막으로 뗀 시각 */
+let lastSideUp = -Infinity;
 /** 안드로이드 앱이 S펜 버튼 상태를 직접 알려 주는지 (lessondecksidebutton 이벤트, PenInput.java) */
 let nativeSide = false;
 const touches = new Set<number>();
@@ -90,6 +92,11 @@ export function isSideButtonDown(): boolean {
   return sideButton;
 }
 
+/** S펜 버튼을 누르고 있거나 막(0.7초 안) 뗐는지. 블루투스 S펜은 버튼을 누르면 페이지 넘김 키를 보내기도 한다 */
+export function penButtonRecently(): boolean {
+  return sideButton || performance.now() - lastSideUp < 700;
+}
+
 export function onSideButtonChange(fn: (down: boolean) => void): () => void {
   listeners.add(fn);
   return () => listeners.delete(fn);
@@ -136,6 +143,7 @@ export function hasSideButton(e: PointerEvent): boolean {
 
 function setSide(down: boolean) {
   if (down === sideButton) return;
+  if (!down) lastSideUp = performance.now();
   sideButton = down;
   for (const fn of listeners) fn(down);
 }
@@ -190,6 +198,16 @@ export function installInputTracking() {
   }
   window.addEventListener("pointerout", leave, opts);
   window.addEventListener("blur", () => setSide(false));
+  // 입력 디버그: 키 (S펜 버튼·리모컨·키보드가 보내는 페이지 넘김 키를 찾으려고)
+  window.addEventListener(
+    "keydown",
+    (e) => pushLog(`키 ${e.key || e.code}${e.repeat ? " (반복)" : ""}`),
+    { capture: true },
+  );
+  window.addEventListener("lessondeckkey", (e) => {
+    const d = e as Event & { key?: string; device?: string; repeat?: number };
+    pushLog(`앱 키 ${d.key ?? "?"} · ${d.device || "장치 모름"}${d.repeat ? ` · 반복 ${d.repeat}` : ""}`);
+  });
   window.addEventListener("lessondecksidebutton", (e) => {
     nativeSide = true;
     const detail = e as Event & { down?: boolean; info?: string };

@@ -1,6 +1,8 @@
 package kr.lessondeck.app;
 
 import android.os.Bundle;
+import android.view.InputDevice;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.WindowManager;
 import android.webkit.CookieManager;
@@ -68,6 +70,24 @@ public class MainActivity extends BridgeActivity {
         PenInput.trackHover(ev);
         showSideButton(PenInput.buttonDown);
         return super.dispatchGenericMotionEvent(ev);
+    }
+
+    /**
+     * 입력 디버그: 들어온 키와 그 장치를 웹 화면에 알린다 (블루투스 S펜 버튼·리모컨이 페이지 넘김 키를 보내는지 알아보려고).
+     * 키는 그대로 웹뷰로 넘긴다. 누르고 있어 되풀이되는 키는 10번에 한 번만 알린다.
+     */
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent ev) {
+        if (getBridge() != null && ev.getAction() == KeyEvent.ACTION_DOWN && ev.getRepeatCount() % 10 == 0) {
+            InputDevice device = ev.getDevice();
+            String name = device != null && device.getName() != null ? device.getName().replaceAll("[\"\\\\]", "") : "";
+            getBridge()
+                .triggerWindowJSEvent(
+                    "lessondeckkey",
+                    "{\"key\":\"" + KeyEvent.keyCodeToString(ev.getKeyCode()) + "\",\"device\":\"" + name + "\",\"repeat\":" + ev.getRepeatCount() + "}"
+                );
+        }
+        return super.dispatchKeyEvent(ev);
     }
 
     private void showSideButton(boolean down) {
