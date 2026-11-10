@@ -2,8 +2,8 @@ import { FileCode2, Film, Globe, Play } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
 import { formatDuration } from "../doc/media";
 import { htmlAsset, mediaAsset, pageAspect, pdfAsset, VIRTUAL_SCREEN, type DocState, type Page } from "../doc/types";
-import { strokeToSvgPath } from "../ink/geometry";
-import { HIGHLIGHTER_ALPHA } from "../ink/palette";
+import { stickersOf } from "../doc/stickers";
+import { fillStroke, HIGHLIGHT_LAYER_STYLE, isHighlighter, paintHighlighters } from "../ink/inkPaint";
 import type { Stroke } from "../ink/types";
 import { youtubeThumbUrl } from "../doc/youtube";
 import { thumbnailFor } from "../pdf/thumbnails";
@@ -25,6 +25,11 @@ export const PageThumb = memo(function PageThumb({ page, doc, strokes, width, li
   const height = Math.round(width / pageAspect(page, doc.assets));
   const hostRef = useRef<HTMLDivElement>(null);
   const inkRef = useRef<HTMLCanvasElement>(null);
+  // 형광펜이 있으면 화면처럼 스티커 → 형광펜(곱하기) → 펜·글상자로 캔버스를 나눈다
+  const hlRef = useRef<HTMLCanvasElement>(null);
+  const underRef = useRef<HTMLCanvasElement>(null);
+  const hasMarks = strokes.some(isHighlighter);
+  const splitStickers = hasMarks && stickersOf(page).length > 0;
   const [visible, setVisible] = useState(false);
   const [inView, setInView] = useState(false);
   const [src, setSrc] = useState<string | null>(null);
@@ -57,27 +62,27 @@ export const PageThumb = memo(function PageThumb({ page, doc, strokes, width, li
   }, [visible, page, doc.assets]);
 
   useEffect(() => {
-    const canvas = inkRef.current!;
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.round(width * dpr);
-    canvas.height = Math.round(height * dpr);
-    const ctx = canvas.getContext("2d")!;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const prepare = (canvas: HTMLCanvasElement | null) => {
+      if (!canvas) return null;
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
+      const c = canvas.getContext("2d")!;
+      c.setTransform(dpr, 0, 0, dpr, 0, 0);
+      return c;
+    };
+    const ctx = prepare(inkRef.current)!;
+    const marks = prepare(hlRef.current);
+    const under = prepare(underRef.current) ?? ctx;
     const size = { width, height };
     let cancelled = false;
-    // 화면과 같은 순서: 스티커(그림을 불러온 뒤) → 필기 → 텍스트 상자
-    paintStickers(ctx, page, doc.assets, size, () => !cancelled)
+    // 화면과 같은 순서: 스티커(그림을 불러온 뒤) → 형광펜 → 펜 → 텍스트 상자
+    paintStickers(under, page, doc.assets, size, () => !cancelled)
       .catch(() => undefined)
       .then(() => {
         if (cancelled) return;
-        for (const s of strokes) {
-          const d = strokeToSvgPath(s, size);
-          if (!d) continue;
-          ctx.globalAlpha = s.tool === "highlighter" ? HIGHLIGHTER_ALPHA : 1;
-          ctx.fillStyle = s.color;
-          ctx.fill(new Path2D(d));
-        }
-        ctx.globalAlpha = 1;
+        if (marks) paintHighlighters(marks, strokes, size);
+        for (const s of strokes) if (!isHighlighter(s)) fillStroke(ctx, s, size);
         paintBoxes(ctx, page, doc.pages, doc.hidden, size);
       });
     return () => {
@@ -100,6 +105,8 @@ export const PageThumb = memo(function PageThumb({ page, doc, strokes, width, li
       {page.kind === "html" && <HtmlThumb page={page} doc={doc} width={width} run={live && inView} />}
       {page.kind === "youtube" && <YouTubeThumb page={page} />}
       {page.kind === "url" && <UrlThumb page={page} docId={doc.id} />}
+      {splitStickers && <canvas ref={underRef} style={{ width, height }} />}
+      {hasMarks && <canvas ref={hlRef} style={{ width, height, ...HIGHLIGHT_LAYER_STYLE }} />}
       <canvas ref={inkRef} style={{ width, height }} />
     </div>
   );

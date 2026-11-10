@@ -455,6 +455,8 @@ button {
   background-color: #fff;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
   overflow: hidden;
+  /* 형광펜 캔버스(곱하기)가 이 썸네일 안에서만 섞이게 */
+  isolation: isolate;
 }
 
 .thumb-page img,
@@ -747,6 +749,18 @@ button {
 .ink-canvas {
   display: block;
   touch-action: none;
+}
+
+/* 형광펜 층 (v0.23): 펜 필기 아래. 진하기·곱하기 섞기는 src/ink/inkPaint.ts HIGHLIGHT_LAYER_STYLE.
+   .ink-layer는 쌓임 맥락을 만들지 않아야 페이지(PDF·그림·웹)와 섞인다 */
+.ink-hl {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.ink-hl .ink-canvas {
+  pointer-events: none;
 }
 
 /* HTML 페이지 조작 모드: 필기는 보이지만 터치·펜은 아래 웹앱으로 */

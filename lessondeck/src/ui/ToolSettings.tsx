@@ -1,6 +1,6 @@
 import { Check, Trash2 } from "lucide-react";
 import { useEffect, useRef } from "react";
-import { ERASER_LEVELS, HIGHLIGHTER_COLORS, PEN_COLORS, WIDTH_LEVELS } from "../ink/palette";
+import { ERASER_LEVELS, HIGHLIGHTER_ALPHA, HIGHLIGHTER_COLORS, PEN_COLORS, WIDTH_LEVELS } from "../ink/palette";
 import type { PenPreset } from "../ink/types";
 
 interface Anchor {
@@ -103,7 +103,7 @@ export function ToolSettings(props: Props) {
                   style={{
                     height: props.preset.tool === "highlighter" ? 4 + i * 4 : 2 + i * 2,
                     background: props.preset.color,
-                    opacity: props.preset.tool === "highlighter" ? 0.6 : 1,
+                    opacity: props.preset.tool === "highlighter" ? HIGHLIGHTER_ALPHA : 1,
                   }}
                 />
                 <span className="ts-width-label">{LEVEL_NAMES[i]}</span>

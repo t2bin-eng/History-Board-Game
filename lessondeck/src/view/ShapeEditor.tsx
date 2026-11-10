@@ -5,7 +5,7 @@ import { snapLineEnd } from "../ink/beautify";
 import type { PageSize } from "../ink/geometry";
 import { isLineShape, lineEnds, lineSpec, shapeFrame, shapeStrokePath, withShape } from "../ink/shapes";
 import type { ShapeSpec, Stroke } from "../ink/types";
-import { HIGHLIGHTER_ALPHA } from "../ink/palette";
+import { HIGHLIGHT_LAYER_STYLE, isHighlighter, strokeColor } from "../ink/inkPaint";
 
 type ShapeStroke = Stroke & { shape: ShapeSpec };
 type Pt = [number, number];
@@ -108,71 +108,76 @@ export function ShapeEditor({ stroke, size, onLive, onChange, onDuplicate, onDel
   const tbLeft = Math.min(Math.max(4, f.cx - 66), Math.max(4, size.width - 136));
 
   return (
-    <div className="shape-edit" aria-label="도형 고치기">
+    <>
+      {/* 끄는 중의 모양: .shape-edit(쌓임 맥락) 밖에 두어 형광펜이 페이지와 곱하기로 섞이게 (화면의 형광펜 층과 같게) */}
       {draft && (
-        <svg className="shape-draft" width={size.width} height={size.height} aria-hidden="true">
-          <path
-            d={shapeStrokePath({ ...stroke, shape: draft }, size)}
-            fill={stroke.color}
-            opacity={stroke.tool === "highlighter" ? HIGHLIGHTER_ALPHA : 1}
-          />
+        <svg
+          className="shape-draft"
+          width={size.width}
+          height={size.height}
+          style={isHighlighter(stroke) ? HIGHLIGHT_LAYER_STYLE : undefined}
+          aria-hidden="true"
+        >
+          <path d={shapeStrokePath({ ...stroke, shape: draft }, size)} fill={strokeColor(stroke)} />
         </svg>
       )}
-      {line ? (
-        lineEnds(spec, size).map(([x, y], i) => (
-          <span
-            key={i}
-            className="se-ui se-handle se-end"
-            style={{ left: x, top: y }}
-            aria-label={i ? "끝점" : "시작점"}
-            onPointerDown={(e) => start(e, { kind: "end", end: i as 0 | 1, s0: stroke.shape })}
-            {...grab}
-          />
-        ))
-      ) : (
-        <div className="se-frame" style={{ left: f.cx - f.w / 2, top: f.cy - f.h / 2, width: f.w, height: f.h, transform: `rotate(${spec.rot}deg)` }}>
-          {(["nw", "ne", "sw", "se", "n", "s", "e", "w"] as const).map((h) => (
+      <div className="shape-edit" aria-label="도형 고치기">
+        {line ? (
+          lineEnds(spec, size).map(([x, y], i) => (
             <span
-              key={h}
-              className={`se-ui se-handle ${h}${h.length === 1 ? " side" : ""}`}
-              onPointerDown={(e) => start(e, { kind: "resize", handle: h, s0: stroke.shape })}
+              key={i}
+              className="se-ui se-handle se-end"
+              style={{ left: x, top: y }}
+              aria-label={i ? "끝점" : "시작점"}
+              onPointerDown={(e) => start(e, { kind: "end", end: i as 0 | 1, s0: stroke.shape })}
               {...grab}
             />
-          ))}
-          <span className="se-stem" />
-          <span
-            className="se-ui se-rotate"
-            aria-label="돌리기"
-            onPointerDown={(e) => start(e, { kind: "rotate", s0: stroke.shape })}
-            {...grab}
-          >
-            <RotateCw size={14} />
-          </span>
-        </div>
-      )}
-      <span
-        className="se-ui se-move"
-        style={{ left: f.cx, top: f.cy }}
-        aria-label="옮기기"
-        onPointerDown={(e) => start(e, { kind: "move", p0: [0, 0], s0: stroke.shape })}
-        {...grab}
-      >
-        <Move size={15} />
-      </span>
-      {!gesture && (
-        <div className="se-ui sticker-toolbar se-toolbar" style={{ left: tbLeft, top: tbTop }} onPointerDown={(e) => e.stopPropagation()}>
-          <button aria-label="도형 복제" title="복제" onClick={onDuplicate}>
-            <CopyPlus size={17} />
-          </button>
-          <button aria-label="도형 지우기" title="지우기" onClick={onDelete}>
-            <Trash2 size={17} />
-          </button>
-          <button className="primary" aria-label="도형 고치기 끝" title="완료" onClick={onDone}>
-            <Check size={17} />
-          </button>
-        </div>
-      )}
-    </div>
+          ))
+        ) : (
+          <div className="se-frame" style={{ left: f.cx - f.w / 2, top: f.cy - f.h / 2, width: f.w, height: f.h, transform: `rotate(${spec.rot}deg)` }}>
+            {(["nw", "ne", "sw", "se", "n", "s", "e", "w"] as const).map((h) => (
+              <span
+                key={h}
+                className={`se-ui se-handle ${h}${h.length === 1 ? " side" : ""}`}
+                onPointerDown={(e) => start(e, { kind: "resize", handle: h, s0: stroke.shape })}
+                {...grab}
+              />
+            ))}
+            <span className="se-stem" />
+            <span
+              className="se-ui se-rotate"
+              aria-label="돌리기"
+              onPointerDown={(e) => start(e, { kind: "rotate", s0: stroke.shape })}
+              {...grab}
+            >
+              <RotateCw size={14} />
+            </span>
+          </div>
+        )}
+        <span
+          className="se-ui se-move"
+          style={{ left: f.cx, top: f.cy }}
+          aria-label="옮기기"
+          onPointerDown={(e) => start(e, { kind: "move", p0: [0, 0], s0: stroke.shape })}
+          {...grab}
+        >
+          <Move size={15} />
+        </span>
+        {!gesture && (
+          <div className="se-ui sticker-toolbar se-toolbar" style={{ left: tbLeft, top: tbTop }} onPointerDown={(e) => e.stopPropagation()}>
+            <button aria-label="도형 복제" title="복제" onClick={onDuplicate}>
+              <CopyPlus size={17} />
+            </button>
+            <button aria-label="도형 지우기" title="지우기" onClick={onDelete}>
+              <Trash2 size={17} />
+            </button>
+            <button className="primary" aria-label="도형 고치기 끝" title="완료" onClick={onDone}>
+              <Check size={17} />
+            </button>
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 

@@ -2,8 +2,8 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 import { debugStats, recordPointer, recordRender } from "../lib/debugStore";
 import { activeTouchCount, isSideButtonDown, onSideButtonChange, penRecentlyActive, penStrokeErasing, pointerKind, type PointerKind } from "../lib/inputState";
 import { beautifyStroke, pathLengthPx, snapLineEnd } from "./beautify";
-import { strokeHitsCircle, strokeToSvgPath, unitsToPx, type PageSize } from "./geometry";
-import { HIGHLIGHTER_ALPHA } from "./palette";
+import { strokeHitsCircle, unitsToPx, type PageSize } from "./geometry";
+import { fillStroke, HIGHLIGHT_LAYER_STYLE, isHighlighter } from "./inkPaint";
 import { recognizeShape, type ShapeGuess } from "./shapeRecognize";
 import { defaultShape, dragShape, lineSpec, makeShapeStroke, type ShapeTool } from "./shapes";
 import type { InkPoint, ShapeSpec, Stroke, Tool } from "./types";
@@ -73,16 +73,23 @@ const HOLD_SLOP = 4;
 
 // 두 겹 캔버스: 아래는 확정된 획, 위는 지금 그리는 획.
 // 획이 진행되는 동안에는 위 캔버스만 다시 그리고, 펜을 떼면 아래 캔버스에 합성한다 (SPEC R1).
+// 형광펜(v0.23)은 그 아래 따로 두 겹(확정·진행 중)에 그리고, 그 묶음을 페이지와 곱하기로 섞는다 (inkPaint.ts).
 export function InkCanvas(props: Props) {
   const baseRef = useRef<HTMLCanvasElement>(null);
   const liveRef = useRef<HTMLCanvasElement>(null);
+  const hlGroupRef = useRef<HTMLDivElement>(null);
+  const hlRef = useRef<HTMLCanvasElement>(null);
+  const hlLiveRef = useRef<HTMLCanvasElement>(null);
   const propsRef = useRef(props);
   propsRef.current = props;
   const renderedRef = useRef<Stroke[]>([]);
   const sizeRef = useRef({ width: 0, height: 0, zoom: 0, scale: 1 });
 
+  /** 그리는 층들 (마운트된 뒤에만 부른다) */
+  const layers = (): Layers => ({ base: baseRef.current!, hl: hlRef.current!, hlLive: hlLiveRef.current!, group: hlGroupRef.current! });
+
   useLayoutEffect(() => {
-    const base = baseRef.current!;
+    const ls = layers();
     const live = liveRef.current!;
     const { page, strokes, zoom } = props;
     const size = sizeRef.current;
@@ -93,18 +100,20 @@ export function InkCanvas(props: Props) {
       if (pixels > MAX_INK_PIXELS) scale *= Math.sqrt(MAX_INK_PIXELS / pixels);
       const w = Math.max(1, Math.round(page.width * scale));
       const h = Math.max(1, Math.round(page.height * scale));
-      for (const c of [base, live]) {
+      for (const c of [ls.base, live, ls.hl, ls.hlLive]) {
         c.width = w;
         c.height = h;
         c.style.width = `${page.width}px`;
         c.style.height = `${page.height}px`;
+        painted.delete(c);
       }
       sizeRef.current = { width: page.width, height: page.height, zoom, scale: w / Math.max(1, page.width) };
     }
     if (resized || !sameStrokes(strokes, renderedRef.current)) {
       renderedRef.current = strokes;
-      redraw(base, strokes, page, sizeRef.current.scale);
+      redraw(ls, strokes, page, sizeRef.current.scale);
     }
+    showHighlights(ls);
   }, [props.page, props.strokes, props.zoom]);
 
   // 조작 모드로 바뀌면 남아 있던 지우개 표시 등을 지운다
@@ -112,14 +121,22 @@ export function InkCanvas(props: Props) {
     if (props.active) return;
     const live = liveRef.current!;
     live.getContext("2d")!.clearRect(0, 0, live.width, live.height);
+    const ls = layers();
+    if (painted.has(ls.hlLive)) {
+      ls.hlLive.getContext("2d")!.clearRect(0, 0, ls.hlLive.width, ls.hlLive.height);
+      painted.delete(ls.hlLive);
+      showHighlights(ls);
+    }
   }, [props.active]);
 
   useEffect(() => {
     const live = liveRef.current!;
-    const base = baseRef.current!;
+    const ls = layers();
     const liveCtx = live.getContext("2d", { desynchronized: propsRef.current.lowLatency })!;
     let gesture: Gesture | null = null;
     let liveBox: Box | null = null;
+    /** 진행 중인 획이 그려진 캔버스 (형광펜이면 hlLive, null이면 live) */
+    let liveOn: HTMLCanvasElement | null = null;
     let hover: { x: number; y: number } | null = null;
     /** 길게 누르기로 메뉴가 열린 포인터: 뗄 때까지 획을 시작하지 않는다 */
     let ignored: number | null = null;
@@ -147,18 +164,25 @@ export function InkCanvas(props: Props) {
       return [round(x), round(y), round(pressure)];
     };
 
-    /** 지난번에 그린 영역만 지운다 (큰 캔버스를 통째로 지우는 비용 절약) */
-    const clearLive = () => {
-      liveCtx.setTransform(1, 0, 0, 1, 0, 0);
+    /** 지난번에 그린 영역만 지운다 (큰 캔버스를 통째로 지우는 비용 절약). redrawing: 곧 다시 그리므로 형광펜 층을 끄지 않는다 */
+    const clearLive = (redrawing = false) => {
+      const target = liveOn ?? live;
+      const ctx = target === live ? liveCtx : target.getContext("2d")!;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       if (liveBox) {
         const s = scale();
         const x = Math.floor(liveBox.x0 * s) - 2;
         const y = Math.floor(liveBox.y0 * s) - 2;
-        liveCtx.clearRect(x, y, Math.ceil((liveBox.x1 - liveBox.x0) * s) + 4, Math.ceil((liveBox.y1 - liveBox.y0) * s) + 4);
+        ctx.clearRect(x, y, Math.ceil((liveBox.x1 - liveBox.x0) * s) + 4, Math.ceil((liveBox.y1 - liveBox.y0) * s) + 4);
       } else {
-        liveCtx.clearRect(0, 0, live.width, live.height);
+        ctx.clearRect(0, 0, target.width, target.height);
       }
       liveBox = null;
+      liveOn = null;
+      if (target !== live) {
+        painted.delete(target);
+        if (!redrawing) showHighlights(ls);
+      }
     };
 
     const drawEraserCursor = (x: number, y: number) => {
@@ -178,11 +202,19 @@ export function InkCanvas(props: Props) {
 
     const renderLive = (stroke: Stroke, predicted: InkPoint[]) => {
       const t0 = performance.now();
-      clearLive();
+      clearLive(true);
       const p = page();
       const s = scale();
-      liveCtx.setTransform(s, 0, 0, s, 0, 0);
-      fillStroke(liveCtx, stroke, p, false, predicted);
+      // 형광펜은 형광펜 층(펜 필기 아래, 곱하기)에서 그려 지금 획도 놓였을 때와 같게 보인다
+      const target = isHighlighter(stroke) ? ls.hlLive : live;
+      const ctx = target === live ? liveCtx : target.getContext("2d")!;
+      ctx.setTransform(s, 0, 0, s, 0, 0);
+      fillStroke(ctx, stroke, p, false, predicted);
+      if (target !== live) {
+        liveOn = target;
+        painted.add(target);
+      }
+      showHighlights(ls);
       const margin = unitsToPx(stroke.width, p) + 2;
       const box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
       for (const pts of [stroke.points, predicted]) {
@@ -224,7 +256,7 @@ export function InkCanvas(props: Props) {
       if (changed) {
         g.erased = true;
         renderedRef.current = g.working;
-        redraw(base, g.working, p, scale());
+        redraw(ls, g.working, p, scale());
       }
     };
 
@@ -461,9 +493,12 @@ export function InkCanvas(props: Props) {
         stroke.points = beautifyStroke(stroke.points, page(), unitsToPx(stroke.width, page()));
       }
       const s = scale();
-      const ctx = base.getContext("2d")!;
+      const target = isHighlighter(stroke) ? ls.hl : ls.base;
+      const ctx = target.getContext("2d")!;
       ctx.setTransform(s, 0, 0, s, 0, 0);
       fillStroke(ctx, stroke, page(), true);
+      painted.add(target);
+      showHighlights(ls);
       debugStats.strokesDrawn++;
       const next = [...renderedRef.current, stroke];
       renderedRef.current = next;
@@ -475,7 +510,7 @@ export function InkCanvas(props: Props) {
       if (gesture) clearTimeout(gesture.holdTimer);
       gesture = null;
       clearLive();
-      redraw(base, renderedRef.current, page(), scale());
+      redraw(ls, renderedRef.current, page(), scale());
     };
 
     const release = (e: PointerEvent) => {
@@ -548,27 +583,51 @@ export function InkCanvas(props: Props) {
 
   return (
     <div className={`ink-layer${props.active ? "" : " passthrough"}`}>
+      <div ref={hlGroupRef} className="ink-hl" style={HIGHLIGHT_LAYER_STYLE}>
+        <canvas ref={hlRef} className="ink-canvas" />
+        <canvas ref={hlLiveRef} className="ink-canvas" />
+      </div>
       <canvas ref={baseRef} className="ink-canvas" />
       <canvas ref={liveRef} className="ink-canvas ink-live" />
     </div>
   );
 }
 
-function fillStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, page: PageSize, last: boolean, extra: InkPoint[] = []) {
-  const d = strokeToSvgPath(stroke, page, last, extra);
-  if (!d) return;
-  ctx.globalAlpha = stroke.tool === "highlighter" ? HIGHLIGHTER_ALPHA : 1;
-  ctx.fillStyle = stroke.color;
-  ctx.fill(new Path2D(d));
-  ctx.globalAlpha = 1;
+interface Layers {
+  /** 확정된 펜 획 */
+  base: HTMLCanvasElement;
+  /** 확정된 형광펜 획 */
+  hl: HTMLCanvasElement;
+  /** 지금 긋는 형광펜 획 */
+  hlLive: HTMLCanvasElement;
+  /** 형광펜 두 겹의 묶음 (곱하기로 섞음) */
+  group: HTMLDivElement;
 }
 
-function redraw(canvas: HTMLCanvasElement, strokes: Stroke[], page: PageSize, scale: number) {
+/** 무언가 그려져 있는 캔버스. 형광펜이 없는 페이지는 형광펜 캔버스를 건드리지 않아 큰 캔버스 메모리를 쓰지 않는다 */
+const painted = new WeakSet<HTMLCanvasElement>();
+
+function paintLayer(canvas: HTMLCanvasElement, strokes: Stroke[], page: PageSize, scale: number) {
+  if (!strokes.length && !painted.has(canvas)) return;
   const ctx = canvas.getContext("2d")!;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
   for (const s of strokes) fillStroke(ctx, s, page, true);
+  if (strokes.length) painted.add(canvas);
+  else painted.delete(canvas);
+}
+
+function redraw(ls: Layers, strokes: Stroke[], page: PageSize, scale: number) {
+  paintLayer(ls.base, strokes.filter((s) => !isHighlighter(s)), page, scale);
+  paintLayer(ls.hl, strokes.filter(isHighlighter), page, scale);
+  showHighlights(ls);
+}
+
+/** 형광펜이 없으면 섞는 층을 아예 끈다 (곱하기 합성 비용을 아낌) */
+function showHighlights(ls: Layers) {
+  const display = painted.has(ls.hl) || painted.has(ls.hlLive) ? "" : "none";
+  if (ls.group.style.display !== display) ls.group.style.display = display;
 }
 
 function sameStrokes(a: Stroke[], b: Stroke[]) {
