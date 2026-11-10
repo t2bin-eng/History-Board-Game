@@ -10,6 +10,8 @@ import { thumbnailFor } from "../pdf/thumbnails";
 import { usePreview } from "../lib/framePreviews";
 import { paintBoxes } from "../view/boxPaint";
 import { paintStickers } from "../view/stickerPaint";
+import { loadBoxFonts } from "../view/textMeasure";
+import { boxesOf } from "../doc/boxes";
 
 interface Props {
   page: Page;
@@ -79,6 +81,7 @@ export const PageThumb = memo(function PageThumb({ page, doc, strokes, width, li
     // 화면과 같은 순서: 스티커(그림을 불러온 뒤) → 형광펜 → 펜 → 텍스트 상자
     paintStickers(under, page, doc.assets, size, () => !cancelled)
       .catch(() => undefined)
+      .then(() => loadBoxFonts(boxesOf(page)))
       .then(() => {
         if (cancelled) return;
         if (marks) paintHighlighters(marks, strokes, size);

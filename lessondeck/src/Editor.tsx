@@ -44,11 +44,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, typ
 import {
   addBox,
   BOX_COLORS,
-  BOX_SIZES,
   boxesOf,
   boxLabel,
   boxPlainLabel,
   copyBoxes,
+  formatBox,
   isDangling,
   DEFAULT_BOX_SIZE,
   LINK_COLOR,
@@ -58,6 +58,7 @@ import {
   patchBox,
   removeBox,
   setBoxLink,
+  stepBoxSize,
   type BoxClip,
 } from "./doc/boxes";
 import { getClip, setClip, type AppClip, type PageClip, type StickerClip } from "./doc/clipboard";
@@ -108,6 +109,7 @@ import { hasShape, SHAPE_NAMES, shapeAt, withShape, type ShapeTool } from "./ink
 import { ShapePicker } from "./ui/ShapePicker";
 import { followDetour, stepSkipping, type Detour } from "./doc/detours";
 import { addArrow, flipArrow, moveArrowEnd, patchArrow, removeArrow, type ArrowTarget } from "./doc/arrows";
+import { cleanFormat, type BoxFormat } from "./doc/boxFonts";
 import { josa } from "./lib/josa";
 import { ShapeEditor } from "./view/ShapeEditor";
 import { isNativeApp, showToast } from "./lib/platform";
@@ -236,6 +238,9 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   const [boxBg, setBoxBg] = useState<string | undefined>("auto");
   /** 새 글상자 테두리 (상자에서 고르면 다음 상자도) */
   const [boxBorderStyle, setBoxBorderStyle] = useState<BoxBorder | undefined>(undefined);
+  /** 지난번에 고른 글상자 서식·글자 크기 (다음 새 상자에도, v0.25) */
+  const [boxFormat, setBoxFormat] = useState<BoxFormat>({});
+  const [boxSize, setBoxSize] = useState(DEFAULT_BOX_SIZE);
   /** 화살표로 잇는 중인 시작 상자 / 고른 화살표 (텍스트 모드) */
   const [connectFrom, setConnectFrom] = useState<string | null>(null);
   const [selectedArrow, setSelectedArrow] = useState<string | null>(null);
@@ -886,10 +891,11 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
       x,
       y,
       text: "",
-      size: DEFAULT_BOX_SIZE,
+      size: boxSize,
       color: textColor,
       ...(boxBg ? { bg: boxBg } : {}),
       ...(boxBorderStyle ? { border: boxBorderStyle } : {}),
+      ...boxFormat,
     };
     setDoc((d) => ({ ...d, pages: addBox(d.pages, currentPage.id, box) }));
     setSelectedBox(box.id);
@@ -921,10 +927,38 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
         const size = fittedSize(sized, boxLabel(sized, pages, docRef.current.hidden), 1 / pageAspect(page, docRef.current.assets));
         return patchBox(pages, pageId, id, { w, h, size });
       }
-      const i = BOX_SIZES.reduce((best, v, k) => (Math.abs(v - box.size) < Math.abs(BOX_SIZES[best] - box.size) ? k : best), 0);
-      const size = BOX_SIZES[Math.min(BOX_SIZES.length - 1, Math.max(0, i + step))];
-      return patchBox(pages, pageId, id, { size });
+      return patchBox(pages, pageId, id, { size: stepBoxSize(box.size, step) });
     });
+
+  /** 크기가 정해진 상자의 글자 크기를 글에 맞춰 다시 적어 둔다 (서식·크기를 바꾼 뒤) */
+  const refit = (pages: Page[], pageId: string, id: string): Page[] => {
+    const page = pages.find((p) => p.id === pageId);
+    const box = page?.boxes?.find((b) => b.id === id);
+    if (!page || !box || box.w == null || box.h == null) return pages;
+    const size = fittedSize(box, boxLabel(box, pages, docRef.current.hidden), 1 / pageAspect(page, docRef.current.assets));
+    return size === box.size ? pages : patchBox(pages, pageId, id, { size });
+  };
+
+  /** 서식 (v0.25): 글꼴·굵게·기울임·밑줄·줄 맞춤. 다음 새 상자에도 쓴다 */
+  const formatTextBox = (id: string, patch: BoxFormat) => {
+    setBoxFormat((f) => cleanFormat({ ...f, ...patch }));
+    editBoxes(id, (pages, pageId) => refit(formatBox(pages, pageId, id, patch), pageId, id));
+  };
+
+  /** 글자 크기 고르기 (v0.25): 크기가 정해진 상자는 글자가 그 크기쯤 되도록 상자를 키우고 줄인다 */
+  const sizeTextBox = (id: string, size: number) => {
+    setBoxSize(size);
+    editBoxes(id, (pages, pageId, box) => {
+      if (box.w == null || box.h == null) return patchBox(pages, pageId, id, { size });
+      const page = pages.find((p) => p.id === pageId)!;
+      const ratio = 1 / pageAspect(page, docRef.current.assets);
+      const now = fittedSize(box, boxLabel(box, pages, docRef.current.hidden), ratio);
+      const factor = size / Math.max(1, now);
+      const w = Math.min(1 - box.x, Math.max(0.04, box.w * factor));
+      const h = Math.min(1 - box.y, Math.max(0.02, box.h * factor));
+      return refit(patchBox(pages, pageId, id, { w, h }), pageId, id);
+    });
+  };
 
   const deleteBox = (id: string, message = "상자를 지웠습니다") => {
     // 되돌리기용: 이 상자와, 이 상자가 만든 돌아가기 링크, 이 상자에 닿은 화살표
@@ -988,7 +1022,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     if (!currentPage) return;
     const trimmed = text.trim().slice(0, 2000);
     if (!trimmed) return;
-    const box = textToBox(trimmed, textColor, undefined, boxBg);
+    const box = { ...textToBox(trimmed, textColor, undefined, boxBg), ...boxFormat };
     const clip: BoxClip = { docId: docRef.current.id, boxes: [box], labels: [trimmed] };
     pasteClip(clip, at);
   };
@@ -1209,7 +1243,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
       addLink(index, trimmed, "url");
       return;
     }
-    const page = { ...blankPage(index), boxes: [textToBox(trimmed, textColor, { x: 0.06, y: 0.05 }, boxBg)] };
+    const page = { ...blankPage(index), boxes: [{ ...textToBox(trimmed, textColor, { x: 0.06, y: 0.05 }, boxBg), ...boxFormat }] };
     addAssetAndPages(null, index, [page]);
     showToast("복사한 글로 새 페이지를 만들었습니다");
   };
@@ -2072,7 +2106,13 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
                   onMove={(id, x, y) => editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { x, y }))}
                   onFollow={followLink}
                   onLink={(id) => setLinkDialog({ boxId: id, created: false })}
-                  onResize={resizeBox}
+                  onResize={(id, step) => {
+                    const b = findBox(id);
+                    if (b && b.w == null) setBoxSize(stepBoxSize(b.size, step));
+                    resizeBox(id, step);
+                  }}
+                  onFontSize={sizeTextBox}
+                  onFormat={formatTextBox}
                   onBoxSize={(id, w, h, size) => editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { w, h, size }))}
                   onColor={(id, color) => {
                     setTextColor(color);

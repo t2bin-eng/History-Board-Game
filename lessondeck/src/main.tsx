@@ -7,6 +7,7 @@ import { setupNativeShell } from "./lib/nativeShell";
 import { isNativeApp, showToast } from "./lib/platform";
 import { routeExternalLinks } from "./lib/webFrames";
 import { requestPersistentStorage } from "./store/db";
+import "./fonts";
 import "./styles.css";
 
 installInputTracking();

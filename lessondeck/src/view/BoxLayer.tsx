@@ -1,6 +1,11 @@
 import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
   ArrowLeftRight,
   ArrowRight,
+  Bold,
+  Italic,
   Copy,
   ExternalLink,
   Link2,
@@ -13,17 +18,20 @@ import {
   Scissors,
   Square,
   Trash2,
+  Type,
+  Underline,
   Undo2,
   Wand2,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { arrowEnds, arrowPathD, arrowShape, arrowsOf, bendFromHandle, cleanBend, type ArrowShape, type ArrowTarget, type Rect } from "../doc/arrows";
-import { BOX_BG_COLORS, BOX_COLORS, boxBackground, boxBorder, boxLabel, boxesOf, boxPlainLabel, isAutoPageLink, isDangling } from "../doc/boxes";
+import { BOX_FONTS, boxTextStyle, type BoxFormat } from "../doc/boxFonts";
+import { BOX_BG_COLORS, BOX_COLORS, BOX_SIZES, boxBackground, boxBorder, boxLabel, boxesOf, boxPlainLabel, isAutoPageLink, isDangling } from "../doc/boxes";
 import { layoutBox } from "../doc/textLayout";
 import type { BoxArrow, BoxBorder, BoxLink, Page, TextBox } from "../doc/types";
 import type { PageSize } from "../ink/geometry";
 import { boxRectPx } from "./boxGeometry";
-import { measureText } from "./textMeasure";
+import { measureFor, useFontsVersion } from "./textMeasure";
 
 interface Props {
   page: Page;
@@ -43,6 +51,10 @@ interface Props {
   onFollow: (link: BoxLink) => void;
   onLink: (id: string) => void;
   onResize: (id: string, step: 1 | -1) => void;
+  /** 글자 크기 고르기 (크기가 정해진 상자는 상자를 그만큼 키우고 줄임, v0.25) */
+  onFontSize: (id: string, size: number) => void;
+  /** 서식: 글꼴·굵게·기울임·밑줄·줄 맞춤 (v0.25) */
+  onFormat: (id: string, patch: BoxFormat) => void;
   /** 손잡이로 상자 크기를 바꿈 (그 크기에 맞춘 글자 크기 함께) */
   onBoxSize: (id: string, w: number, h: number, size: number) => void;
   onColor: (id: string, color: string) => void;
@@ -90,6 +102,8 @@ export function BoxLayer(props: Props) {
   const [arrowDrag, setArrowDrag] = useState<{ id: string; kind: "end" | "bend"; pointer: number; x: number; y: number; moved: boolean } | null>(null);
   const [liveSize, setLiveSize] = useState<{ id: string; w: number; h: number } | null>(null);
   const heightRatio = size.height / Math.max(1, size.width);
+  // 앱에 넣은 글꼴은 쓰는 글자 묶음을 그때그때 받아 오므로, 다 받으면 다시 재서 그린다
+  useFontsVersion();
 
   // 길게 누르기로 메뉴가 열리면 누르고 있던 상자는 고르기·고치기로 넘어가지 않는다
   useEffect(() => {
@@ -214,7 +228,7 @@ export function BoxLayer(props: Props) {
     resize.current = null;
     if (liveSize && liveSize.id === b.id) {
       const sized = { ...b, w: liveSize.w, h: liveSize.h };
-      props.onBoxSize(b.id, liveSize.w, liveSize.h, layoutBox(sized, boxLabel(sized, pages, hidden), heightRatio, measureText).size);
+      props.onBoxSize(b.id, liveSize.w, liveSize.h, layoutBox(sized, boxLabel(sized, pages, hidden), heightRatio, measureFor(sized)).size);
     }
     setLiveSize(null);
   };
@@ -387,8 +401,16 @@ export function BoxLayer(props: Props) {
         const editing = editingId === b.id;
         const selected = selectedId === b.id && editMode;
         // 줄은 직접 나눈다 (썸네일과 같은 결과). 크기가 정해진 상자는 글자 크기도 상자에 맞춘다
-        const layout = layoutBox({ ...live, x: pos.x }, editing ? b.text || label : label, heightRatio, measureText);
+        const layout = layoutBox({ ...live, x: pos.x }, editing ? b.text || label : label, heightRatio, measureFor(b));
         const fontSize = (layout.size * size.width) / 1000;
+        // 서식 (v0.25): 글꼴·굵기·기울임·밑줄·줄 맞춤
+        const ts = boxTextStyle(b);
+        const textStyle = {
+          fontFamily: ts.family,
+          fontWeight: ts.weight,
+          fontStyle: ts.italic ? "italic" : undefined,
+          textAlign: b.align,
+        } as const;
         const className = [
           "text-box",
           b.link && "link",
@@ -398,6 +420,8 @@ export function BoxLayer(props: Props) {
           selected && "selected",
           editing && "editing",
           props.connectFrom === b.id && "connect-from",
+          b.underline && "underline",
+          b.align && `align-${b.align}`,
         ]
           .filter(Boolean)
           .join(" ");
@@ -406,6 +430,7 @@ export function BoxLayer(props: Props) {
           top: pos.y * size.height,
           fontSize,
           color: b.color,
+          ...textStyle,
           padding: `${layout.chrome.padY}em ${layout.chrome.padX}em`,
           ...(boxBackground(b) || boxBorder(b) ? { borderRadius: "0.25em" } : {}),
           ...(boxBackground(b) ? { background: boxBackground(b)! } : {}),
@@ -432,7 +457,7 @@ export function BoxLayer(props: Props) {
                 placeholder={b.link ? label : "글자 입력"}
                 aria-label="텍스트 상자 글자"
                 className={layout.fitted ? "fill" : undefined}
-                style={{ fontSize, color: b.color }}
+                style={{ fontSize, color: b.color, ...textStyle, textDecoration: b.underline ? "underline" : undefined }}
                 onChange={(e) => props.onText(b.id, e.target.value)}
                 onBlur={() => props.onEndEdit(b.id)}
                 onKeyDown={(e) => e.key === "Escape" && e.currentTarget.blur()}
@@ -487,6 +512,9 @@ export function BoxLayer(props: Props) {
             onEdit={() => props.onStartEdit(b.id)}
             onLink={() => props.onLink(b.id)}
             onResize={(s) => props.onResize(b.id, s)}
+            fittedSize={layout.size}
+            onFontSize={(s) => props.onFontSize(b.id, s)}
+            onFormat={(patch) => props.onFormat(b.id, patch)}
             onColor={(c) => props.onColor(b.id, c)}
             onBg={(bg) => props.onBg(b.id, bg)}
             onBorder={(border) => props.onBorder(b.id, border)}
@@ -534,6 +562,9 @@ function BoxToolbar({
   onEdit,
   onLink,
   onResize,
+  fittedSize,
+  onFontSize,
+  onFormat,
   onColor,
   onBg,
   onBorder,
@@ -550,6 +581,10 @@ function BoxToolbar({
   onEdit: () => void;
   onLink: () => void;
   onResize: (step: 1 | -1) => void;
+  /** 지금 보이는 글자 크기 (크기가 정해진 상자는 맞춘 크기) */
+  fittedSize: number;
+  onFontSize: (size: number) => void;
+  onFormat: (patch: BoxFormat) => void;
   onColor: (color: string) => void;
   onBg: (bg: string | undefined) => void;
   onBorder: (border: BoxBorder | undefined) => void;
@@ -563,7 +598,7 @@ function BoxToolbar({
   const ref = useRef<HTMLDivElement>(null);
   const [left, setLeft] = useState(-2);
   /** 펼친 색 고르기 줄: 글자색 / 배경색 */
-  const [panel, setPanel] = useState<"color" | "bg" | "border" | null>(null);
+  const [panel, setPanel] = useState<"format" | "color" | "bg" | "border" | null>(null);
   useLayoutEffect(() => {
     const w = ref.current!.offsetWidth;
     setLeft(Math.max(4 - boxLeft, Math.min(-2, pageWidth - 4 - boxLeft - w)));
@@ -583,6 +618,9 @@ function BoxToolbar({
       </button>
       <button aria-label="링크" title="링크 걸기" className={box.link ? "on" : undefined} onClick={onLink}>
         <Link2 size={16} />
+      </button>
+      <button aria-label="서식" title="서식: 글꼴·크기·굵게·정렬" className={panel === "format" ? "on" : undefined} onClick={() => setPanel(panel === "format" ? null : "format")}>
+        <Type size={16} />
       </button>
       <button aria-label="글자 작게" title="글자 작게" onClick={() => onResize(-1)}>
         <Minus size={16} />
@@ -618,6 +656,58 @@ function BoxToolbar({
       <button aria-label="상자 지우기" title="지우기" onClick={onDelete}>
         <Trash2 size={16} />
       </button>
+      {panel === "format" && (
+        <div className="box-format" aria-label="서식">
+          <div className="box-format-row" role="radiogroup" aria-label="글꼴">
+            {BOX_FONTS.map((f) => (
+              <button
+                key={f.label}
+                role="radio"
+                aria-checked={box.font === f.id}
+                aria-label={`글꼴 ${f.label}`}
+                className={`box-font-opt${box.font === f.id ? " on" : ""}`}
+                style={{ fontFamily: f.family, fontWeight: f.weights[0] }}
+                onClick={() => onFormat({ font: f.id })}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <div className="box-format-row" role="radiogroup" aria-label="글자 크기">
+            {BOX_SIZES.map((v) => {
+              const on = Math.abs(v - fittedSize) < 0.5;
+              return (
+                <button key={v} role="radio" aria-checked={on} aria-label={`글자 크기 ${v}`} className={`box-size-opt${on ? " on" : ""}`} onClick={() => onFontSize(v)}>
+                  {v}
+                </button>
+              );
+            })}
+          </div>
+          <div className="box-format-row">
+            <button aria-label="굵게" aria-pressed={!!box.bold} className={box.bold ? "on" : undefined} onClick={() => onFormat({ bold: !box.bold })}>
+              <Bold size={16} />
+            </button>
+            <button aria-label="기울임" aria-pressed={!!box.italic} className={box.italic ? "on" : undefined} onClick={() => onFormat({ italic: !box.italic })}>
+              <Italic size={16} />
+            </button>
+            <button aria-label="밑줄" aria-pressed={!!box.underline} className={box.underline ? "on" : undefined} onClick={() => onFormat({ underline: !box.underline })}>
+              <Underline size={16} />
+            </button>
+            <span className="box-sep" />
+            {(
+              [
+                [undefined, "왼쪽 맞춤", <AlignLeft key="l" size={16} />],
+                ["center", "가운데 맞춤", <AlignCenter key="c" size={16} />],
+                ["right", "오른쪽 맞춤", <AlignRight key="r" size={16} />],
+              ] as const
+            ).map(([v, label, icon]) => (
+              <button key={label} role="radio" aria-checked={box.align === v} aria-label={label} className={box.align === v ? "on" : undefined} onClick={() => onFormat({ align: v })}>
+                {icon}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {panel === "color" && (
         <div className="box-palette" role="radiogroup" aria-label="글자색 고르기">
           {BOX_COLORS.map((c) => (

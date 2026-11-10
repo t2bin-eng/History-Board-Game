@@ -1,6 +1,6 @@
 {
   "name": "lessondeck",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -19,6 +19,10 @@
     "@capacitor/core": "^8.5.3",
     "@capacitor/filesystem": "^8.1.5",
     "@capacitor/share": "^8.0.3",
+    "@fontsource/black-han-sans": "^5.3.0",
+    "@fontsource/jua": "^5.3.0",
+    "@fontsource/nanum-myeongjo": "^5.3.0",
+    "@fontsource/yeon-sung": "^5.3.0",
     "heic-to": "^1.6.6",
     "idb": "^8.0.4",
     "jszip": "^3.10.2",

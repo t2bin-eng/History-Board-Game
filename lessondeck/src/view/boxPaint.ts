@@ -4,7 +4,8 @@ import { chromeWidth, layoutBox, LINE_HEIGHT } from "../doc/textLayout";
 import type { Page } from "../doc/types";
 import type { PageSize } from "../ink/geometry";
 import { boxRectPx } from "./boxGeometry";
-import { BOX_FONT, measureText } from "./textMeasure";
+import { boxTextStyle, canvasFont } from "../doc/boxFonts";
+import { measureFor } from "./textMeasure";
 
 // 페이지 바 축소 이미지에 텍스트 상자를 그린다 (화면의 BoxLayer와 같은 배치: 같은 줄·글자 크기·링크 단추 모양)
 export function paintBoxes(ctx: CanvasRenderingContext2D, page: Page, pages: Page[], hidden: string[], size: PageSize) {
@@ -40,13 +41,15 @@ export function paintBoxes(ctx: CanvasRenderingContext2D, page: Page, pages: Pag
     if (b.role === "back" && dangling) continue;
     const label = boxLabel(b, pages, hidden);
     if (!label.trim()) continue;
-    const layout = layoutBox(b, label, heightRatio, measureText);
+    const measure = measureFor(b);
+    const layout = layoutBox(b, label, heightRatio, measure);
     const fs = layout.size * scale;
     const lh = fs * LINE_HEIGHT;
     const { padX, padY, icon, trail } = layout.chrome;
     const x = b.x * size.width;
     const y = b.y * size.height;
-    const textWidth = Math.max(...layout.lines.map((l) => measureText(l, layout.size))) * scale;
+    const lineWidths = layout.lines.map((l) => measure(l, layout.size) * scale);
+    const textWidth = Math.max(...lineWidths);
     const boxW = layout.fitted ? b.w! * size.width : textWidth + fs * chromeWidth(layout.chrome);
     const boxH = layout.fitted ? b.h! * size.height : lh * layout.lines.length + fs * padY * 2;
     ctx.globalAlpha = dangling ? 0.45 : 1;
@@ -99,10 +102,17 @@ export function paintBoxes(ctx: CanvasRenderingContext2D, page: Page, pages: Pag
       ctx.lineWidth = bw;
       ctx.stroke();
     }
-    ctx.font = `500 ${fs}px ${BOX_FONT}`;
+    // 서식 (v0.25): 글꼴·굵기·기울임, 줄 맞춤(글자 자리 폭 안에서), 밑줄
+    ctx.font = canvasFont(boxTextStyle(b), fs);
     ctx.fillStyle = b.color;
+    const textLeft = x + fs * (padX + icon);
+    const room = boxW - fs * chromeWidth(layout.chrome);
+    const k = b.align === "center" ? 0.5 : b.align === "right" ? 1 : 0;
     layout.lines.forEach((line, i) => {
-      ctx.fillText(line, x + fs * (padX + icon), y + fs * padY + i * lh + (lh - fs) / 2);
+      const lx = textLeft + Math.max(0, room - lineWidths[i]) * k;
+      const ly = y + fs * padY + i * lh + (lh - fs) / 2;
+      ctx.fillText(line, lx, ly);
+      if (b.underline && line.trim()) ctx.fillRect(lx, ly + fs * 1.02, lineWidths[i], Math.max(0.5, fs * 0.07));
     });
   }
   ctx.restore();

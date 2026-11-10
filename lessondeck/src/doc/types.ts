@@ -72,12 +72,23 @@ export interface TextBox {
   bg?: string;
   /** 테두리 (v0.20): color "auto"면 글자색, w는 굵기 단계 1·2·3. 링크 상자는 쓰지 않는다 */
   border?: BoxBorder;
+  /** 글꼴 (v0.25): 없으면 기본(고딕) */
+  font?: BoxFont;
+  /** 굵게 · 기울임 · 밑줄 (v0.25) */
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  /** 줄 맞춤 (v0.25): 없으면 왼쪽 */
+  align?: "center" | "right";
   link?: BoxLink;
   /** 페이지 링크를 걸 때 연결한 페이지에 자동으로 생긴 "돌아가기" 링크 */
   role?: "back";
   /** 이 돌아가기 링크를 만든 원래 링크 상자 id (원래 링크를 지우면 같이 지운다) */
   backOf?: string;
 }
+
+/** 글상자 글꼴 (v0.25): 명조 · 손글씨 · 둥근 · 제목 (없으면 기본 고딕) */
+export type BoxFont = "serif" | "hand" | "round" | "title";
 
 export interface BoxBorder {
   color: string;

@@ -5,6 +5,8 @@ import type { PDFDocumentProxy } from "../pdf/pdfjs";
 import { getMeta } from "../store/db";
 import { paintBoxes } from "./boxPaint";
 import { paintStickers } from "./stickerPaint";
+import { loadBoxFonts } from "./textMeasure";
+import { boxesOf } from "../doc/boxes";
 
 // 홈 카드에 쓰는 썸네일 페이지 그림 (v0.22): 페이지 + 스티커 + 필기(형광펜은 곱하기, v0.23) + 글상자를 한 장의 JPEG로.
 // 다른 사이트(유튜브)의 그림은 캔버스에서 꺼낼 수 없어 그리지 않는다.
@@ -131,6 +133,7 @@ export async function snapshotPage(page: Page, doc: DocState, strokes: Stroke[],
     await paintBase(ctx, page, doc, width, height);
     await paintStickers(ctx, page, doc.assets, size).catch(() => undefined);
     paintInk(ctx, strokes, size);
+    await loadBoxFonts(boxesOf(page));
     paintBoxes(ctx, page, doc.pages, doc.hidden, size);
     return canvas.toDataURL("image/jpeg", 0.86);
   } catch {

@@ -12,6 +12,15 @@ export default defineConfig({
   },
   plugins: [
     react(),
+    // 글상자 글꼴(@fontsource)의 옛 형식 woff 대체 파일은 빼고 woff2만 앱에 넣는다 (안드로이드 웹뷰·요즘 브라우저는 모두 woff2)
+    {
+      name: "lessondeck-woff2-only",
+      enforce: "pre",
+      transform(code, id) {
+        if (!/@fontsource[\\/].+\.css$/.test(id)) return;
+        return code.replace(/,\s*url\([^)]*\.woff\)\s*format\(['"]woff['"]\)/g, "");
+      },
+    },
     VitePWA({
       registerType: "autoUpdate",
       injectRegister: false,
@@ -40,6 +49,15 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
         navigateFallback: "/index.html",
         cleanupOutdatedCaches: true,
+        // 글상자 글꼴(v0.25)은 글자 묶음 파일이 많아(약 10MB) 미리 받지 않고, 한 번 쓴 묶음을 남겨 둔다.
+        // (안드로이드 앱은 앱 파일 안에 모두 들어 있다)
+        runtimeCaching: [
+          {
+            urlPattern: /\.woff2$/,
+            handler: "CacheFirst",
+            options: { cacheName: "lessondeck-fonts", expiration: { maxEntries: 1000 } },
+          },
+        ],
       },
     }),
   ],

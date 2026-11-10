@@ -1,4 +1,5 @@
 import { dropArrowsOf, remapArrows } from "./arrows";
+import { cleanFormat, type BoxFormat } from "./boxFonts";
 import { autoBackground } from "./colors";
 import { visiblePosition } from "./pages";
 import { newId, type BoxLink, type Page, type TextBox } from "./types";
@@ -19,7 +20,7 @@ export function boxBackground(box: Pick<TextBox, "bg" | "color" | "link">): stri
 }
 export const LINK_COLOR = "#1565c0";
 /** 글자 크기 단계 ("페이지 가로 = 1000" 단위) */
-export const BOX_SIZES = [16, 20, 24, 30, 38, 48, 60];
+export const BOX_SIZES = [16, 20, 24, 30, 38, 48, 60, 72, 96];
 export const DEFAULT_BOX_SIZE = 24;
 
 export function boxesOf(page: Page | undefined): TextBox[] {
@@ -36,6 +37,17 @@ export function addBox(pages: Page[], pageId: string, box: TextBox): Page[] {
 
 export function patchBox(pages: Page[], pageId: string, boxId: string, patch: Partial<Omit<TextBox, "id" | "link">>): Page[] {
   return mapBoxes(pages, pageId, (boxes) => boxes.map((b) => (b.id === boxId ? { ...b, ...patch } : b)));
+}
+
+/** 서식 바꾸기 (v0.25): 끈 것·기본값은 빼 둔다 */
+export function formatBox(pages: Page[], pageId: string, boxId: string, patch: BoxFormat): Page[] {
+  return mapBoxes(pages, pageId, (boxes) => boxes.map((b) => (b.id === boxId ? cleanFormat({ ...b, ...patch }) : b)));
+}
+
+/** 글자 크기 한 단계 위·아래 (BOX_SIZES에서 가장 가까운 것 기준) */
+export function stepBoxSize(size: number, step: 1 | -1): number {
+  const i = BOX_SIZES.reduce((best, v, k) => (Math.abs(v - size) < Math.abs(BOX_SIZES[best] - size) ? k : best), 0);
+  return BOX_SIZES[Math.min(BOX_SIZES.length - 1, Math.max(0, i + step))];
 }
 
 /** 상자를 지운다. 이 상자의 페이지 링크가 만든 돌아가기 링크, 이 상자에 닿은 화살표도 함께 지운다 */

@@ -1995,6 +1995,18 @@ button.doc-title:hover {
   white-space: pre;
 }
 
+/* 서식 (v0.25): 밑줄, 가운데·오른쪽 맞춤 (크기가 정해진 상자는 상자 폭 안에서) */
+.text-box.underline .tb-line {
+  text-decoration: underline;
+  text-decoration-thickness: 0.07em;
+  text-underline-offset: 0.12em;
+}
+
+.text-box.align-center .text-box-text,
+.text-box.align-right .text-box-text {
+  flex: 1 1 auto;
+}
+
 /* 평소에는 링크만 누를 수 있다 (나머지 글자 위로는 필기가 지나감) */
 .text-box.link,
 .box-layer.edit .text-box {
@@ -3921,6 +3933,40 @@ body:has(.select-bar) .toast {
   margin-top: 2px;
   padding-top: 4px;
   border-top: 1px solid var(--panel-border);
+}
+
+/* 서식 창 (v0.25): 글꼴 · 글자 크기 · 굵게/기울임/밑줄 · 줄 맞춤 */
+.box-format {
+  display: flex;
+  flex-basis: 100%;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
+  padding-top: 4px;
+  border-top: 1px solid var(--panel-border);
+}
+
+.box-format-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+}
+
+.box-toolbar .box-font-opt {
+  width: auto;
+  min-width: 52px;
+  padding: 0 8px;
+  font-size: 16px;
+  color: var(--text);
+}
+
+.box-toolbar .box-size-opt {
+  width: auto;
+  min-width: 34px;
+  padding: 0 6px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 
 .box-toolbar .box-bg-opt {
