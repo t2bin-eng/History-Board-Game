@@ -17,7 +17,7 @@ import {
   Wand2,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { arrowShape, arrowsOf, type Rect } from "../doc/arrows";
+import { arrowEnds, arrowPathD, arrowShape, arrowsOf, bendFromHandle, cleanBend, type ArrowShape, type ArrowTarget, type Rect } from "../doc/arrows";
 import { BOX_BG_COLORS, BOX_COLORS, boxBackground, boxBorder, boxLabel, boxesOf, boxPlainLabel, isAutoPageLink, isDangling } from "../doc/boxes";
 import { layoutBox } from "../doc/textLayout";
 import type { BoxArrow, BoxBorder, BoxLink, Page, TextBox } from "../doc/types";
@@ -50,17 +50,20 @@ interface Props {
   onBg: (id: string, bg: string | undefined) => void;
   /** 테두리 (undefined면 없음) */
   onBorder: (id: string, border: BoxBorder | undefined) => void;
-  /** 화살표로 잇기: 이 상자에서 시작 (다음에 누른 상자로 잇는다) */
+  /** 화살표: 이 상자에서 시작 (다음에 누른 상자로 잇거나, 누른 곳을 가리킨다) */
   onStartConnect: (id: string) => void;
-  /** 잇는 중이면 시작 상자 id */
+  /** 화살표를 낼 상자 (시작한 뒤 끝을 기다리는 중) */
   connectFrom?: string | null;
-  onConnect: (toId: string) => void;
+  /** 끝: 다른 상자 id 또는 누른 곳 [x, y] (페이지 대비 0~1) */
+  onConnect: (target: ArrowTarget) => void;
   onCancelConnect: () => void;
   /** 고른 화살표 (텍스트 모드) */
   selectedArrow?: string | null;
   onSelectArrow: (id: string | null) => void;
   onArrowFlip: (id: string) => void;
-  onArrowPatch: (id: string, patch: Partial<Pick<BoxArrow, "both" | "color">>) => void;
+  onArrowPatch: (id: string, patch: Partial<Pick<BoxArrow, "both" | "color" | "bend">>) => void;
+  /** 화살 끝을 옮김: 다른 상자 또는 아무 곳 */
+  onArrowEnd: (id: string, target: ArrowTarget) => void;
   onArrowDelete: (id: string) => void;
   onCopy: (id: string) => void;
   onCut: (id: string) => void;
@@ -83,6 +86,8 @@ export function BoxLayer(props: Props) {
   const drag = useRef<{ id: string; pointer: number; sx: number; sy: number; dx: number; dy: number; moved: boolean } | null>(null);
   const [dragPos, setDragPos] = useState<{ id: string; x: number; y: number } | null>(null);
   const resize = useRef<{ id: string; pointer: number; mode: HandleMode; w0: number; h0: number; x: number; y: number } | null>(null);
+  /** 고른 화살표의 끝·휘기 손잡이를 끄는 중 (페이지 px) */
+  const [arrowDrag, setArrowDrag] = useState<{ id: string; kind: "end" | "bend"; pointer: number; x: number; y: number; moved: boolean } | null>(null);
   const [liveSize, setLiveSize] = useState<{ id: string; w: number; h: number } | null>(null);
   const heightRatio = size.height / Math.max(1, size.width);
 
@@ -106,11 +111,13 @@ export function BoxLayer(props: Props) {
 
   const onLayerClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!editMode || e.target !== e.currentTarget) return;
-    // 잇는 중에 빈 곳을 누르면 그만, 화살표를 골랐으면 놓기만
+    // 화살표 끝을 기다리는 중: 누른 곳을 가리키는 화살표 (줄 그은 곳·그림 등 아무 곳)
     if (props.connectFrom) {
-      props.onCancelConnect();
+      const p = toRatio(e.clientX, e.clientY);
+      props.onConnect([clamp(p.x, 0, 1), clamp(p.y, 0, 1)]);
       return;
     }
+    // 화살표를 골랐으면 놓기만
     if (props.selectedArrow) {
       props.onSelectArrow(null);
       return;
@@ -222,13 +229,73 @@ export function BoxLayer(props: Props) {
   }
   const arrows = arrowsOf(page);
   const lineW = (3 * size.width) / 1000;
+  /** (x, y)(페이지 px)에 있는 상자 (위에 있는 것부터, 시작 상자 빼고) */
+  const boxAt = (x: number, y: number, except: string) => {
+    for (let i = boxes.length - 1; i >= 0; i--) {
+      const r = rects.get(boxes[i].id);
+      if (boxes[i].id !== except && r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return boxes[i].id;
+    }
+    return null;
+  };
+  const center = (r: Rect): [number, number] => [r.x + r.w / 2, r.y + r.h / 2];
+  /** 끄는 중이면 그 모양 그대로: 끝은 손가락 밑의 상자나 그 자리, 휘기는 손잡이 자리로 */
+  const liveArrow = (a: BoxArrow): { shape: ArrowShape | null; bend: number; target: ArrowTarget | null } => {
+    const ends = arrowEnds(a, rects, size);
+    if (!ends) return { shape: null, bend: 0, target: null };
+    let target: Rect | [number, number] = ends.target;
+    let bend = a.bend ?? 0;
+    let to: ArrowTarget | null = null;
+    if (arrowDrag?.id === a.id && arrowDrag.moved) {
+      if (arrowDrag.kind === "end") {
+        const hit = boxAt(arrowDrag.x, arrowDrag.y, a.from);
+        target = hit ? rects.get(hit)! : [arrowDrag.x, arrowDrag.y];
+        to = hit ?? [clamp(arrowDrag.x / size.width, 0, 1), clamp(arrowDrag.y / size.height, 0, 1)];
+      } else {
+        const p1 = Array.isArray(ends.target) ? ends.target : center(ends.target);
+        bend = cleanBend(bendFromHandle(center(ends.from), p1, arrowDrag.x, arrowDrag.y)) ?? 0;
+      }
+    }
+    return { shape: arrowShape(ends.from, target, lineW, a.both, bend), bend, target: to };
+  };
   const shapes = arrows.flatMap((a) => {
-    const A = rects.get(a.from);
-    const B = rects.get(a.to);
-    const shape = A && B ? arrowShape(A, B, lineW, a.both) : null;
+    const { shape } = liveArrow(a);
     return shape ? [{ arrow: a, shape }] : [];
   });
-  const picked = editMode && props.selectedArrow ? shapes.find((s) => s.arrow.id === props.selectedArrow) : undefined;
+  const pickedArrow = editMode && props.selectedArrow ? arrows.find((a) => a.id === props.selectedArrow) : undefined;
+  const picked = pickedArrow ? shapes.find((s) => s.arrow.id === pickedArrow.id) : undefined;
+
+  // 고른 화살표의 손잡이: 끝(다른 상자에 놓으면 그 상자로 이음, 아니면 그 자리를 가리킴) · 가운데(휘기)
+  const onArrowHandleDown = (a: BoxArrow, kind: "end" | "bend", e: ReactPointerEvent<HTMLElement>) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (e.button > 0) return;
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // 잡을 수 없는 포인터면 그냥 둔다
+    }
+    const p = toRatio(e.clientX, e.clientY);
+    setArrowDrag({ id: a.id, kind, pointer: e.pointerId, x: p.x * size.width, y: p.y * size.height, moved: false });
+  };
+  const onArrowHandleMove = (e: ReactPointerEvent<HTMLElement>) => {
+    if (!arrowDrag || arrowDrag.pointer !== e.pointerId) return;
+    e.stopPropagation();
+    const p = toRatio(e.clientX, e.clientY);
+    const x = clamp(p.x, 0, 1) * size.width;
+    const y = clamp(p.y, 0, 1) * size.height;
+    // 손잡이를 톡 누르기만 한 것은 바꾸지 않는다 (손떨림 몇 px)
+    const moved = arrowDrag.moved || Math.hypot(x - arrowDrag.x, y - arrowDrag.y) > DRAG_SLOP;
+    if (moved) setArrowDrag({ ...arrowDrag, x, y, moved });
+  };
+  const onArrowHandleUp = (a: BoxArrow, e: ReactPointerEvent<HTMLElement>) => {
+    if (!arrowDrag || arrowDrag.pointer !== e.pointerId) return;
+    e.stopPropagation();
+    const live = liveArrow(a);
+    setArrowDrag(null);
+    if (e.type !== "pointerup" || !live.shape || !arrowDrag.moved) return;
+    if (arrowDrag.kind === "end" && live.target) props.onArrowEnd(a.id, live.target);
+    else if (arrowDrag.kind === "bend" && (live.bend || undefined) !== a.bend) props.onArrowPatch(a.id, { bend: live.bend || undefined });
+  };
 
   return (
     <div
@@ -240,7 +307,7 @@ export function BoxLayer(props: Props) {
       {shapes.length > 0 && (
         <svg className="arrow-layer" width={size.width} height={size.height} aria-hidden={!editMode}>
           {shapes.map(({ arrow: a, shape: s }) => {
-            const d = `M${s.line[0].toFixed(1)},${s.line[1].toFixed(1)}L${s.line[2].toFixed(1)},${s.line[3].toFixed(1)}`;
+            const d = arrowPathD(s);
             return (
               <g key={a.id} data-arrow-id={a.id}>
                 {picked?.arrow.id === a.id && <path d={d} className="arrow-glow" strokeWidth={lineW + 10} />}
@@ -265,11 +332,46 @@ export function BoxLayer(props: Props) {
           })}
         </svg>
       )}
-      {props.connectFrom && editMode && <div className="connect-hint">화살표로 이을 상자를 누르세요 · 빈 곳을 누르면 그만</div>}
-      {picked && (
+      {props.connectFrom && editMode && (
+        <div className="connect-hint">
+          화살표 끝을 둘 곳이나 이을 상자를 누르세요
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              props.onCancelConnect();
+            }}
+          >
+            그만
+          </button>
+        </div>
+      )}
+      {pickedArrow && (picked || arrowDrag?.id === pickedArrow.id) && (
+        <>
+          {(["bend", "end"] as const).map((kind) => {
+            const dragging = arrowDrag?.id === pickedArrow.id && arrowDrag.kind === kind && arrowDrag.moved;
+            const at = dragging ? [arrowDrag.x, arrowDrag.y] : picked ? (kind === "end" ? endHandleSpot(picked.shape, !!pickedArrow.to) : picked.shape.mid) : null;
+            if (!at || (arrowDrag && arrowDrag.kind !== kind)) return null;
+            return (
+              <span
+                key={kind}
+                className={`arrow-handle ${kind}`}
+                style={{ left: at[0], top: at[1] }}
+                role="slider"
+                aria-label={kind === "end" ? "화살 끝 옮기기" : "화살표 휘기"}
+                onPointerDown={(e) => onArrowHandleDown(pickedArrow, kind, e)}
+                onPointerMove={onArrowHandleMove}
+                onPointerUp={(e) => onArrowHandleUp(pickedArrow, e)}
+                onPointerCancel={(e) => onArrowHandleUp(pickedArrow, e)}
+              />
+            );
+          })}
+        </>
+      )}
+      {picked && !arrowDrag && (
         <ArrowToolbar
           arrow={picked.arrow}
-          at={{ x: (picked.shape.line[0] + picked.shape.line[2]) / 2, y: (picked.shape.line[1] + picked.shape.line[3]) / 2 }}
+          at={{ x: picked.shape.mid[0], y: picked.shape.mid[1] }}
           pageWidth={size.width}
           onFlip={() => props.onArrowFlip(picked.arrow.id)}
           onBoth={() => props.onArrowPatch(picked.arrow.id, { both: !picked.arrow.both })}
@@ -504,7 +606,7 @@ function BoxToolbar({
           <Square size={16} />
         </button>
       )}
-      <button aria-label="화살표로 잇기" title="화살표로 잇기 (다음에 누른 상자로)" onClick={onStartConnect}>
+      <button aria-label="화살표" title="화살표 (다음에 누른 곳이나 상자를 가리킴)" onClick={onStartConnect}>
         <MoveUpRight size={16} />
       </button>
       <button aria-label="상자 복사" title="복사 (Ctrl+C)" onClick={onCopy}>
@@ -585,6 +687,16 @@ function BoxToolbar({
   );
 }
 
+/** 끝 손잡이 자리: 가리키는 화살표는 촉 끝, 상자로 이은 화살표는 상자를 가리지 않게 촉 끝에서 조금 뒤로 */
+function endHandleSpot(s: ArrowShape, toBox: boolean): [number, number] {
+  if (!toBox) return s.tip;
+  const [tip, w1, w2] = s.heads[0];
+  const bx = (w1[0] + w2[0]) / 2 - tip[0];
+  const by = (w1[1] + w2[1]) / 2 - tip[1];
+  const l = Math.hypot(bx, by) || 1;
+  return [tip[0] + (bx / l) * 16, tip[1] + (by / l) * 16];
+}
+
 function clamp(v: number, min: number, max: number) {
   return Math.min(max, Math.max(min, v));
 }
@@ -613,9 +725,11 @@ function ArrowToolbar({
   const top = at.y > 70 ? at.y - 64 : at.y + 18;
   return (
     <div className="box-toolbar arrow-toolbar" style={{ left, top }} onPointerDown={stop} onPointerUp={stop} onClick={stop}>
-      <button aria-label="방향 바꾸기" title="방향 바꾸기" onClick={onFlip}>
-        <ArrowLeftRight size={16} />
-      </button>
+      {arrow.to && (
+        <button aria-label="방향 바꾸기" title="방향 바꾸기" onClick={onFlip}>
+          <ArrowLeftRight size={16} />
+        </button>
+      )}
       <button aria-label="양쪽 화살표" title="양쪽 화살표" className={arrow.both ? "on" : undefined} onClick={onBoth}>
         <MoveHorizontal size={16} />
       </button>

@@ -1,4 +1,4 @@
-import { arrowShape, arrowsOf, type Rect } from "../doc/arrows";
+import { arrowsOf, shapeOfArrow, type Rect } from "../doc/arrows";
 import { boxBackground, boxBorder, boxLabel, boxesOf, isDangling } from "../doc/boxes";
 import { chromeWidth, layoutBox, LINE_HEIGHT } from "../doc/textLayout";
 import type { Page } from "../doc/types";
@@ -17,17 +17,16 @@ export function paintBoxes(ctx: CanvasRenderingContext2D, page: Page, pages: Pag
   for (const b of boxesOf(page)) rects.set(b.id, boxRectPx(b, boxLabel(b, pages, hidden), size));
   const lineW = 3 * scale;
   for (const a of arrowsOf(page)) {
-    const A = rects.get(a.from);
-    const B = rects.get(a.to);
-    const shape = A && B ? arrowShape(A, B, lineW, a.both) : null;
+    const shape = shapeOfArrow(a, rects, size, lineW);
     if (!shape) continue;
     ctx.strokeStyle = a.color;
     ctx.fillStyle = a.color;
     ctx.lineWidth = lineW;
     ctx.lineCap = "round";
+    const [[x0, y0], [cx, cy], [x1, y1]] = shape.curve;
     ctx.beginPath();
-    ctx.moveTo(shape.line[0], shape.line[1]);
-    ctx.lineTo(shape.line[2], shape.line[3]);
+    ctx.moveTo(x0, y0);
+    ctx.quadraticCurveTo(cx, cy, x1, y1);
     ctx.stroke();
     for (const head of shape.heads) {
       ctx.beginPath();

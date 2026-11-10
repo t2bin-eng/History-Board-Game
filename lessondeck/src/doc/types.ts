@@ -84,11 +84,16 @@ export interface BoxBorder {
   w: 1 | 2 | 3;
 }
 
-/** 상자 잇는 화살표 (v0.20, SPEC 5장 arrows). from·to는 같은 페이지의 상자 id */
+/** 상자 화살표 (v0.20, SPEC 5장 arrows). from은 같은 페이지의 상자 id, 끝은 to(상자) 또는 at(아무 곳, v0.24) */
 export interface BoxArrow {
   id: string;
   from: string;
-  to: string;
+  /** 이어진 상자 */
+  to?: string;
+  /** 화살 끝이 가리키는 곳 [x, y] (페이지 대비 0~1, v0.24) */
+  at?: [number, number];
+  /** 휜 정도 (v0.24): 곡선 가운데가 곧은 선에서 비켜난 거리 ÷ 곧은 선 길이, +는 가는 방향의 오른쪽 */
+  bend?: number;
   color: string;
   /** 양쪽 화살표 */
   both?: boolean;

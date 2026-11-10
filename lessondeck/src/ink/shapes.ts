@@ -121,25 +121,74 @@ const UNIT: Partial<Record<ShapeKind, P[]>> = {
 
 const close = (pts: P[]): P[] => [...pts, pts[0]];
 
+/** 곧은 선의 곡선 조절점 (1/3·2/3 자리) */
+export const STRAIGHT_CURVE: [number, number, number, number] = [-1 / 6, 0, 1 / 6, 0];
+
+/** 선·화살표 곡선(길이 w)의 세 점: 시작·두 조절점·끝 (회전 전, 가운데 0) */
+function curveControls(curve: [number, number, number, number], w: number): [P, P, P, P] {
+  return [
+    [-w / 2, 0],
+    [curve[0] * w, curve[1] * w],
+    [curve[2] * w, curve[3] * w],
+    [w / 2, 0],
+  ];
+}
+
+function cubicAt([p0, c1, c2, p3]: [P, P, P, P], t: number): P {
+  const u = 1 - t;
+  const b0 = u * u * u;
+  const b1 = 3 * u * u * t;
+  const b2 = 3 * u * t * t;
+  const b3 = t * t * t;
+  return [b0 * p0[0] + b1 * c1[0] + b2 * c2[0] + b3 * p3[0], b0 * p0[1] + b1 * c1[1] + b2 * c2[1] + b3 * p3[1]];
+}
+
 /** 회전 전, 중심이 (0,0)인 px 좌표의 선들 */
 function localPaths(spec: ShapeSpec, w: number, h: number, lineW: number): P[][] {
   const scale = (pts: P[]): P[] => pts.map(([x, y]) => [x * w, y * h]);
   switch (spec.kind) {
     case "line":
-      return [[[-w / 2, 0], [w / 2, 0]]];
     case "arrow":
     case "arrow2": {
+      // 곡선(v0.24)이면 3차 베지어를 촘촘히, 아니면 곧은 선
+      const ctrl = spec.curve ? curveControls(spec.curve, w) : null;
+      const body: P[] = ctrl
+        ? Array.from({ length: 41 }, (_, i) => cubicAt(ctrl, i / 40))
+        : [
+            [-w / 2, 0],
+            [w / 2, 0],
+          ];
+      if (spec.kind === "line") return [body];
       const head = Math.min(w * 0.4, Math.max(lineW * 4, w * 0.18));
-      const wing = (tipX: number, dir: 1 | -1): P[] => {
+      // 촉은 곡선이 끝나는 방향으로: 끝에서 촉 길이쯤 안쪽 점 → 끝
+      const dirAt = (end: P, inner: P): P => {
+        const dx = end[0] - inner[0];
+        const dy = end[1] - inner[1];
+        const l = Math.hypot(dx, dy) || 1;
+        return [dx / l, dy / l];
+      };
+      const innerPoint = (fromEnd: boolean): P => {
+        if (!ctrl) return fromEnd ? [-w / 2, 0] : [w / 2, 0];
+        // 촉 길이의 절반쯤 들어간 곡선 위 점
+        const pts = fromEnd ? body.slice().reverse() : body;
+        const end = pts[0];
+        return pts.find((p) => Math.hypot(p[0] - end[0], p[1] - end[1]) >= head * 0.5) ?? pts[pts.length - 1];
+      };
+      const wing = (tip: P, [ux, uy]: P): P[] => {
         const a = (25 * Math.PI) / 180;
+        const bx = tip[0] - ux * head * Math.cos(a);
+        const by = tip[1] - uy * head * Math.cos(a);
+        const s = head * Math.sin(a);
         return [
-          [tipX - dir * head * Math.cos(a), -head * Math.sin(a)],
-          [tipX, 0],
-          [tipX - dir * head * Math.cos(a), head * Math.sin(a)],
+          [bx + uy * s, by - ux * s],
+          tip,
+          [bx - uy * s, by + ux * s],
         ];
       };
-      const paths: P[][] = [[[-w / 2, 0], [w / 2, 0]], wing(w / 2, 1)];
-      if (spec.kind === "arrow2") paths.push(wing(-w / 2, -1));
+      const end: P = [w / 2, 0];
+      const start: P = [-w / 2, 0];
+      const paths: P[][] = [body, wing(end, dirAt(end, innerPoint(true)))];
+      if (spec.kind === "arrow2") paths.push(wing(start, dirAt(start, innerPoint(false))));
       return paths;
     }
     case "ellipse":
@@ -217,6 +266,58 @@ export function lineEnds(spec: ShapeSpec, page: Size): [P, P] {
   ];
 }
 
+/** 곡선의 가운데(t = 0.5) — 휘기 손잡이 자리 (페이지 px) */
+export function curveMid(spec: ShapeSpec, page: Size): P {
+  const f = shapeFrame(spec, page);
+  const [, c1, c2] = curveControls(spec.curve ?? STRAIGHT_CURVE, f.w);
+  // 끝 둘의 합이 0이므로 B(0.5) = 3(c1 + c2) / 8
+  const x = (3 * (c1[0] + c2[0])) / 8;
+  const y = (3 * (c1[1] + c2[1])) / 8;
+  return [f.cx + x * Math.cos(f.rad) - y * Math.sin(f.rad), f.cy + x * Math.sin(f.rad) + y * Math.cos(f.rad)];
+}
+
+/** 휘기 손잡이를 p(페이지 px)로 끌었을 때의 곡선: 두 조절점을 같이 옮겨 가운데가 p를 지나게. 거의 곧으면 없앰 */
+export function bendCurve(spec: ShapeSpec, p: P, page: Size): ShapeSpec["curve"] {
+  const f = shapeFrame(spec, page);
+  if (f.w < 1) return spec.curve;
+  const dx = p[0] - f.cx;
+  const dy = p[1] - f.cy;
+  // 곧은 선 좌표 (길이 1)
+  const lx = (dx * Math.cos(f.rad) + dy * Math.sin(f.rad)) / f.w;
+  const ly = (-dx * Math.sin(f.rad) + dy * Math.cos(f.rad)) / f.w;
+  const c = spec.curve ?? STRAIGHT_CURVE;
+  const mx = (3 * (c[0] + c[2])) / 8;
+  const my = (3 * (c[1] + c[3])) / 8;
+  // 두 조절점을 δ만큼 옮기면 가운데는 0.75δ 옮겨진다
+  const sx = (lx - mx) / 0.75;
+  const sy = (ly - my) / 0.75;
+  return cleanCurve([c[0] + sx, c[1] + sy, c[2] + sx, c[3] + sy]);
+}
+
+/** 곡선 값 다듬기: 거의 곧으면 없앰(undefined), 소수 넷째 자리 */
+export function cleanCurve(c: [number, number, number, number] | undefined): ShapeSpec["curve"] {
+  if (!c || c.some((v) => !Number.isFinite(v))) return undefined;
+  const straight = Math.abs(c[1]) < 0.015 && Math.abs(c[3]) < 0.015 && Math.abs(c[0] + 1 / 6) < 0.05 && Math.abs(c[2] - 1 / 6) < 0.05;
+  if (straight) return undefined;
+  const r = (v: number) => Math.round(Math.max(-3, Math.min(3, v)) * 10000) / 10000;
+  return [r(c[0]), r(c[1]), r(c[2]), r(c[3])];
+}
+
+/** 두 끝(페이지 px)과 조절점(페이지 px)으로 곡선 선 모양 */
+export function curveSpec(kind: ShapeKind, a: P, b: P, c1: P, c2: P, page: Size): ShapeSpec {
+  const base = lineSpec(kind, a, b, page);
+  const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+  const ux = (b[0] - a[0]) / len;
+  const uy = (b[1] - a[1]) / len;
+  const mx = (a[0] + b[0]) / 2;
+  const my = (a[1] + b[1]) / 2;
+  const local = (p: P): P => [((p[0] - mx) * ux + (p[1] - my) * uy) / len, (-(p[0] - mx) * uy + (p[1] - my) * ux) / len];
+  const [u1, v1] = local(c1);
+  const [u2, v2] = local(c2);
+  const curve = cleanCurve([u1, v1, u2, v2]);
+  return curve ? { ...base, curve } : base;
+}
+
 /** 두 끝(페이지 px)으로 선 모양 */
 export function lineSpec(kind: ShapeKind, a: P, b: P, page: Size): ShapeSpec {
   return {
@@ -248,6 +349,8 @@ export function makeShapeStroke(
   page: Size,
 ): Stroke {
   const shape: ShapeSpec = { ...spec, cx: round(spec.cx), cy: round(spec.cy), w: round(spec.w), h: round(spec.h), rot: round(spec.rot, 100) };
+  // 곡선은 선·화살표에만, 곧으면 빼 둔다
+  if (!isLineShape(shape.kind) || !shape.curve) delete shape.curve;
   return { id, tool: style.tool, color: style.color, width: style.width, points: shapePoints(shape, page, style.width), shape };
 }
 

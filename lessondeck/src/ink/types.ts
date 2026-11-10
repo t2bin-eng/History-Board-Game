@@ -49,6 +49,8 @@ export interface ShapeSpec {
   rot: number;
   /** polygon의 꼭짓점: w×h 상자 안의 -0.5~0.5 좌표 */
   pts?: [number, number][];
+  /** 선·화살표 곡선 (v0.24): 3차 베지어 조절점 [u1, v1, u2, v2] — 두 끝을 잇는 곧은 선이 x축(-0.5~0.5), 길이 1 */
+  curve?: [number, number, number, number];
 }
 
 export interface PenPreset {

@@ -3,7 +3,7 @@ import { useEffect, useState, type PointerEvent as ReactPointerEvent } from "rea
 import { snapAngle } from "../doc/stickers";
 import { snapLineEnd } from "../ink/beautify";
 import type { PageSize } from "../ink/geometry";
-import { isLineShape, lineEnds, lineSpec, shapeFrame, shapeStrokePath, withShape } from "../ink/shapes";
+import { bendCurve, curveMid, isLineShape, lineEnds, lineSpec, shapeFrame, shapeStrokePath, withShape } from "../ink/shapes";
 import type { ShapeSpec, Stroke } from "../ink/types";
 import { HIGHLIGHT_LAYER_STYLE, isHighlighter, strokeColor } from "../ink/inkPaint";
 
@@ -15,7 +15,8 @@ type Gesture =
   | { kind: "move"; p0: Pt; s0: ShapeSpec }
   | { kind: "end"; end: 0 | 1; s0: ShapeSpec }
   | { kind: "resize"; handle: Handle; s0: ShapeSpec }
-  | { kind: "rotate"; s0: ShapeSpec };
+  | { kind: "rotate"; s0: ShapeSpec }
+  | { kind: "bend"; s0: ShapeSpec };
 
 interface Props {
   stroke: ShapeStroke;
@@ -81,7 +82,13 @@ export function ShapeEditor({ stroke, size, onLive, onChange, onDuplicate, onDel
       const moved: Pt = [e2.x, e2.y];
       if (Math.hypot(moved[0] - fixed[0], moved[1] - fixed[1]) < MIN_PX) return;
       const [a, b] = gesture.end === 1 ? [fixed, moved] : [moved, fixed];
-      show(lineSpec(s0.kind, a, b, size));
+      // 곡선이면 모양(비율)은 그대로 두 끝만
+      show({ ...lineSpec(s0.kind, a, b, size), ...(s0.curve ? { curve: s0.curve } : {}) });
+    } else if (gesture.kind === "bend") {
+      // 휘기: 가운데 손잡이가 끄는 자리를 지나는 곡선 (거의 곧으면 곧게)
+      const next: ShapeSpec = { ...s0, curve: bendCurve(s0, p, size) };
+      if (!next.curve) delete next.curve;
+      show(next);
     } else if (gesture.kind === "rotate") {
       const c = shapeFrame(s0, size);
       const deg = (Math.atan2(p[1] - c.cy, p[0] - c.cx) * 180) / Math.PI + 90;
@@ -154,9 +161,19 @@ export function ShapeEditor({ stroke, size, onLive, onChange, onDuplicate, onDel
             </span>
           </div>
         )}
+        {line && (
+          <span
+            className="se-ui se-handle se-bend"
+            style={{ left: curveMid(spec, size)[0], top: curveMid(spec, size)[1] }}
+            aria-label="휘기"
+            title="끌어서 휘기"
+            onPointerDown={(e) => start(e, { kind: "bend", s0: stroke.shape })}
+            {...grab}
+          />
+        )}
         <span
           className="se-ui se-move"
-          style={{ left: f.cx, top: f.cy }}
+          style={line ? moveSpot(spec, size) : { left: f.cx, top: f.cy }}
           aria-label="옮기기"
           onPointerDown={(e) => start(e, { kind: "move", p0: [0, 0], s0: stroke.shape })}
           {...grab}
@@ -179,6 +196,15 @@ export function ShapeEditor({ stroke, size, onLive, onChange, onDuplicate, onDel
       </div>
     </>
   );
+}
+
+/** 선·화살표의 옮기기 손잡이: 가운데(휘기 손잡이)와 겹치지 않게, 휜 쪽 반대편으로 조금 떨어뜨림 */
+function moveSpot(spec: ShapeSpec, size: PageSize): { left: number; top: number } {
+  const f = shapeFrame(spec, size);
+  const bulge = spec.curve ? Math.sign(spec.curve[1] + spec.curve[3]) || 1 : 1;
+  // 곧은 선 기준 휜 쪽(로컬 +y)의 반대로 34px
+  const off = -bulge * 34;
+  return { left: f.cx - Math.sin(f.rad) * off, top: f.cy + Math.cos(f.rad) * off };
 }
 
 /** 모서리(비율 유지, 맞은편 모서리 고정)·변(그 방향만, 맞은편 변 고정)으로 크기 바꾸기 */

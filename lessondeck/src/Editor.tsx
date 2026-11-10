@@ -107,7 +107,7 @@ import { onPenDown, onSideButtonChange, penButtonRecently, pointerKind } from ".
 import { hasShape, SHAPE_NAMES, shapeAt, withShape, type ShapeTool } from "./ink/shapes";
 import { ShapePicker } from "./ui/ShapePicker";
 import { followDetour, stepSkipping, type Detour } from "./doc/detours";
-import { addArrow, flipArrow, patchArrow, removeArrow } from "./doc/arrows";
+import { addArrow, flipArrow, moveArrowEnd, patchArrow, removeArrow, type ArrowTarget } from "./doc/arrows";
 import { josa } from "./lib/josa";
 import { ShapeEditor } from "./view/ShapeEditor";
 import { isNativeApp, showToast } from "./lib/platform";
@@ -825,8 +825,8 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     setSelectedArrow(null);
   };
 
-  // ── 상자 잇는 화살표 ──
-  /** 이 상자에서 화살표 잇기 시작: 다음에 누른 상자로 잇는다 */
+  // ── 상자 화살표 ──
+  /** 이 상자에서 화살표 시작: 다음에 누른 상자로 잇거나, 누른 곳(아무 곳)을 가리킨다 */
   const startConnect = (boxId: string) => {
     setTextMode(true);
     setSelectedBox(boxId);
@@ -834,17 +834,22 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     setSelectedArrow(null);
     setConnectFrom(boxId);
   };
-  const connectTo = (toId: string) => {
+  const connectTo = (target: ArrowTarget) => {
     const from = connectFrom;
     setConnectFrom(null);
     if (!from || !currentPage) return;
     const pageId = currentPage.id;
     const color = findBox(from)?.color ?? "#111111";
-    const id = newId("a");
-    setDoc((d) => ({ ...d, pages: addArrow(d.pages, pageId, from, toId, color, id).pages }));
+    // 같은 두 상자를 이미 이었으면 그 화살표를 고른다
+    const id = (typeof target === "string" && currentPage.arrows?.find((a) => a.from === from && a.to === target)?.id) || newId("a");
+    setDoc((d) => ({ ...d, pages: addArrow(d.pages, pageId, from, target, color, id).pages }));
     setSelectedBox(null);
     setSelectedArrow(id);
-    showToast("화살표로 이었습니다. 화살표를 누르면 방향·색을 바꿀 수 있습니다");
+    showToast(
+      typeof target === "string"
+        ? "화살표로 이었습니다. 가운데 동그라미를 끌면 휘고, 막대에서 방향·색을 바꿉니다"
+        : "화살표를 그었습니다. 끝 동그라미로 옮기고, 가운데 동그라미를 끌면 휩니다",
+    );
   };
   const editArrows = (fn: (pages: Page[], pageId: string) => Page[]) => {
     if (!currentPage) return;
@@ -1315,11 +1320,11 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
               onSelect: () => setLinkDialog({ boxId: id, created: false }),
             },
             {
-              label: "화살표로 잇기",
+              label: "화살표",
               icon: <MoveUpRight size={18} />,
               onSelect: () => {
                 startConnect(id);
-                showToast("화살표로 이을 상자를 누르세요");
+                showToast("화살표 끝을 둘 곳이나 이을 상자를 누르세요");
               },
             },
             {
@@ -2083,7 +2088,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
                   }}
                   onStartConnect={(id) => {
                     startConnect(id);
-                    showToast("화살표로 이을 상자를 누르세요");
+                    showToast("화살표 끝을 둘 곳이나 이을 상자를 누르세요");
                   }}
                   connectFrom={connectFrom}
                   onConnect={connectTo}
@@ -2095,6 +2100,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
                   }}
                   onArrowFlip={(id) => editArrows((pages, pid) => flipArrow(pages, pid, id))}
                   onArrowPatch={(id, patch) => editArrows((pages, pid) => patchArrow(pages, pid, id, patch))}
+                  onArrowEnd={(id, target) => editArrows((pages, pid) => moveArrowEnd(pages, pid, id, target))}
                   onArrowDelete={deleteArrow}
                   onCopy={(id) => {
                     copyBox(id);
