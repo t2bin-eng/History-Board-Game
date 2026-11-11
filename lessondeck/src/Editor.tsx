@@ -1,5 +1,6 @@
 import {
   Activity,
+  Blinds,
   BookImage,
   BringToFront,
   Shapes,
@@ -22,15 +23,18 @@ import {
   Eraser,
   Eye,
   EyeOff,
+  Flashlight,
   FilePlus2,
   Hand,
   Highlighter,
   Link2,
   Minimize2,
+  Minus,
   MousePointer2,
   Palette,
   PanelLeft,
   PenLine,
+  Plus,
   Presentation,
   Ruler,
   Sparkles,
@@ -64,6 +68,7 @@ import {
   type BoxClip,
 } from "./doc/boxes";
 import { getClip, setClip, type AppClip, type PageClip, type StickerClip } from "./doc/clipboard";
+import { newVeil } from "./doc/boxAnim";
 import { pageAssetIds, pdfPagesUsed, planPaste } from "./doc/pageClip";
 import {
   addStickers,
@@ -138,6 +143,7 @@ import { PageView } from "./view/PageView";
 import { StickerEditor } from "./view/StickerEditor";
 import { shownBox } from "./view/stickerGeometry";
 import { StickerLayer } from "./view/StickerLayer";
+import { SPOTLIGHT_SIZES } from "./view/Spotlight";
 import { PopupLayer } from "./view/PopupLayer";
 import { fittedSize } from "./view/textMeasure";
 
@@ -234,6 +240,11 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   const [webReloads, setWebReloads] = useState<Record<string, number>>({});
   /** 텍스트 모드: 페이지를 누르면 글상자, 상자를 누르면 고르기·고치기·링크 */
   const [textMode, setTextMode] = useState(false);
+  /** 베일 그리기 (v0.28): 텍스트 모드에서 끌어서 가릴 곳을 덮는다 */
+  const [veilMode, setVeilMode] = useState(false);
+  useEffect(() => {
+    if (!textMode) setVeilMode(false);
+  }, [textMode]);
   const [selectedBox, setSelectedBox] = useState<string | null>(null);
   const [editingBox, setEditingBox] = useState<string | null>(null);
   /** 링크 걸기 창. created: "링크 만들기"로 방금 만든 상자 (취소하면 지우고 원래 모드로) */
@@ -278,6 +289,26 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   const [stickerStyleReq, setStickerStyleReq] = useState(0);
   /** 강의 모드: 도구 막대·페이지 바를 숨기고 페이지를 화면 가득 */
   const [lecture, setLecture] = useState(false);
+  /** 스포트라이트 (v0.28, 강의 모드): 켜짐 · 크기 단계 (기기에 기억) */
+  const [spotOn, setSpotOn] = useState(false);
+  const [spotStep, setSpotStep] = useState(() => {
+    try {
+      const v = Number(localStorage.getItem("lessondeck.spotlight"));
+      return Number.isInteger(v) && v >= 0 && v < SPOTLIGHT_SIZES.length && localStorage.getItem("lessondeck.spotlight") != null ? v : 2;
+    } catch {
+      return 2;
+    }
+  });
+  const stepSpot = (d: 1 | -1) =>
+    setSpotStep((v) => {
+      const next = Math.max(0, Math.min(SPOTLIGHT_SIZES.length - 1, v + d));
+      try {
+        localStorage.setItem("lessondeck.spotlight", String(next));
+      } catch {
+        // 저장이 막혀 있어도 이번에는 그대로
+      }
+      return next;
+    });
   /** 이번 강의 모드에서 펼친 애니메이션 글상자 (v0.26). 강의 모드를 시작할 때마다 모두 접힘 */
   const [revealed, setRevealed] = useState<ReadonlySet<string>>(() => new Set());
   const lectureRef = useRef(lecture);
@@ -808,6 +839,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
 
   const exitLecture = useCallback(() => {
     setLecture(false);
+    setSpotOn(false);
     if (lectureFs.current) {
       lectureFs.current = false;
       if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
@@ -892,8 +924,18 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
       return d;
     });
 
+  /** 베일 만들기 (v0.28): 끈 자리(페이지 대비), 톡 누름이면 그 자리가 가운데인 기본 크기 */
+  const createVeil = (r: { x: number; y: number; w: number; h: number }) => {
+    if (!currentPage) return;
+    const veil = r.w > 0 && r.h > 0 ? { ...newVeil(r.x + r.w / 2, r.y + r.h / 2), x: r.x, y: r.y, w: Math.max(0.02, r.w), h: Math.max(0.015, r.h) } : newVeil(r.x, r.y);
+    setDoc((d) => ({ ...d, pages: addBox(d.pages, currentPage.id, veil) }));
+    setSelectedBox(veil.id);
+    setEditingBox(null);
+  };
+
   const createBox = (x: number, y: number) => {
     if (!currentPage) return;
+    setVeilMode(false);
     const box: TextBox = {
       id: newId("b"),
       x,
@@ -914,7 +956,8 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   const endEdit = (id: string) => {
     setEditingBox((e) => (e === id ? null : e));
     editBoxes(id, (pages, pageId, box) => {
-      if (!box.text.trim() && !box.link) return removeBox(pages, pageId, id);
+      // 베일은 글이 없어도 둔다 (베일 위에 "?")
+      if (!box.text.trim() && !box.link && !box.veil) return removeBox(pages, pageId, id);
       if (box.w == null || box.h == null) return pages;
       // 크기가 정해진 상자: 글에 맞춰 바뀐 글자 크기를 적어 둔다 (이전 버전·썸네일용)
       const page = pages.find((p) => p.id === pageId)!;
@@ -1350,7 +1393,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
       const id = box.id;
       const dangling = isDangling(box, doc.pages);
       return {
-        title: box.link ? "링크" : "글상자",
+        title: box.veil ? "베일" : box.link ? "링크" : "글상자",
         groups: [
           [
             box.link &&
@@ -1368,12 +1411,12 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
                 setEditingBox(id);
               },
             },
-            {
+            !box.veil && {
               label: "링크",
               icon: <Link2 size={18} />,
               onSelect: () => setLinkDialog({ boxId: id, created: false }),
             },
-            {
+            !box.veil && {
               label: "화살표",
               icon: <MoveUpRight size={18} />,
               onSelect: () => {
@@ -1515,6 +1558,14 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
               },
             },
             at && { label: "링크", icon: <Link2 size={18} />, onSelect: () => createLinkBox(at) },
+            at && {
+              label: "베일 (가리기)",
+              icon: <Blinds size={18} />,
+              onSelect: () => {
+                setTextMode(true);
+                createVeil({ x: at.x, y: at.y, w: 0, h: 0 });
+              },
+            },
             {
               label: "이미지",
               icon: <ImagePlus size={18} />,
@@ -1980,19 +2031,39 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
         </IconButton>
         <IconButton
           label="텍스트 상자"
-          active={textMode}
+          active={textMode && !veilMode}
           disabled={!currentPage}
           onClick={() => {
-            if (textMode) {
+            if (textMode && !veilMode) {
               leaveTextMode();
               return;
             }
             setPopover(null);
+            setVeilMode(false);
             setTextMode(true);
             showToast("페이지를 누르면 글상자가 생깁니다. 상자를 누르면 옮기기·고치기·링크");
           }}
         >
           <Type size={23} />
+        </IconButton>
+        <IconButton
+          label="베일 (가리기)"
+          active={textMode && veilMode}
+          disabled={!currentPage}
+          onClick={() => {
+            if (textMode && veilMode) {
+              leaveTextMode();
+              return;
+            }
+            setPopover(null);
+            setSelectedBox(null);
+            setEditingBox(null);
+            setTextMode(true);
+            setVeilMode(true);
+            showToast("가릴 곳을 끌어서 베일을 씌우세요. 강의 모드에서 누르면 걷힙니다");
+          }}
+        >
+          <Blinds size={23} />
         </IconButton>
         <IconButton label="링크 만들기" disabled={!currentPage} onClick={() => createLinkBox()}>
           <Link2 size={23} />
@@ -2098,6 +2169,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
           onNavigate={goTo}
           onPdfRendered={setPdfRenderMs}
           lecture={lecture}
+          spotlight={lecture && spotOn ? SPOTLIGHT_SIZES[spotStep] : null}
           inkOff={textMode || !!selectedSticker}
           webReloads={webReloads}
           onLongPress={onLongPress}
@@ -2157,6 +2229,9 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
                     editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { border }));
                   }}
                   onAnim={(id, anim) => editBoxes(id, (pages, pageId) => animBox(pages, pageId, id, anim))}
+                  veilDraw={veilMode}
+                  onCreateVeil={createVeil}
+                  onVeilColor={(id, color) => editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { veil: { color } }))}
                   lecture={lecture}
                   revealed={revealed}
                   onReveal={(id, open) =>
@@ -2285,6 +2360,25 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
                 >
                   <Palette size={20} />
                 </button>
+                <button
+                  aria-label={spotOn ? "스포트라이트 끄기" : "스포트라이트"}
+                  title="스포트라이트: 펜·손가락이 있는 곳만 밝게"
+                  aria-pressed={spotOn}
+                  className={spotOn ? "on" : undefined}
+                  onClick={() => setSpotOn((v) => !v)}
+                >
+                  <Flashlight size={20} />
+                </button>
+                {spotOn && (
+                  <>
+                    <button aria-label="스포트라이트 작게" disabled={spotStep === 0} onClick={() => stepSpot(-1)}>
+                      <Minus size={18} />
+                    </button>
+                    <button aria-label="스포트라이트 크게" disabled={spotStep === SPOTLIGHT_SIZES.length - 1} onClick={() => stepSpot(1)}>
+                      <Plus size={18} />
+                    </button>
+                  </>
+                )}
                 <span className="page-nav-sep" />
                 <button aria-label="강의 모드 끝내기" title="강의 모드 끝내기 (Esc)" onClick={exitLecture}>
                   <Minimize2 size={20} />

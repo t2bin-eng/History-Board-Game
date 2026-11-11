@@ -80,8 +80,10 @@ export interface TextBox {
   underline?: boolean;
   /** 줄 맞춤 (v0.25): 없으면 왼쪽 */
   align?: "center" | "right";
-  /** 애니메이션 (v0.26): 강의 모드에서 어떻게 나타나는지. 없으면 늘 보임 */
+  /** 애니메이션 (v0.26, 쪽지·강조 v0.28): 강의 모드에서 어떻게 나타나고 강조되는지. 없으면 늘 보임 */
   anim?: BoxAnim;
+  /** 베일 (v0.28): 글상자가 아니라 이 자리를 덮는 천. 강의 모드에서 누르면 걷힌다. text는 베일 위 짧은 글 */
+  veil?: { color: string };
   link?: BoxLink;
   /** 페이지 링크를 걸 때 연결한 페이지에 자동으로 생긴 "돌아가기" 링크 */
   role?: "back";
@@ -91,11 +93,17 @@ export interface TextBox {
 
 /** 글상자 애니메이션 (v0.26, SPEC 5장 boxes "애니메이션") */
 export interface BoxAnim {
-  /** "fold": 강의 모드에서 접힌 띠로 있다가 누르면 펼쳐진다 */
-  reveal: "fold";
+  /** "fold": 강의 모드에서 쪽지(포스트잇)로 접혀 있다가 누르면 펼쳐진다 */
+  reveal?: "fold";
   /** 펼친 뒤 글자가 한 자씩 입력되듯 (한글은 자모가 조합되며). 없으면 한 번에 */
   typing?: boolean;
+  /** 접힌 쪽지 (v0.28): 한 변(페이지 가로 대비) · 색 · 손글씨 글 */
+  note?: { w?: number; color?: string; label?: string };
+  /** 강조 (v0.28): 형광펜 · 통통 · 반짝 */
+  emphasis?: BoxEmphasis;
 }
+
+export type BoxEmphasis = "highlight" | "bounce" | "glow";
 
 /** 글상자 글꼴 (v0.25): 명조 · 손글씨 · 둥근 · 제목 (없으면 기본 고딕) */
 export type BoxFont = "serif" | "hand" | "round" | "title";

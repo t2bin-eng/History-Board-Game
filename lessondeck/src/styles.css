@@ -2007,87 +2007,113 @@ button.doc-title:hover {
   flex: 1 1 auto;
 }
 
-/* ── 글상자 애니메이션 (v0.26): 접었다 펼치기 — 강의 모드에서 두루마리처럼 말려 있다가 누르면 굴러 내려가며 펼쳐진다 ── */
-.tb-fold,
-.tb-roller {
+/* ── 글상자 애니메이션 (v0.26 · 쪽지 v0.28): 강의 모드에서 포스트잇 쪽지로 접혀 있다가 누르면 쪽지가 떼어지며 펼쳐진다 ── */
+.tb-note {
   position: absolute;
+  z-index: 2;
   box-sizing: border-box;
+  display: grid;
+  place-items: center;
   margin: 0;
   padding: 0;
   border: none;
-  border-radius: 999px;
-  /* 말린 종이: 위는 밝고 아래는 그늘진 원통 */
+  /* 오른쪽 아래가 살짝 들린 종이 */
+  border-radius: 2px 2px 18% 2px / 2px 2px 7% 2px;
   background:
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 40%, rgba(0, 0, 0, 0) 58%, rgba(0, 0, 0, 0.24)),
-    var(--paper, #f1deb0);
+    linear-gradient(165deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0) 45%, rgba(0, 0, 0, 0) 70%, rgba(120, 80, 0, 0.1)),
+    var(--note, #ffe27a);
   box-shadow:
-    0 2px 5px rgba(0, 0, 0, 0.28),
-    inset 0 0 0 1px rgba(0, 0, 0, 0.13);
-  color: rgba(70, 45, 10, 0.6);
+    0 1px 2px rgba(0, 0, 0, 0.18),
+    2px 5px 9px -3px rgba(0, 0, 0, 0.32);
+  color: rgba(70, 45, 15, 0.72);
+  transform: rotate(var(--tilt, -2deg));
+  transform-origin: 40% 10%;
 }
 
-/* 두루마리 축 양 끝 마개 */
-.tb-fold::before,
-.tb-fold::after,
-.tb-roller::before,
-.tb-roller::after {
+/* 위쪽 반투명 마스킹테이프 */
+.tb-note::before {
   content: "";
   position: absolute;
-  top: -14%;
-  bottom: -14%;
-  width: 7px;
-  border-radius: 3px;
-  background: linear-gradient(to bottom, #b07c40, #6a4019);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  top: -11%;
+  left: 50%;
+  width: 46%;
+  height: 22%;
+  transform: translateX(-50%) rotate(-4deg);
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.28) 0 3px, rgba(255, 255, 255, 0) 3px 6px),
+    rgba(255, 255, 255, 0.55);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.08);
 }
 
-.tb-fold::before,
-.tb-roller::before {
-  left: -3px;
+/* 들린 모서리 */
+.tb-note::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 24%;
+  height: 24%;
+  border-radius: 0 0 100% 0 / 0 0 40% 0;
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0) 48%, rgba(0, 0, 0, 0.06) 50%, rgba(255, 255, 255, 0.55) 100%);
 }
 
-.tb-fold::after,
-.tb-roller::after {
-  right: -3px;
+.tb-note-label {
+  position: relative;
+  white-space: var(--note-wrap, nowrap);
+  max-width: 88%;
+  margin-top: 6%;
+  font-family: "Yeon Sung", "Pretendard", system-ui, sans-serif;
+  line-height: 1.05;
+  text-align: center;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  pointer-events: none;
 }
 
-.tb-fold {
-  display: grid;
-  place-items: center;
+button.tb-note {
   pointer-events: auto;
   cursor: pointer;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
-  animation: tb-fold-in 0.22s ease-out;
+  animation: tb-note-in 0.3s ease-out;
 }
 
-.tb-fold:active {
-  filter: brightness(0.94);
+button.tb-note:active {
+  filter: brightness(0.95);
 }
 
-/* 눌러 보라는 표시: 천천히 오르내림 */
-.tb-fold-hint {
-  animation: tb-bob 1.8s ease-in-out infinite;
-}
-
-.tb-roller {
-  z-index: 2;
+/* 텍스트 모드에서 애니메이션 창을 연 동안 보이는 접힌 쪽지 */
+.tb-note.ghost {
+  opacity: 0.92;
+  outline: 2px dashed rgba(63, 195, 230, 0.9);
+  outline-offset: 3px;
   pointer-events: none;
-  animation: tb-roll var(--roll-ms, 560ms) cubic-bezier(0.3, 0.75, 0.4, 1) both;
 }
 
-.tb-roller.up,
-.text-box.rolling-up {
-  animation-direction: reverse;
+/* 펼칠 때: 쪽지가 떼어져 날아가고 */
+.tb-note.peel {
+  pointer-events: none;
+  animation: tb-peel var(--play-ms, 520ms) cubic-bezier(0.5, 0, 0.75, 0.4) both;
 }
 
-/* 상자는 축이 지나간 곳까지만 보인다 (축과 같은 박자) */
-.text-box.unrolling,
-.text-box.rolling-up {
-  animation-name: tb-unroll;
-  animation-duration: var(--roll-ms, 560ms);
-  animation-timing-function: cubic-bezier(0.3, 0.75, 0.4, 1);
+/* 접을 때: 쪽지가 다시 붙고 */
+.tb-note.drop {
+  pointer-events: none;
+  animation: tb-drop var(--play-ms, 360ms) ease-out both;
+}
+
+/* 상자는 쪽지 자리(왼쪽 위)에서부터 펼쳐진다 */
+.text-box.unfolding,
+.text-box.folding {
+  animation-name: tb-unfold;
+  animation-duration: var(--play-ms, 520ms);
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
   animation-fill-mode: both;
+}
+
+.text-box.folding {
+  animation-direction: reverse;
+  animation-timing-function: cubic-bezier(0.6, 0, 0.8, 0.4);
 }
 
 /* 펼치는 중에는 눌러서 바로 다 보이게 */
@@ -2095,43 +2121,258 @@ button.doc-title:hover {
   pointer-events: auto;
 }
 
-@keyframes tb-unroll {
+@keyframes tb-unfold {
   from {
-    clip-path: inset(0 -10px calc(100% - var(--fold-h) / 2) -10px);
+    clip-path: inset(0 calc(100% - var(--note-w, 40px)) calc(100% - var(--note-w, 40px)) 0 round 4px);
+    opacity: 0.3;
   }
   to {
-    clip-path: inset(-10px);
+    clip-path: inset(-12px round 0px);
+    opacity: 1;
   }
 }
 
-@keyframes tb-roll {
+@keyframes tb-peel {
   0% {
-    transform: translateY(0);
-    opacity: 1;
+    transform: rotate(var(--tilt));
   }
-  80% {
+  30% {
+    transform: translate(6%, -12%) rotate(calc(var(--tilt) + 9deg)) scale(1.06);
     opacity: 1;
   }
   100% {
-    transform: translateY(var(--travel));
+    transform: translate(80%, -70%) rotate(calc(var(--tilt) + 30deg)) scale(0.8);
     opacity: 0;
   }
 }
 
-@keyframes tb-fold-in {
+@keyframes tb-drop {
+  0%,
+  45% {
+    transform: translateY(-35%) rotate(calc(var(--tilt) - 12deg)) scale(1.3);
+    opacity: 0;
+  }
+  100% {
+    transform: rotate(var(--tilt));
+    opacity: 1;
+  }
+}
+
+@keyframes tb-note-in {
   from {
-    transform: scaleY(0.4);
+    transform: rotate(var(--tilt)) scale(0.6);
     opacity: 0;
   }
 }
 
-@keyframes tb-bob {
+/* ── 베일 (v0.28): 강의 모드에서 천으로 덮고, 누르면 걷힌다 ── */
+.tb-veil {
+  position: absolute;
+  z-index: 2;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: none;
+  border-radius: 6px;
+  /* 벨벳: 비스듬한 윤기 + 세로 주름 */
+  background:
+    linear-gradient(115deg, rgba(255, 255, 255, 0) 30%, rgba(255, 255, 255, 0.16) 45%, rgba(255, 255, 255, 0) 60%),
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0) 0 9px, rgba(0, 0, 0, 0.1) 9px 11px, rgba(255, 255, 255, 0.05) 11px 13px, rgba(0, 0, 0, 0) 13px 22px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.1), rgba(0, 0, 0, 0.22)),
+    var(--veil, #34336b);
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.35),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.2);
+  color: rgba(255, 255, 255, 0.92);
+  pointer-events: auto;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transform-origin: 50% 0;
+}
+
+.tb-veil:active {
+  filter: brightness(1.12);
+}
+
+/* 걷힐 때: 위로 들리며 펄럭이고 사라짐 */
+.tb-veil.lifting {
+  pointer-events: none;
+  animation: tb-lift 0.62s cubic-bezier(0.45, 0, 0.7, 0.4) both;
+}
+
+/* 다시 씌울 때 */
+.tb-veil.dropping {
+  animation: tb-cover 0.32s ease-out both;
+}
+
+@keyframes tb-lift {
+  0% {
+    transform: none;
+  }
+  25% {
+    transform: translateY(-4%) scaleY(1.04) skewX(-3deg);
+  }
+  55% {
+    transform: translateY(-30%) scaleY(0.85) skewX(4deg) rotate(-2deg);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(6%, -110%) scaleY(0.45) skewX(-6deg) rotate(-5deg);
+    opacity: 0;
+  }
+}
+
+@keyframes tb-cover {
+  from {
+    transform: translateY(-40%) scaleY(0.6);
+    opacity: 0;
+  }
+}
+
+.veil-label {
+  position: relative;
+  max-width: 94%;
+  overflow: hidden;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+/* 강의 모드가 아닐 때의 베일: 반투명(그 밑이 보임) · 점선 테두리 */
+.text-box.veil-box {
+  display: grid;
+  place-items: center;
+  padding: 0 !important;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--veil, #34336b) 42%, transparent);
+  outline: 2px dashed var(--veil, #34336b);
+  outline-offset: -2px;
+  color: #fff;
+}
+
+.text-box.veil-box .veil-label {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+/* 베일 그리기: 끄는 동안 보이는 네모 */
+.box-layer.veil-draw {
+  cursor: crosshair;
+}
+
+.veil-band {
+  position: absolute;
+  border: 2px dashed #34336b;
+  border-radius: 6px;
+  background: rgba(52, 51, 107, 0.3);
+  pointer-events: none;
+}
+
+/* ── 스포트라이트 (v0.28): 강의 모드에서 펜·손이 있는 곳만 밝게 (누름은 지나감, 넘기기 바는 위) ── */
+.spotlight {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background: radial-gradient(
+    circle var(--sr, 170px) at var(--sx, 50%) var(--sy, 50%),
+    rgba(0, 0, 0, 0) 0,
+    rgba(0, 0, 0, 0) calc(var(--sr, 170px) - 16px),
+    rgba(0, 0, 0, 0.8) var(--sr, 170px)
+  );
+  animation: spotlight-in 0.3s ease-out;
+}
+
+@keyframes spotlight-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* ── 강조 (v0.28): 형광펜 · 통통 · 반짝 ── */
+.tb-ink {
+  background-image: linear-gradient(rgba(255, 236, 0, 0) 52%, rgba(255, 236, 0, 0.62) 52%, rgba(255, 228, 0, 0.62) 94%, rgba(255, 236, 0, 0) 94%);
+  background-repeat: no-repeat;
+  background-size: 0% 100%;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  transition: background-size 0.25s ease-in;
+}
+
+.text-box.marked .tb-ink {
+  background-size: 100% 100%;
+  transition: background-size 0.5s cubic-bezier(0.3, 0.6, 0.4, 1);
+  transition-delay: calc(var(--i, 0) * 0.22s);
+}
+
+.text-box.emph-bounce {
+  animation: tb-bounce 0.75s cubic-bezier(0.3, 0.6, 0.4, 1);
+  transform-origin: 50% 85%;
+}
+
+@keyframes tb-bounce {
+  0% {
+    transform: none;
+  }
+  18% {
+    transform: translateY(-14%) scale(1.12, 0.94);
+  }
+  36% {
+    transform: translateY(0) scale(0.94, 1.06);
+  }
+  52% {
+    transform: translateY(-6%) scale(1.04, 0.98);
+  }
+  70% {
+    transform: none scale(0.99, 1.01);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+.text-box.emph-glow {
+  animation: tb-glow 1.1s ease-in-out;
+}
+
+/* 반짝: 빛 한 줄기가 지나가고 둘레가 빛남 */
+.text-box.emph-glow::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background: linear-gradient(105deg, rgba(255, 255, 255, 0) 35%, rgba(255, 255, 255, 0.85) 50%, rgba(255, 255, 255, 0) 65%) no-repeat;
+  background-size: 250% 100%;
+  mix-blend-mode: screen;
+  pointer-events: none;
+  animation: tb-shine 1.1s ease-in-out;
+}
+
+@keyframes tb-glow {
   0%,
   100% {
-    transform: translateY(-1px);
+    filter: none;
   }
-  50% {
-    transform: translateY(2px);
+  35% {
+    filter: drop-shadow(0 0 6px rgba(255, 210, 40, 0.95)) drop-shadow(0 0 14px rgba(255, 180, 0, 0.7)) brightness(1.08);
+  }
+  65% {
+    filter: drop-shadow(0 0 4px rgba(255, 210, 40, 0.8)) drop-shadow(0 0 10px rgba(255, 180, 0, 0.5));
+  }
+}
+
+@keyframes tb-shine {
+  from {
+    background-position: 140% 0;
+  }
+  to {
+    background-position: -60% 0;
   }
 }
 
@@ -2242,11 +2483,6 @@ button.doc-title:hover {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .tb-fold-hint {
-    animation: none;
-  }
-}
 
 /* 평소에는 링크만 누를 수 있다 (나머지 글자 위로는 필기가 지나감) */
 .text-box.link,
@@ -4308,6 +4544,31 @@ body:has(.select-bar) .toast {
   padding: 0 6px;
   font-size: 13px;
   font-variant-numeric: tabular-nums;
+}
+
+.box-anim-title {
+  min-width: 52px;
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.box-anim-label {
+  width: 120px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: var(--chrome);
+  color: var(--text);
+  font-family: "Yeon Sung", system-ui, sans-serif;
+  font-size: 16px;
+}
+
+.box-veil-colors {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .box-anim-hint {

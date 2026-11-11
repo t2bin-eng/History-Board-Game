@@ -5,8 +5,8 @@ import {
   ArrowLeftRight,
   ArrowRight,
   Bold,
-  ChevronDown,
   ChevronUp,
+  EyeOff,
   Italic,
   Keyboard,
   Copy,
@@ -20,8 +20,9 @@ import {
   Play,
   Plus,
   Scissors,
-  ScrollText,
+  Sparkles,
   Square,
+  StickyNote,
   Trash2,
   Type,
   Underline,
@@ -30,14 +31,16 @@ import {
 } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { arrowEnds, arrowPathD, arrowShape, arrowsOf, bendFromHandle, cleanBend, type ArrowShape, type ArrowTarget, type Rect } from "../doc/arrows";
+import { EMPHASES, MAX_NOTE_W, MIN_NOTE_W, NOTE_COLORS, NOTE_LABEL_MAX, noteOf, VEIL_COLORS, veilLabel } from "../doc/boxAnim";
 import { BOX_FONTS, boxTextStyle, type BoxFormat } from "../doc/boxFonts";
 import { BOX_BG_COLORS, BOX_COLORS, BOX_SIZES, boxBackground, boxBorder, boxLabel, boxesOf, boxPlainLabel, isAutoPageLink, isDangling } from "../doc/boxes";
 import { layoutBox } from "../doc/textLayout";
 import { frameAt, typedLines, typingPlan } from "../doc/typing";
-import type { BoxAnim, BoxArrow, BoxBorder, BoxLink, Page, TextBox } from "../doc/types";
+import type { BoxAnim, BoxArrow, BoxBorder, BoxEmphasis, BoxLink, Page, TextBox } from "../doc/types";
 import type { PageSize } from "../ink/geometry";
 import { boxRectPx } from "./boxGeometry";
 import { measureFor, useFontsVersion } from "./textMeasure";
+import { pointerKind } from "../lib/inputState";
 
 interface Props {
   page: Page;
@@ -92,9 +95,15 @@ interface Props {
   onAnim: (id: string, anim: BoxAnim | undefined) => void;
   /** 강의 모드 (v0.26): 접었다 펼치기 상자는 접혀 있다가 누르면 펼쳐진다 */
   lecture?: boolean;
-  /** 이번 강의 모드에서 펼친 상자 */
+  /** 이번 강의 모드에서 펼친 상자·걷은 베일 */
   revealed?: ReadonlySet<string>;
   onReveal?: (id: string, open: boolean) => void;
+  /** 베일 그리기 (v0.28, 텍스트 모드의 한 갈래): 끌어서 그 자리를 덮는 베일을 만든다 (톡 누르면 기본 크기) */
+  veilDraw?: boolean;
+  /** 베일 만들기: 페이지 대비 [x, y, w, h], 톡 누름이면 w·h 0 */
+  onCreateVeil?: (r: { x: number; y: number; w: number; h: number }) => void;
+  /** 베일 색 바꾸기 */
+  onVeilColor?: (id: string, color: string) => void;
 }
 
 const DRAG_SLOP = 5;
@@ -104,22 +113,37 @@ const MIN_H = 0.02;
 
 type HandleMode = "e" | "s" | "se";
 
-/** 애니메이션 (v0.26): 두루마리가 굴러 내려가며 펼쳐지는 시간 · 다시 말려 올라가는 시간 · 미리 보기에서 접힌 채 보여 주는 시간 · 다 친 뒤 커서가 깜빡이는 시간 */
-const UNROLL_MS = 560;
-const ROLLUP_MS = 340;
-const PREVIEW_FOLDED_MS = 700;
+/**
+ * 애니메이션 (v0.26 · 쪽지 v0.28): 쪽지가 떼어지며 상자가 펼쳐지는 시간 · 다시 접히는 시간 · 미리 보기에서 접힌 채 보여 주는 시간 ·
+ * 다 친 뒤 커서가 깜빡이는 시간 · 베일이 걷히는 시간 · 다시 씌우는 시간 · 미리 보기의 형광펜이 남아 있는 시간
+ */
+const UNFOLD_MS = 520;
+const REFOLD_MS = 360;
+const PREVIEW_FOLDED_MS = 800;
 const CARET_LINGER_MS = 650;
+const LIFT_MS = 620;
+const COVER_MS = 320;
+const PREVIEW_MARK_MS = 2200;
+/** 강조를 부르는 톡 누름: 이만큼 안 움직이고 이 시간 안에 뗌 */
+const TAP_SLOP = 10;
+const TAP_MS = 600;
 
-/** 펼치는 중 · 접는 중 · (미리 보기) 접힌 채 기다리는 중 */
+/** 펼치는 중 · 접는 중 · (미리 보기) 접힌 채 기다리는 중 · 베일 걷는 중 · 베일 씌우는 중 */
 interface Play {
   id: string;
-  dir: "fold" | "open" | "close";
+  dir: "fold" | "open" | "close" | "lift" | "cover";
   typing: boolean;
+  /** 다 펼친 뒤 부를 강조 */
+  emphasis?: BoxEmphasis;
+  /** 텍스트 모드의 미리 보기 (강의 모드의 펼친 상태는 바꾸지 않음) */
+  preview?: boolean;
 }
 
-/** 접힌 띠(두루마리) 높이: 글자 한 줄쯤, 24~44px (손가락으로 누르기 쉽게) */
-function foldHeight(fontPx: number): number {
-  return Math.round(clamp(fontPx * 1.1, 24, 44));
+/** 상자마다 조금씩 다르게 기운 쪽지 (-4.5° ~ 4.5°, id로 정해져 늘 같음) */
+function noteTilt(id: string): number {
+  let h = 0;
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) | 0;
+  return ((Math.abs(h) % 7) - 3) * 1.5;
 }
 
 // 페이지 위 텍스트 상자·하이퍼링크 층 (필기층 위). 평소에는 링크만 누를 수 있고 나머지는 필기가 지나간다.
@@ -134,6 +158,9 @@ export function BoxLayer(props: Props) {
   const [liveSize, setLiveSize] = useState<{ id: string; w: number; h: number } | null>(null);
   /** 애니메이션 상자를 펼치거나 접는 중 (v0.26) */
   const [play, setPlay] = useState<Play | null>(null);
+  /** 고른 상자 막대에서 연 창 (애니메이션 창이면 접힌 쪽지를 미리 보여 준다) */
+  const [boxPanel, setBoxPanel] = useState<{ id: string; panel: ToolbarPanel } | null>(null);
+  useEffect(() => setBoxPanel(null), [selectedId]);
   const heightRatio = size.height / Math.max(1, size.width);
   // 앱에 넣은 글꼴은 쓰는 글자 묶음을 그때그때 받아 오므로, 다 받으면 다시 재서 그린다
   useFontsVersion();
@@ -156,31 +183,152 @@ export function BoxLayer(props: Props) {
 
   const boxes = boxesOf(page).filter((b) => !(b.role === "back" && isDangling(b, pages)));
 
-  // ── 애니메이션 (v0.26): 강의 모드에서 접혀 있다가 누르면 두루마리처럼 펼쳐지고, 글자가 입력되듯 나온다 ──
-  const foldable = (b: TextBox) => b.anim?.reveal === "fold" && !b.link;
-  /** 지금 접힌 띠로 보이는 상자: 강의 모드에서 아직 펼치지 않은 것, 미리 보기의 접힌 때 */
+  // ── 애니메이션 (v0.26 · v0.28): 강의 모드에서 쪽지로 접혀 있다가 누르면 쪽지가 떼어지며 펼쳐지고, 글자가 입력되듯 나온다 ──
+  const foldable = (b: TextBox) => b.anim?.reveal === "fold" && !b.link && !b.veil;
+  /** 지금 쪽지로 접혀 보이는 상자: 강의 모드에서 아직 펼치지 않은 것, 미리 보기의 접힌 때 */
   const isFolded = (b: TextBox) => foldable(b) && (play?.id === b.id ? play.dir === "fold" : !!props.lecture && !editMode && !props.revealed?.has(b.id));
+  /** 강의 모드에서 아직 걷지 않은 베일 (씌우는 중 포함) */
+  const isVeiled = (b: TextBox) => !!b.veil && !!props.lecture && !editMode && (!props.revealed?.has(b.id) || (play?.id === b.id && play.dir === "cover"));
   const onRevealRef = useRef(props.onReveal);
   onRevealRef.current = props.onReveal;
   const openBox = (b: TextBox) => {
     onRevealRef.current?.(b.id, true);
-    setPlay({ id: b.id, dir: "open", typing: !!b.anim?.typing });
+    setPlay({ id: b.id, dir: "open", typing: !!b.anim?.typing, emphasis: b.anim?.emphasis });
   };
-  // 펼치기(타자 없음)·접기·미리 보기의 접힌 때가 끝나면 다음으로. 타자는 다 치면 TypedText가 끝낸다
+  const liftVeil = (b: TextBox) => {
+    onRevealRef.current?.(b.id, true);
+    setPlay({ id: b.id, dir: "lift", typing: false });
+  };
+  const coverVeil = (b: TextBox) => {
+    onRevealRef.current?.(b.id, false);
+    setPlay({ id: b.id, dir: "cover", typing: false });
+  };
+
+  // ── 강조 (v0.28): 형광펜(칠해지고 남음, 다시 누르면 지움) · 통통 · 반짝 ──
+  const [emph, setEmph] = useState<{ id: string; kind: "bounce" | "glow" } | null>(null);
+  const [marked, setMarked] = useState<ReadonlySet<string>>(() => new Set());
+  const markTimer = useRef(0);
+  const emphasize = (id: string, kind: BoxEmphasis | undefined, preview = false) => {
+    if (!kind) return;
+    if (kind === "highlight") {
+      setMarked((prev) => {
+        const next = new Set(prev);
+        if (next.has(id) && !preview) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+      if (preview) {
+        clearTimeout(markTimer.current);
+        markTimer.current = window.setTimeout(() => setMarked((prev) => new Set([...prev].filter((x) => x !== id))), PREVIEW_MARK_MS);
+      }
+      return;
+    }
+    setEmph((e) => (e?.id === id ? e : { id, kind }));
+  };
+  // 강의 모드를 시작하거나 끝내면 칠한 형광펜은 지운다
+  useEffect(() => {
+    setMarked(new Set());
+    setEmph(null);
+  }, [props.lecture]);
+  useEffect(() => () => clearTimeout(markTimer.current), []);
+
+  // 펼치기(타자 없음)·접기·미리 보기의 접힌 때·베일 걷기/씌우기가 끝나면 다음으로. 타자는 다 치면 TypedText가 끝낸다
   useEffect(() => {
     if (!play) return;
-    const ms = play.dir === "fold" ? PREVIEW_FOLDED_MS : play.dir === "close" ? ROLLUP_MS : play.typing ? 0 : UNROLL_MS;
+    const ms = { fold: PREVIEW_FOLDED_MS, close: REFOLD_MS, lift: LIFT_MS, cover: COVER_MS, open: play.typing ? 0 : UNFOLD_MS }[play.dir];
     if (!ms) return;
     const t = window.setTimeout(() => {
       if (play.dir === "fold") return setPlay({ ...play, dir: "open" });
-      if (play.dir === "close") onRevealRef.current?.(play.id, false);
+      if (play.dir === "close" && !play.preview) onRevealRef.current?.(play.id, false);
       setPlay(null);
+      if (play.dir === "open") emphasize(play.id, play.emphasis, play.preview);
     }, ms);
     return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [play]);
+  const finishTyping = (id: string) => {
+    const p = play;
+    if (p?.id !== id || p.dir !== "open") return;
+    setPlay(null);
+    emphasize(id, p.emphasis, p.preview);
+  };
+
+  // 강의 모드: 강조가 있는 상자를 손가락(마우스)으로 톡 누르면 강조. 상자는 필기가 지나가야 하므로 누름을 가로채지 않고 자리로 찾는다
+  const tapTargets = useRef<{ boxes: TextBox[]; rects: Map<string, Rect>; folded: (b: TextBox) => boolean; emphasize: typeof emphasize }>(null!);
+  useEffect(() => {
+    if (!props.lecture) return;
+    let tap: { id: number; x: number; y: number; t: number } | null = null;
+    const down = (e: PointerEvent) => {
+      tap = pointerKind(e) === "pen" || !e.isPrimary ? null : { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() };
+    };
+    const up = (e: PointerEvent) => {
+      const t = tap;
+      tap = null;
+      if (!t || t.id !== e.pointerId || Math.hypot(e.clientX - t.x, e.clientY - t.y) > TAP_SLOP || performance.now() - t.t > TAP_MS) return;
+      const target = e.target as Element | null;
+      // 쪽지·베일·단추·팝업 그림·넘기기 바 같은 것을 누른 것은 빼고
+      if (target?.closest?.(".tb-note, .tb-veil, .tb-refold, .popup-icon, .popup-backdrop, .popup-frame, .spotlight-tools") || (target?.closest?.("[data-no-gesture]") && !target.closest(".text-box"))) return;
+      const layer = layerRef.current;
+      if (!layer) return;
+      const lr = layer.getBoundingClientRect();
+      const { boxes: list, rects: rs, folded, emphasize: go } = tapTargets.current;
+      const x = ((e.clientX - lr.left) * size.width) / Math.max(1, lr.width);
+      const y = ((e.clientY - lr.top) * size.height) / Math.max(1, lr.height);
+      for (let i = list.length - 1; i >= 0; i--) {
+        const b = list[i];
+        const r = rs.get(b.id);
+        if (!b.anim?.emphasis || b.veil || b.link || folded(b) || !r) continue;
+        if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return go(b.id, b.anim.emphasis);
+      }
+    };
+    window.addEventListener("pointerdown", down, true);
+    window.addEventListener("pointerup", up, true);
+    return () => {
+      window.removeEventListener("pointerdown", down, true);
+      window.removeEventListener("pointerup", up, true);
+    };
+  }, [props.lecture, size.width, size.height]);
+
+  // ── 베일 그리기 (v0.28): 텍스트 모드에서 끌어 그 자리를 덮는 베일 ──
+  const band = useRef<{ pointer: number; x0: number; y0: number } | null>(null);
+  const [bandRect, setBandRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const onBandDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!editMode || !props.veilDraw || e.target !== e.currentTarget || e.button > 0) return;
+    const p = toRatio(e.clientX, e.clientY);
+    band.current = { pointer: e.pointerId, x0: clamp(p.x, 0, 1), y0: clamp(p.y, 0, 1) };
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // 잡을 수 없는 포인터면 그냥 둔다
+    }
+  };
+  const onBandMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const g = band.current;
+    if (!g || g.pointer !== e.pointerId) return;
+    const p = toRatio(e.clientX, e.clientY);
+    const x1 = clamp(p.x, 0, 1);
+    const y1 = clamp(p.y, 0, 1);
+    setBandRect({ x: Math.min(g.x0, x1), y: Math.min(g.y0, y1), w: Math.abs(x1 - g.x0), h: Math.abs(y1 - g.y0) });
+  };
+  const onBandUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const g = band.current;
+    if (!g || g.pointer !== e.pointerId) return;
+    band.current = null;
+    const r = bandRect;
+    setBandRect(null);
+    if (e.type !== "pointerup") return;
+    const dragged = r && r.w * size.width > 8 && r.h * size.height > 8;
+    // 톡 누름: 고른 것이 있으면 고르기만 풀고, 아니면 그 자리에 기본 크기 베일
+    if (!dragged && (selectedId || props.selectedArrow)) {
+      props.onSelect(null);
+      props.onSelectArrow(null);
+      return;
+    }
+    props.onCreateVeil?.(dragged ? r! : { x: g.x0, y: g.y0, w: 0, h: 0 });
+  };
 
   const onLayerClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!editMode || e.target !== e.currentTarget) return;
+    if (!editMode || e.target !== e.currentTarget || props.veilDraw) return;
     // 화살표 끝을 기다리는 중: 누른 곳을 가리키는 화살표 (줄 그은 곳·그림 등 아무 곳)
     if (props.connectFrom) {
       const p = toRatio(e.clientX, e.clientY);
@@ -330,6 +478,7 @@ export function BoxLayer(props: Props) {
   // 접힌 상자에 닿은 화살표는 펼칠 때까지 감추고, 펼치는 상자의 화살표는 펼친 뒤 그려 나간다 (v0.26)
   const veiled = new Set(boxes.filter((b) => isFolded(b) || (play?.id === b.id && play.dir === "close")).map((b) => b.id));
   const growing = (a: BoxArrow) => play?.dir === "open" && (a.from === play.id || a.to === play.id);
+  tapTargets.current = { boxes, rects, folded: isFolded, emphasize };
   const shapes = arrows.flatMap((a) => {
     if (veiled.has(a.from) || (a.to && veiled.has(a.to))) return [];
     const { shape } = liveArrow(a);
@@ -374,17 +523,27 @@ export function BoxLayer(props: Props) {
   return (
     <div
       ref={layerRef}
-      className={`box-layer${editMode ? " edit" : ""}${props.connectFrom ? " connecting" : ""}`}
+      className={`box-layer${editMode ? " edit" : ""}${props.connectFrom ? " connecting" : ""}${editMode && props.veilDraw ? " veil-draw" : ""}`}
       data-no-gesture={editMode || undefined}
       onClick={onLayerClick}
+      onPointerDown={onBandDown}
+      onPointerMove={onBandMove}
+      onPointerUp={onBandUp}
+      onPointerCancel={onBandUp}
     >
+      {bandRect && (
+        <div
+          className="veil-band"
+          style={{ left: bandRect.x * size.width, top: bandRect.y * size.height, width: bandRect.w * size.width, height: bandRect.h * size.height }}
+        />
+      )}
       {shapes.length > 0 && (
         <svg className="arrow-layer" width={size.width} height={size.height} aria-hidden={!editMode}>
           {shapes.map(({ arrow: a, shape: s }) => {
             const d = arrowPathD(s);
             const grow = growing(a);
             return (
-              <g key={a.id} data-arrow-id={a.id} className={grow ? "arrow-grow" : undefined} style={grow ? ({ "--grow-delay": `${UNROLL_MS}ms` } as CSSProperties) : undefined}>
+              <g key={a.id} data-arrow-id={a.id} className={grow ? "arrow-grow" : undefined} style={grow ? ({ "--grow-delay": `${UNFOLD_MS}ms` } as CSSProperties) : undefined}>
                 {picked?.arrow.id === a.id && <path d={d} className="arrow-glow" strokeWidth={lineW + 10} />}
                 <path d={d} className="arrow-line" pathLength={grow ? 1 : undefined} stroke={a.color} strokeWidth={lineW} strokeLinecap="round" fill="none" />
                 {s.heads.map((h, i) => (
@@ -465,18 +624,19 @@ export function BoxLayer(props: Props) {
         const layout = layoutBox({ ...live, x: pos.x }, editing ? b.text || label : label, heightRatio, measureFor(b));
         const fontSize = (layout.size * size.width) / 1000;
         const rect = rects.get(b.id)!;
-        const foldH = foldHeight(fontSize);
-        // 접힌 띠 (v0.26): 누르면 펼친다 (손가락·S펜). 필기층 위라 펜으로 눌러도 글씨가 되지 않는다
+        const note = noteOf(b.anim);
+        const notePx = note.w * size.width;
+        // 접힌 쪽지 (v0.28, 0.26은 두루마리 띠): 누르면 펼친다 (손가락·S펜). 필기층 위라 펜으로 눌러도 글씨가 되지 않는다
         if (isFolded(b)) {
           return (
             <button
               key={b.id}
               type="button"
-              className="tb-fold"
+              className="tb-note"
               data-no-gesture
               data-box-id={b.id}
-              style={rollerStyle(rect, foldH, b)}
-              aria-label="접힌 글상자 펼치기"
+              style={noteStyle(rect, notePx, note, b.id)}
+              aria-label="접힌 쪽지 펼치기"
               title="눌러서 펼치기"
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => {
@@ -484,13 +644,56 @@ export function BoxLayer(props: Props) {
                 if (play?.id !== b.id) openBox(b);
               }}
             >
-              <ChevronDown className="tb-fold-hint" size={Math.round(foldH * 0.62)} strokeWidth={2.6} aria-hidden="true" />
+              <NoteLabel note={note} px={notePx} />
             </button>
           );
         }
-        const playing = play?.id === b.id && play.dir !== "fold";
+        // 베일 (v0.28): 강의 모드에서는 천으로 덮고, 누르면 걷힌다. 걷은 뒤에는 오른쪽 위 작은 단추로 다시 씌운다
+        if (b.veil && props.lecture && !editMode) {
+          const lifting = play?.id === b.id && play.dir === "lift";
+          if (isVeiled(b) || lifting) {
+            return (
+              <button
+                key={b.id}
+                type="button"
+                className={`tb-veil${lifting ? " lifting" : ""}${play?.id === b.id && play.dir === "cover" ? " dropping" : ""}`}
+                data-no-gesture
+                data-box-id={b.id}
+                style={veilStyle(rect, b)}
+                aria-label="베일 걷기"
+                title="눌러서 걷기"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!lifting) liftVeil(b);
+                }}
+              >
+                <VeilLabel b={b} rect={rect} />
+              </button>
+            );
+          }
+          return (
+            <button
+              key={b.id}
+              type="button"
+              className="tb-refold veil-refold"
+              data-no-gesture
+              style={{ left: rect.x + rect.w, top: rect.y }}
+              aria-label="베일 다시 씌우기"
+              title="다시 씌우기"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                coverVeil(b);
+              }}
+            >
+              <EyeOff size={13} strokeWidth={2.6} aria-hidden="true" />
+            </button>
+          );
+        }
+        const playing = play?.id === b.id && (play.dir === "open" || play.dir === "close");
         const typingNow = playing && play!.dir === "open" && play!.typing;
-        const rollMs = play?.dir === "close" ? ROLLUP_MS : UNROLL_MS;
+        const playMs = play?.dir === "close" ? REFOLD_MS : UNFOLD_MS;
         // 서식 (v0.25): 글꼴·굵기·기울임·밑줄·줄 맞춤
         const ts = boxTextStyle(b);
         const textStyle = {
@@ -511,7 +714,10 @@ export function BoxLayer(props: Props) {
           b.underline && "underline",
           b.align && `align-${b.align}`,
           playing && "playing",
-          playing && (play!.dir === "open" ? "unrolling" : "rolling-up"),
+          playing && (play!.dir === "open" ? "unfolding" : "folding"),
+          b.veil && "veil-box",
+          marked.has(b.id) && "marked",
+          emph?.id === b.id && `emph-${emph.kind}`,
         ]
           .filter(Boolean)
           .join(" ");
@@ -526,7 +732,8 @@ export function BoxLayer(props: Props) {
           ...(boxBackground(b) ? { background: boxBackground(b)! } : {}),
           ...(boxBorder(b) ? { boxShadow: `inset 0 0 0 ${boxBorder(b)!.em}em ${boxBorder(b)!.color}` } : {}),
           ...(layout.fitted ? { width: live.w! * size.width, height: live.h! * size.height } : {}),
-          ...(playing ? ({ "--fold-h": `${foldH}px`, "--roll-ms": `${rollMs}ms` } as CSSProperties) : {}),
+          ...(playing ? ({ "--note-w": `${notePx}px`, "--play-ms": `${playMs}ms` } as CSSProperties) : {}),
+          ...(b.veil ? ({ "--veil": b.veil.color, background: undefined, boxShadow: undefined } as CSSProperties) : {}),
         };
         const common = {
           className,
@@ -567,14 +774,25 @@ export function BoxLayer(props: Props) {
               </span>
             )}
             {typingNow ? (
-              <TypedText lines={layout.lines} delay={UNROLL_MS} onDone={() => setPlay((p) => (p?.id === b.id && p.dir === "open" ? null : p))} />
+              <TypedText lines={layout.lines} delay={UNFOLD_MS} onDone={() => finishTyping(b.id)} />
+            ) : b.veil ? (
+              <VeilLabel b={b} rect={rect} />
             ) : (
               <span className="text-box-text">
-                {layout.lines.map((line, i) => (
-                  <span key={i} className="tb-line">
-                    {line || "\u00a0"}
-                  </span>
-                ))}
+                {layout.lines.map((line, i) =>
+                  b.anim?.emphasis === "highlight" ? (
+                    // 형광펜 강조: 줄마다 글 너비만큼 칠한다 (줄마다 조금씩 늦게)
+                    <span key={i} className="tb-line">
+                      <span className="tb-ink" style={{ "--i": i } as CSSProperties}>
+                        {line || "\u00a0"}
+                      </span>
+                    </span>
+                  ) : (
+                    <span key={i} className="tb-line">
+                      {line || "\u00a0"}
+                    </span>
+                  ),
+                )}
               </span>
             )}
             {layout.chrome.trail > 0 && (
@@ -603,7 +821,7 @@ export function BoxLayer(props: Props) {
         const toolbar = selected && !dragPos && !liveSize && !playing && (
           <BoxToolbar
             box={b}
-            below={pos.y < 0.12}
+            below={pos.y * size.height < toolbarRoom(boxPanel?.id === b.id ? boxPanel.panel : null)}
             boxLeft={pos.x * size.width}
             pageWidth={size.width}
             onEdit={() => props.onStartEdit(b.id)}
@@ -616,7 +834,13 @@ export function BoxLayer(props: Props) {
             onBg={(bg) => props.onBg(b.id, bg)}
             onBorder={(border) => props.onBorder(b.id, border)}
             onAnim={(anim) => props.onAnim(b.id, anim)}
-            onPreview={() => setPlay({ id: b.id, dir: "fold", typing: !!b.anim?.typing })}
+            onPreview={() => {
+              if (foldable(b)) setPlay({ id: b.id, dir: "fold", typing: !!b.anim?.typing, emphasis: b.anim?.emphasis, preview: true });
+              else emphasize(b.id, b.anim?.emphasis, true);
+            }}
+            onVeilColor={(c) => props.onVeilColor?.(b.id, c)}
+            panel={boxPanel?.id === b.id ? boxPanel.panel : null}
+            setPanel={(panel) => setBoxPanel(panel ? { id: b.id, panel } : null)}
             onStartConnect={() => props.onStartConnect(b.id)}
             onCopy={() => props.onCopy(b.id)}
             onCut={() => props.onCut(b.id)}
@@ -634,14 +858,19 @@ export function BoxLayer(props: Props) {
             </Fragment>
           );
         }
-        // 펼치거나 접는 동안 상자 위를 굴러가는 두루마리 축 (상자는 잘려 보이므로 상자 밖에 따로)
-        const roller = playing ? (
-          <span
-            className={`tb-roller${play!.dir === "close" ? " up" : ""}`}
-            aria-hidden="true"
-            style={{ ...rollerStyle(rect, foldH, b), "--travel": `${Math.max(0, rect.h - foldH / 2)}px`, "--roll-ms": `${rollMs}ms` } as CSSProperties}
-          />
+        // 펼칠 때 떼어져 날아가는 쪽지 · 접을 때 다시 붙는 쪽지 (상자는 잘려 보이므로 상자 밖에 따로)
+        const peel = playing ? (
+          <span className={`tb-note ${play!.dir === "open" ? "peel" : "drop"}`} aria-hidden="true" style={{ ...noteStyle(rect, notePx, note, b.id), "--play-ms": `${playMs}ms` } as CSSProperties}>
+            <NoteLabel note={note} px={notePx} />
+          </span>
         ) : null;
+        // 텍스트 모드에서 애니메이션 창을 연 동안: 접혔을 때의 쪽지 (크기·색·글을 바꾸면 바로 보임)
+        const ghost =
+          selected && boxPanel?.id === b.id && boxPanel.panel === "anim" && foldable(b) && !playing && !dragPos && !liveSize ? (
+            <span className="tb-note ghost" aria-hidden="true" style={noteStyle(rect, notePx, note, b.id)}>
+              <NoteLabel note={note} px={notePx} />
+            </span>
+          ) : null;
         // 강의 모드에서 펼친 상자: 오른쪽 위 작은 단추로 다시 접는다 (상자 위로는 필기가 지나감)
         const refold =
           props.lecture && !editMode && foldable(b) && props.revealed?.has(b.id) && play?.id !== b.id ? (
@@ -670,20 +899,24 @@ export function BoxLayer(props: Props) {
               title={isAutoPageLink(b) ? boxPlainLabel(b, pages, hidden) : undefined}
               onClick={() => {
                 // 펼치는 중에 누르면 바로 다 보인다
-                if (playing && play!.dir === "open") return setPlay(null);
+                if (playing && play!.dir === "open") return finishTyping(b.id);
                 if (!editMode && b.link && !dangling) props.onFollow(b.link);
+              }}
+              onAnimationEnd={(e) => {
+                if (e.target === e.currentTarget && emph?.id === b.id) setEmph(null);
               }}
             >
               {body}
               {toolbar}
               {handles}
-              {editMode && foldable(b) && !playing && (
-                <span className="tb-anim-badge" aria-label="애니메이션: 접었다 펼치기" title="강의 모드에서 접혀 있다가 누르면 펼쳐짐">
-                  <ScrollText size={11} strokeWidth={2.6} />
+              {editMode && b.anim && !b.veil && !playing && (
+                <span className="tb-anim-badge" aria-label="애니메이션 있음" title={foldable(b) ? "강의 모드에서 쪽지로 접혀 있다가 누르면 펼쳐짐" : "강의 모드에서 손가락으로 누르면 강조"}>
+                  {foldable(b) ? <StickyNote size={11} strokeWidth={2.6} /> : <Sparkles size={11} strokeWidth={2.6} />}
                 </span>
               )}
             </div>
-            {roller}
+            {ghost}
+            {peel}
             {refold}
           </Fragment>
         );
@@ -708,6 +941,9 @@ function BoxToolbar({
   onBorder,
   onAnim,
   onPreview,
+  onVeilColor,
+  panel,
+  setPanel,
   onStartConnect,
   onCopy,
   onCut,
@@ -729,8 +965,12 @@ function BoxToolbar({
   onBg: (bg: string | undefined) => void;
   onBorder: (border: BoxBorder | undefined) => void;
   onAnim: (anim: BoxAnim | undefined) => void;
-  /** 접힌 모양부터 펼치기까지 한 번 보여 주기 */
+  /** 접힌 모양부터 펼치기·강조까지 한 번 보여 주기 */
   onPreview: () => void;
+  onVeilColor: (color: string) => void;
+  /** 펼친 창 (상자 층이 기억: 미리 보기 동안 막대가 잠깐 사라져도 그대로) */
+  panel: ToolbarPanel | null;
+  setPanel: (panel: ToolbarPanel | null) => void;
   onStartConnect: () => void;
   onCopy: () => void;
   onCut: () => void;
@@ -740,13 +980,44 @@ function BoxToolbar({
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
   const ref = useRef<HTMLDivElement>(null);
   const [left, setLeft] = useState(-2);
-  /** 펼친 색 고르기 줄: 글자색 / 배경색 */
-  const [panel, setPanel] = useState<"format" | "color" | "bg" | "border" | "anim" | null>(null);
+
   useLayoutEffect(() => {
     const w = ref.current!.offsetWidth;
     setLeft(Math.max(4 - boxLeft, Math.min(-2, pageWidth - 4 - boxLeft - w)));
   }, [boxLeft, pageWidth, panel]);
   const bg = boxBackground(box);
+  // 베일 (v0.28): 베일 위 글 · 색 · 복사 · 잘라내기 · 지우기만
+  if (box.veil) {
+    return (
+      <div ref={ref} className={`box-toolbar${below ? " below" : ""}`} style={{ left, maxWidth: pageWidth - 8 }} onPointerDown={stop} onPointerUp={stop} onClick={stop}>
+        <button aria-label="베일 글 고치기" title="베일 위에 보일 글 (없으면 ?)" onClick={onEdit}>
+          <Pencil size={16} />
+        </button>
+        <span className="box-sep" />
+        <span role="radiogroup" aria-label="베일 색" className="box-veil-colors">
+          {VEIL_COLORS.map((c) => (
+            <button key={c} role="radio" aria-checked={box.veil!.color === c} className={`box-color${box.veil!.color === c ? " on" : ""}`} aria-label={`베일 색 ${c}`} onClick={() => onVeilColor(c)}>
+              <span style={{ background: c }} />
+            </button>
+          ))}
+        </span>
+        <span className="box-sep" />
+        <button aria-label="상자 복사" title="복사 (Ctrl+C)" onClick={onCopy}>
+          <Copy size={16} />
+        </button>
+        <button aria-label="상자 잘라내기" title="잘라내기 (Ctrl+X)" onClick={onCut}>
+          <Scissors size={16} />
+        </button>
+        <button aria-label="상자 지우기" title="지우기" onClick={onDelete}>
+          <Trash2 size={16} />
+        </button>
+      </div>
+    );
+  }
+  const anim = box.anim;
+  const fold = anim?.reveal === "fold";
+  const note = noteOf(anim);
+  const notePct = Math.round(note.w * 100);
   return (
     <div
       ref={ref}
@@ -788,8 +1059,8 @@ function BoxToolbar({
         </button>
       )}
       {!box.link && (
-        <button aria-label="애니메이션" title="애니메이션: 강의 모드에서 접었다 펼치기" className={panel === "anim" || box.anim ? "on" : undefined} onClick={() => setPanel(panel === "anim" ? null : "anim")}>
-          <ScrollText size={16} />
+        <button aria-label="애니메이션" title="애니메이션: 쪽지 접기 · 강조 (강의 모드)" className={panel === "anim" || box.anim ? "on" : undefined} onClick={() => setPanel(panel === "anim" ? null : "anim")}>
+          <Sparkles size={16} />
         </button>
       )}
       <button aria-label="화살표" title="화살표 (다음에 누른 곳이나 상자를 가리킴)" onClick={onStartConnect}>
@@ -859,35 +1130,85 @@ function BoxToolbar({
       {panel === "anim" && (
         <div className="box-format box-anim" aria-label="애니메이션">
           <div className="box-format-row" role="radiogroup" aria-label="나타나기">
-            <button role="radio" aria-checked={!box.anim} className={`box-bg-opt${!box.anim ? " on" : ""}`} onClick={() => onAnim(undefined)}>
-              없음
+            <span className="box-anim-title">나타나기</span>
+            <button role="radio" aria-checked={!fold} className={`box-bg-opt${!fold ? " on" : ""}`} onClick={() => onAnim({ ...anim, reveal: undefined })}>
+              늘 보임
             </button>
             <button
               role="radio"
-              aria-checked={box.anim?.reveal === "fold"}
-              className={`box-bg-opt${box.anim?.reveal === "fold" ? " on" : ""}`}
-              onClick={() => onAnim({ reveal: "fold", typing: box.anim?.typing ?? true })}
+              aria-checked={fold}
+              className={`box-bg-opt${fold ? " on" : ""}`}
+              title="강의 모드에서 쪽지로 접혀 있다가, 누르면 펼쳐짐"
+              onClick={() => onAnim({ ...anim, reveal: "fold", typing: fold ? anim?.typing : true })}
             >
-              <ScrollText size={15} /> 접었다 펼치기
+              <StickyNote size={15} /> 쪽지 접기
             </button>
           </div>
-          {box.anim && (
-            <div className="box-format-row">
-              <button
-                aria-pressed={!!box.anim.typing}
-                className={`box-bg-opt${box.anim.typing ? " on" : ""}`}
-                title="펼친 뒤 글자가 한 자씩 입력되듯 나옴"
-                onClick={() => onAnim({ ...box.anim!, typing: !box.anim!.typing })}
-              >
-                <Keyboard size={15} /> 타자 효과
-              </button>
-              <span className="box-sep" />
-              <button className="box-bg-opt" aria-label="애니메이션 미리 보기" onClick={onPreview}>
-                <Play size={15} /> 미리 보기
-              </button>
-            </div>
+          {fold && (
+            <>
+              <div className="box-format-row" role="radiogroup" aria-label="쪽지 색">
+                <span className="box-anim-title">쪽지</span>
+                {NOTE_COLORS.map((c) => (
+                  <button key={c} role="radio" aria-checked={note.color === c} className={`box-color${note.color === c ? " on" : ""}`} aria-label={`쪽지 색 ${c}`} onClick={() => onAnim({ ...anim, note: { ...anim?.note, color: c } })}>
+                    <span style={{ background: c }} />
+                  </button>
+                ))}
+                <button
+                  aria-pressed={!!anim?.typing}
+                  className={`box-bg-opt${anim?.typing ? " on" : ""}`}
+                  title="펼친 뒤 글자가 한 자씩 입력되듯 나옴"
+                  onClick={() => onAnim({ ...anim, typing: !anim?.typing })}
+                >
+                  <Keyboard size={15} /> 타자 효과
+                </button>
+              </div>
+              <label className="box-format-row">
+                <span className="box-anim-title">크기</span>
+                <input
+                  type="range"
+                  min={Math.round(MIN_NOTE_W * 100)}
+                  max={Math.round(MAX_NOTE_W * 100)}
+                  step={1}
+                  value={notePct}
+                  aria-label="쪽지 크기"
+                  onChange={(e) => onAnim({ ...anim, note: { ...anim?.note, w: Number(e.target.value) / 100 } })}
+                />
+                <span className="ss-value">{notePct}%</span>
+              </label>
+              <label className="box-format-row">
+                <span className="box-anim-title">쪽지 글</span>
+                <input
+                  type="text"
+                  className="box-anim-label"
+                  maxLength={NOTE_LABEL_MAX}
+                  defaultValue={anim?.note?.label ?? ""}
+                  placeholder="?"
+                  aria-label="쪽지에 쓸 글"
+                  onChange={(e) => onAnim({ ...anim, note: { ...anim?.note, label: e.target.value } })}
+                  onKeyDown={(e) => e.stopPropagation()}
+                />
+              </label>
+            </>
           )}
-          <p className="box-anim-hint">{box.anim ? "강의 모드에서 접혀 있다가, 누르면 펼쳐집니다" : "강의 모드에서 어떻게 나타날지 고르세요"}</p>
+          <div className="box-format-row" role="radiogroup" aria-label="강조">
+            <span className="box-anim-title">강조</span>
+            <button role="radio" aria-checked={!anim?.emphasis} className={`box-bg-opt${!anim?.emphasis ? " on" : ""}`} onClick={() => onAnim({ ...anim, emphasis: undefined })}>
+              없음
+            </button>
+            {EMPHASES.map((x) => (
+              <button key={x.id} role="radio" aria-checked={anim?.emphasis === x.id} className={`box-bg-opt${anim?.emphasis === x.id ? " on" : ""}`} onClick={() => onAnim({ ...anim, emphasis: x.id })}>
+                {x.label}
+              </button>
+            ))}
+          </div>
+          <div className="box-format-row">
+            <button className="box-bg-opt" aria-label="애니메이션 미리 보기" disabled={!anim} onClick={onPreview}>
+              <Play size={15} /> 미리 보기
+            </button>
+            <span className="box-anim-hint">
+              {fold && anim?.emphasis ? "강의 모드: 쪽지를 누르면 펼쳐지고 강조" : fold ? "강의 모드: 쪽지를 누르면 펼쳐짐" : anim?.emphasis ? "강의 모드: 손가락으로 상자를 톡 누르면 강조" : "강의 모드에서 어떻게 보일지 고르세요"}
+            </span>
+          </div>
         </div>
       )}
       {panel === "color" && (
@@ -969,10 +1290,52 @@ function endHandleSpot(s: ArrowShape, toBox: boolean): [number, number] {
   return [tip[0] + (bx / l) * 16, tip[1] + (by / l) * 16];
 }
 
-/** 접힌 띠·두루마리 축 자리: 상자 위쪽, 상자보다 양옆으로 조금 길게. 종이색은 직접 고른 배경색, 아니면(자동·없음) 옛 종이색 */
-function rollerStyle(r: Rect, foldH: number, b: TextBox): CSSProperties {
-  const paper = b.bg && b.bg !== "auto" ? b.bg : "#ecd7a4";
-  return { left: r.x - 4, top: r.y, width: r.w + 8, height: foldH, "--paper": paper } as CSSProperties;
+type ToolbarPanel = "format" | "color" | "bg" | "border" | "anim";
+
+/** 막대를 상자 위에 둘 때 필요한 자리 (페이지 px): 창을 펼치면 더. 모자라면 상자 아래로 */
+function toolbarRoom(panel: ToolbarPanel | null): number {
+  return panel === "anim" ? 330 : panel === "format" ? 190 : panel ? 120 : 60;
+}
+
+/** 접힌 쪽지 자리: 상자 왼쪽 위 모서리에 살짝 걸쳐 붙음, 한 변 px, 상자마다 조금씩 기울어짐 */
+function noteStyle(r: Rect, px: number, note: { color: string }, id: string): CSSProperties {
+  return {
+    left: r.x - px * 0.12,
+    top: r.y - px * 0.16,
+    width: px,
+    height: px,
+    "--note": note.color,
+    "--tilt": `${noteTilt(id)}deg`,
+  } as CSSProperties;
+}
+
+/** 쪽지 위 손글씨 (한 글자면 크게, 길면 작게 여러 줄) */
+function NoteLabel({ note, px }: { note: { label: string }; px: number }) {
+  const n = [...note.label].length;
+  // 4자까지는 한 줄, 그보다 길면 두 줄로
+  const k = n <= 1 ? 0.6 : n <= 2 ? 0.36 : n <= 3 ? 0.26 : n <= 4 ? 0.2 : 0.21;
+  return (
+    <span className="tb-note-label" style={{ fontSize: Math.max(8, px * k), ...(n > 4 ? { "--note-wrap": "normal" } : {}) } as CSSProperties}>
+      {note.label}
+    </span>
+  );
+}
+
+/** 베일 자리·색 */
+function veilStyle(r: Rect, b: TextBox): CSSProperties {
+  return { left: r.x, top: r.y, width: r.w, height: r.h, "--veil": b.veil?.color } as CSSProperties;
+}
+
+/** 베일 위 글: 베일 높이·너비에 맞는 크기로 한 줄 (없으면 ?) */
+function VeilLabel({ b, rect }: { b: TextBox; rect: Rect }) {
+  const label = veilLabel(b);
+  const n = Math.max(1, [...label].length);
+  const px = clamp(Math.min(rect.h * 0.58, (rect.w * 0.86) / n), 9, 72);
+  return (
+    <span className="veil-label" style={{ fontSize: px }}>
+      {label}
+    </span>
+  );
 }
 
 /**

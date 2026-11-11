@@ -39,6 +39,23 @@ export function paintBoxes(ctx: CanvasRenderingContext2D, page: Page, pages: Pag
   for (const b of boxesOf(page)) {
     const dangling = isDangling(b, pages);
     if (b.role === "back" && dangling) continue;
+    // 베일 (v0.28): 썸네일은 선생님이 보는 것이라 반투명(그 밑이 보임)·점선 테두리
+    if (b.veil) {
+      const r = rects.get(b.id)!;
+      ctx.save();
+      ctx.globalAlpha = 0.45;
+      ctx.fillStyle = b.veil.color;
+      ctx.beginPath();
+      ctx.roundRect(r.x, r.y, r.w, r.h, Math.min(r.w, r.h) * 0.12);
+      ctx.fill();
+      ctx.globalAlpha = 0.9;
+      ctx.setLineDash([Math.max(2, 4 * scale), Math.max(2, 3 * scale)]);
+      ctx.lineWidth = Math.max(1, 1.5 * scale);
+      ctx.strokeStyle = b.veil.color;
+      ctx.stroke();
+      ctx.restore();
+      continue;
+    }
     const label = boxLabel(b, pages, hidden);
     if (!label.trim()) continue;
     const measure = measureFor(b);

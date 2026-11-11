@@ -1,3 +1,4 @@
+import { Spotlight } from "./Spotlight";
 import { MousePointer2, PenLine } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { isMadeForEmbedding } from "../doc/embed";
@@ -34,6 +35,8 @@ interface Props {
   onPdfRendered?: (ms: number) => void;
   /** 강의 모드: 여백 없이 화면 가득 페이지를 키운다 */
   lecture?: boolean;
+  /** 스포트라이트 반지름 (화면 px, v0.28). 없으면 끔 */
+  spotlight?: number | null;
   /** 페이지 넘기기 바에 덧붙일 버튼 (강의 모드 도구) */
   navExtra?: ReactNode;
   /** 웹 페이지별 새로고침 횟수 (바뀌면 다시 불러온다) */
@@ -333,6 +336,7 @@ export function PageView(props: Props) {
         </div>
       )}
 
+      {props.spotlight ? <Spotlight radius={props.spotlight} /> : null}
       {(doc.pages.length > 1 || props.navExtra) && (
         <PageNav
           label={pos.index < 0 ? "숨긴 페이지" : `${pos.index + 1} / ${pos.count}`}

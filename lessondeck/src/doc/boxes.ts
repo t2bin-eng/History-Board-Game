@@ -1,4 +1,5 @@
 import { dropArrowsOf, remapArrows } from "./arrows";
+import { cleanAnim } from "./boxAnim";
 import { cleanFormat, type BoxFormat } from "./boxFonts";
 import { autoBackground } from "./colors";
 import { visiblePosition } from "./pages";
@@ -44,13 +45,14 @@ export function formatBox(pages: Page[], pageId: string, boxId: string, patch: B
   return mapBoxes(pages, pageId, (boxes) => boxes.map((b) => (b.id === boxId ? cleanFormat({ ...b, ...patch }) : b)));
 }
 
-/** 애니메이션 바꾸기 (v0.26): 없애면 값을 빼고, 타자 효과가 꺼져 있으면 typing을 뺀다 */
+/** 애니메이션 바꾸기 (v0.26 · v0.28): 다듬어서(기본값·꺼진 것은 뺌), 아무것도 없으면 anim을 뺀다 */
 export function animBox(pages: Page[], pageId: string, boxId: string, anim: BoxAnim | undefined): Page[] {
+  const clean = cleanAnim(anim);
   return mapBoxes(pages, pageId, (boxes) =>
     boxes.map((b) => {
       if (b.id !== boxId) return b;
       const { anim: _old, ...rest } = b;
-      return anim?.reveal === "fold" ? { ...rest, anim: anim.typing ? { reveal: "fold", typing: true } : { reveal: "fold" } } : rest;
+      return clean ? { ...rest, anim: clean } : rest;
     }),
   );
 }
