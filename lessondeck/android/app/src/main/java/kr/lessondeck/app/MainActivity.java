@@ -64,12 +64,22 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
-    /** 펜을 띄운 채(호버) 버튼을 누르고 떼는 것도 알려 지우개 표시를 바꾼다 */
+    /**
+     * 펜을 띄운 채(호버) 버튼을 누르고 떼는 것도 알려 지우개 표시를 바꾼다.
+     * 웹뷰에는 버튼 없는 호버만 넘긴다: 버튼이 실린 호버를 웹뷰가 "펜이 닿음"으로 받아 띄운 채 글씨가 써졌다 (0.26)
+     */
     @Override
     public boolean dispatchGenericMotionEvent(MotionEvent ev) {
         PenInput.trackHover(ev);
         showSideButton(PenInput.buttonDown);
-        return super.dispatchGenericMotionEvent(ev);
+        if (PenInput.swallowHover(ev)) return true;
+        MotionEvent clean = PenInput.cleanHover(ev);
+        if (clean == null) return super.dispatchGenericMotionEvent(ev);
+        try {
+            return super.dispatchGenericMotionEvent(clean);
+        } finally {
+            clean.recycle();
+        }
     }
 
     /**

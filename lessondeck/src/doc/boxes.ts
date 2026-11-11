@@ -2,7 +2,7 @@ import { dropArrowsOf, remapArrows } from "./arrows";
 import { cleanFormat, type BoxFormat } from "./boxFonts";
 import { autoBackground } from "./colors";
 import { visiblePosition } from "./pages";
-import { newId, type BoxLink, type Page, type TextBox } from "./types";
+import { newId, type BoxAnim, type BoxLink, type Page, type TextBox } from "./types";
 
 // 텍스트 상자·하이퍼링크 (SPEC 5장 boxes). 페이지 목록을 받아 새 목록을 돌려주는 순수 함수만 둔다.
 
@@ -42,6 +42,17 @@ export function patchBox(pages: Page[], pageId: string, boxId: string, patch: Pa
 /** 서식 바꾸기 (v0.25): 끈 것·기본값은 빼 둔다 */
 export function formatBox(pages: Page[], pageId: string, boxId: string, patch: BoxFormat): Page[] {
   return mapBoxes(pages, pageId, (boxes) => boxes.map((b) => (b.id === boxId ? cleanFormat({ ...b, ...patch }) : b)));
+}
+
+/** 애니메이션 바꾸기 (v0.26): 없애면 값을 빼고, 타자 효과가 꺼져 있으면 typing을 뺀다 */
+export function animBox(pages: Page[], pageId: string, boxId: string, anim: BoxAnim | undefined): Page[] {
+  return mapBoxes(pages, pageId, (boxes) =>
+    boxes.map((b) => {
+      if (b.id !== boxId) return b;
+      const { anim: _old, ...rest } = b;
+      return anim?.reveal === "fold" ? { ...rest, anim: anim.typing ? { reveal: "fold", typing: true } : { reveal: "fold" } } : rest;
+    }),
+  );
 }
 
 /** 글자 크기 한 단계 위·아래 (BOX_SIZES에서 가장 가까운 것 기준) */

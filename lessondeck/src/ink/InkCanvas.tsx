@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { debugStats, recordPointer, recordRender } from "../lib/debugStore";
-import { activeTouchCount, isSideButtonDown, onSideButtonChange, penRecentlyActive, penStrokeErasing, pointerKind, type PointerKind } from "../lib/inputState";
+import { activeTouchCount, isSideButtonDown, onSideButtonChange, penRecentlyActive, penStrokeErasing, penTouching, pointerKind, type PointerKind } from "../lib/inputState";
 import { beautifyStroke, pathLengthPx, snapLineEnd } from "./beautify";
 import { strokeHitsCircle, unitsToPx, type PageSize } from "./geometry";
 import { fillStroke, HIGHLIGHT_LAYER_STYLE, isHighlighter } from "./inkPaint";
@@ -390,7 +390,8 @@ export function InkCanvas(props: Props) {
         if (activeTouchCount() > 1) return;
       }
       // 펜을 띄운 채 사이드 버튼만 누른 경우: 아직 닿지 않았으므로 획을 시작하지 않는다
-      if (!isContact(e)) return;
+      // (앱은 버튼을 왼쪽 버튼처럼 넘기기도 해서 안드로이드에 닿았는지 한 번 더 묻는다, 0.26)
+      if (!isContact(e) || !penTouching(e)) return;
       begin(e);
     };
 
@@ -404,7 +405,7 @@ export function InkCanvas(props: Props) {
         const kind = pointerKind(e);
         if (kind === "touch") return;
         // 사이드 버튼을 누른 채 펜이 닿는 경우(버튼 → 접촉 순서)는 pointermove로만 들어온다
-        if (isContact(e) && kind === "pen") {
+        if (isContact(e) && kind === "pen" && penTouching(e)) {
           begin(e);
           return;
         }

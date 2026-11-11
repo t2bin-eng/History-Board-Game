@@ -107,6 +107,8 @@ interface NativePen {
   strokeErase(): boolean;
   /** 0.17부터: 웹뷰 기준 화면 px 자리에 닿은 것 ("stylus 크기", "finger 크기", "other 번호 크기", "none") */
   toolAt?(x: number, y: number): string;
+  /** 0.26부터: S펜이 화면에 닿아 있는지 (띄운 채 버튼만 누르면 false) */
+  stylusTouching?(): boolean;
 }
 
 function nativePen(): NativePen | undefined {
@@ -131,6 +133,22 @@ export function penStrokeErasing(e: PointerEvent): boolean {
   } catch {
     // 물을 수 없으면 버튼 신호(lessondecksidebutton)만 따른다
     return sideButton;
+  }
+}
+
+/**
+ * 펜 이벤트가 정말 화면에 닿은 것인지 안드로이드에 묻는다 (0.26).
+ * 웹뷰는 펜을 띄운 채 S펜 버튼을 누르면 "왼쪽 버튼을 누른 채 닿음"처럼 넘겨서, 닿지 않았는데 글씨가 써졌다.
+ * 앱이 아니거나 물을 수 없으면 true (이벤트만 보고 정한다)
+ */
+export function penTouching(e: PointerEvent): boolean {
+  if (pointerKind(e) !== "pen") return true;
+  const pen = nativePen();
+  if (!pen?.stylusTouching) return true;
+  try {
+    return pen.stylusTouching() !== false;
+  } catch {
+    return true;
   }
 }
 

@@ -94,6 +94,12 @@ final class PenInput {
         public String toolAt(float x, float y) {
             return PenInput.toolAt(x, y);
         }
+
+        /** 0.26부터: S펜이 화면에 닿아 있는지 (띄운 채면 false — 웹 화면은 이때 획을 시작하지 않는다) */
+        @JavascriptInterface
+        public boolean stylusTouching() {
+            return PenInput.stylusTouching();
+        }
     }
 
     /**
@@ -251,6 +257,38 @@ final class PenInput {
     static void trackHover(MotionEvent ev) {
         if (stylusIndex(ev) < 0) return;
         buttonDown = ev.getActionMasked() != MotionEvent.ACTION_HOVER_EXIT && (ev.getButtonState() & PEN_BUTTONS) != 0;
+        lastInfo = "hover a=" + ev.getAction() + " b=" + ev.getButtonState();
+    }
+
+    /** 펜이 화면에 정말 닿아 있는지 (막 뗀 것도 잠깐은 닿은 것으로: 톡 친 펜은 웹 화면이 묻기 전에 떼어져 있을 수 있다) */
+    private static final long TOUCH_GRACE_MS = 500;
+
+    static boolean stylusTouching() {
+        long now = SystemClock.uptimeMillis();
+        synchronized (contacts) {
+            for (Contact c : contacts) {
+                if (c.tool != MotionEvent.TOOL_TYPE_STYLUS && c.tool != MotionEvent.TOOL_TYPE_ERASER) continue;
+                if (c.upAt == 0 || now - c.upAt < TOUCH_GRACE_MS) return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 펜을 띄운 채 오는 이벤트(호버·버튼 누름/뗌)를 웹뷰에 넘길 모양으로 (0.26).
+     * 웹뷰는 띄운 펜의 S펜 버튼을 "누른 채 닿음"(왼쪽 버튼)처럼 넘겨서, 띄운 채 버튼만 눌러도 글씨가 써졌다.
+     * 그래서 버튼 상태는 앱이 따로 알려 주고(lessondecksidebutton), 웹뷰에는 버튼 없는 호버만 넘긴다.
+     */
+    static boolean swallowHover(MotionEvent ev) {
+        if (stylusIndex(ev) < 0) return false;
+        int masked = ev.getActionMasked();
+        return masked == MotionEvent.ACTION_BUTTON_PRESS || masked == MotionEvent.ACTION_BUTTON_RELEASE;
+    }
+
+    /** 버튼 상태를 뺀 호버 이벤트 (바꿀 것이 없으면 null). 넘긴 뒤 recycle 해야 한다 */
+    static MotionEvent cleanHover(MotionEvent ev) {
+        if (stylusIndex(ev) < 0 || ev.getButtonState() == 0) return null;
+        return rebuild(ev, ev.getAction());
     }
 
     /** 같은 좌표·도구로, 동작만 바꾸고 버튼 상태는 없이 */

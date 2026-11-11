@@ -2007,6 +2007,247 @@ button.doc-title:hover {
   flex: 1 1 auto;
 }
 
+/* ── 글상자 애니메이션 (v0.26): 접었다 펼치기 — 강의 모드에서 두루마리처럼 말려 있다가 누르면 굴러 내려가며 펼쳐진다 ── */
+.tb-fold,
+.tb-roller {
+  position: absolute;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  /* 말린 종이: 위는 밝고 아래는 그늘진 원통 */
+  background:
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 40%, rgba(0, 0, 0, 0) 58%, rgba(0, 0, 0, 0.24)),
+    var(--paper, #f1deb0);
+  box-shadow:
+    0 2px 5px rgba(0, 0, 0, 0.28),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.13);
+  color: rgba(70, 45, 10, 0.6);
+}
+
+/* 두루마리 축 양 끝 마개 */
+.tb-fold::before,
+.tb-fold::after,
+.tb-roller::before,
+.tb-roller::after {
+  content: "";
+  position: absolute;
+  top: -14%;
+  bottom: -14%;
+  width: 7px;
+  border-radius: 3px;
+  background: linear-gradient(to bottom, #b07c40, #6a4019);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.tb-fold::before,
+.tb-roller::before {
+  left: -3px;
+}
+
+.tb-fold::after,
+.tb-roller::after {
+  right: -3px;
+}
+
+.tb-fold {
+  display: grid;
+  place-items: center;
+  pointer-events: auto;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  animation: tb-fold-in 0.22s ease-out;
+}
+
+.tb-fold:active {
+  filter: brightness(0.94);
+}
+
+/* 눌러 보라는 표시: 천천히 오르내림 */
+.tb-fold-hint {
+  animation: tb-bob 1.8s ease-in-out infinite;
+}
+
+.tb-roller {
+  z-index: 2;
+  pointer-events: none;
+  animation: tb-roll var(--roll-ms, 560ms) cubic-bezier(0.3, 0.75, 0.4, 1) both;
+}
+
+.tb-roller.up,
+.text-box.rolling-up {
+  animation-direction: reverse;
+}
+
+/* 상자는 축이 지나간 곳까지만 보인다 (축과 같은 박자) */
+.text-box.unrolling,
+.text-box.rolling-up {
+  animation-name: tb-unroll;
+  animation-duration: var(--roll-ms, 560ms);
+  animation-timing-function: cubic-bezier(0.3, 0.75, 0.4, 1);
+  animation-fill-mode: both;
+}
+
+/* 펼치는 중에는 눌러서 바로 다 보이게 */
+.text-box.playing {
+  pointer-events: auto;
+}
+
+@keyframes tb-unroll {
+  from {
+    clip-path: inset(0 -10px calc(100% - var(--fold-h) / 2) -10px);
+  }
+  to {
+    clip-path: inset(-10px);
+  }
+}
+
+@keyframes tb-roll {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(var(--travel));
+    opacity: 0;
+  }
+}
+
+@keyframes tb-fold-in {
+  from {
+    transform: scaleY(0.4);
+    opacity: 0;
+  }
+}
+
+@keyframes tb-bob {
+  0%,
+  100% {
+    transform: translateY(-1px);
+  }
+  50% {
+    transform: translateY(2px);
+  }
+}
+
+/* 타자: 아직 안 친 글자는 자리만, 커서는 친 글자 바로 뒤에서 깜빡임 */
+.tb-rest {
+  visibility: hidden;
+}
+
+.tb-caret {
+  position: relative;
+  display: inline-block;
+  width: 0;
+  height: 1em;
+}
+
+.tb-caret::after {
+  content: "";
+  position: absolute;
+  left: 0.03em;
+  top: 0.02em;
+  width: 0.07em;
+  min-width: 2px;
+  height: 1.1em;
+  border-radius: 1px;
+  background: currentColor;
+  animation: tb-blink 0.9s steps(1) infinite;
+}
+
+@keyframes tb-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* 펼친 상자를 다시 접는 작은 단추 (강의 모드, 상자 오른쪽 위) */
+.tb-refold {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  color: #6a4019;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  transform: translate(-55%, -45%);
+  opacity: 0.55;
+  pointer-events: auto;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.tb-refold:hover,
+.tb-refold:active {
+  opacity: 1;
+}
+
+/* 텍스트 모드: 애니메이션이 있는 상자 표시 */
+.tb-anim-badge {
+  position: absolute;
+  top: -9px;
+  right: -9px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #8d5a24;
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+}
+
+/* 펼친 상자의 화살표는 펼친 뒤 그려 나간다 */
+.arrow-grow .arrow-line {
+  stroke-dasharray: 1;
+  animation: arrow-grow 0.45s ease-out var(--grow-delay, 0ms) both;
+}
+
+.arrow-grow .arrow-head {
+  animation: arrow-head-in 0.15s linear calc(var(--grow-delay, 0ms) + 0.4s) both;
+}
+
+@keyframes arrow-grow {
+  0% {
+    stroke-dashoffset: 1;
+    opacity: 0;
+  }
+  2% {
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+
+@keyframes arrow-head-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tb-fold-hint {
+    animation: none;
+  }
+}
+
 /* 평소에는 링크만 누를 수 있다 (나머지 글자 위로는 필기가 지나감) */
 .text-box.link,
 .box-layer.edit .text-box {
@@ -3967,6 +4208,13 @@ body:has(.select-bar) .toast {
   padding: 0 6px;
   font-size: 13px;
   font-variant-numeric: tabular-nums;
+}
+
+.box-anim-hint {
+  margin: 0;
+  padding: 0 4px 2px;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .box-toolbar .box-bg-opt {

@@ -47,6 +47,7 @@ import {
   boxesOf,
   boxLabel,
   boxPlainLabel,
+  animBox,
   copyBoxes,
   formatBox,
   isDangling,
@@ -273,6 +274,8 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   const [stickerStyleReq, setStickerStyleReq] = useState(0);
   /** 강의 모드: 도구 막대·페이지 바를 숨기고 페이지를 화면 가득 */
   const [lecture, setLecture] = useState(false);
+  /** 이번 강의 모드에서 펼친 애니메이션 글상자 (v0.26). 강의 모드를 시작할 때마다 모두 접힘 */
+  const [revealed, setRevealed] = useState<ReadonlySet<string>>(() => new Set());
   const lectureRef = useRef(lecture);
   lectureRef.current = lecture;
   // 강의 모드: 페이지 링크로 보고 돌아온 쪽은 다음·이전으로 넘길 때 건너뛴다 (화면 위 단추로 켜고 끔, 기기에 저장)
@@ -790,6 +793,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     setSelectedShape(null);
     detours.current = [];
     setSeenViaLink([]);
+    setRevealed(new Set());
     setLecture(true);
     // APK는 처음부터 상태 표시줄 없는 전체 화면이다. 브라우저에서는 전체 화면도 켠다
     if (!isNativeApp && !document.fullscreenElement && document.documentElement.requestFullscreen) {
@@ -2126,6 +2130,17 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
                     setBoxBorderStyle(border);
                     editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { border }));
                   }}
+                  onAnim={(id, anim) => editBoxes(id, (pages, pageId) => animBox(pages, pageId, id, anim))}
+                  lecture={lecture}
+                  revealed={revealed}
+                  onReveal={(id, open) =>
+                    setRevealed((prev) => {
+                      const next = new Set(prev);
+                      if (open) next.add(id);
+                      else next.delete(id);
+                      return next;
+                    })
+                  }
                   onStartConnect={(id) => {
                     startConnect(id);
                     showToast("화살표 끝을 둘 곳이나 이을 상자를 누르세요");

@@ -80,11 +80,21 @@ export interface TextBox {
   underline?: boolean;
   /** 줄 맞춤 (v0.25): 없으면 왼쪽 */
   align?: "center" | "right";
+  /** 애니메이션 (v0.26): 강의 모드에서 어떻게 나타나는지. 없으면 늘 보임 */
+  anim?: BoxAnim;
   link?: BoxLink;
   /** 페이지 링크를 걸 때 연결한 페이지에 자동으로 생긴 "돌아가기" 링크 */
   role?: "back";
   /** 이 돌아가기 링크를 만든 원래 링크 상자 id (원래 링크를 지우면 같이 지운다) */
   backOf?: string;
+}
+
+/** 글상자 애니메이션 (v0.26, SPEC 5장 boxes "애니메이션") */
+export interface BoxAnim {
+  /** "fold": 강의 모드에서 접힌 띠로 있다가 누르면 펼쳐진다 */
+  reveal: "fold";
+  /** 펼친 뒤 글자가 한 자씩 입력되듯 (한글은 자모가 조합되며). 없으면 한 번에 */
+  typing?: boolean;
 }
 
 /** 글상자 글꼴 (v0.25): 명조 · 손글씨 · 둥근 · 제목 (없으면 기본 고딕) */
