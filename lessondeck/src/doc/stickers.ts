@@ -56,6 +56,69 @@ export function newSticker(asset: string, imgW: number, imgH: number, pageAspect
   };
 }
 
+// ── 팝업 그림 (v0.27, SPEC 5장 stickers "팝업 그림") ──
+
+/** 처음 아이콘 폭 · 가장 큰 아이콘 폭 (페이지 가로 대비) */
+export const POPUP_ICON_W = 0.07;
+export const MAX_POPUP_ICON_W = 0.5;
+/** 아이콘 기본 흰 테두리 굵기 ("페이지 가로 = 1000" 단위) */
+const POPUP_ICON_BORDER = 4;
+
+/**
+ * 페이지에 보이는 모양: 팝업 그림이면 아이콘(보이는 부분 가운데 정사각형, 폭 popup.w, 기본 둥근 모서리·흰 테두리·그림자),
+ * 아니면 그대로. 자리·크기 계산(stickerBox)·썸네일·고르기가 이것을 쓴다
+ */
+export function shownSticker(s: Sticker, imgW: number, imgH: number): Sticker {
+  if (!s.popup) return s;
+  const c = cropOf(s);
+  const iw = Math.max(1, imgW);
+  const ih = Math.max(1, imgH);
+  const side = Math.min(c.w * iw, c.h * ih);
+  const cw = side / iw;
+  const ch = side / ih;
+  return {
+    ...s,
+    w: s.popup.w,
+    crop: { x: c.x + (c.w - cw) / 2, y: c.y + (c.h - ch) / 2, w: cw, h: ch },
+    shape: s.shape ?? "rounded",
+    border: s.border ?? { color: "#ffffff", width: POPUP_ICON_BORDER },
+    shadow: true,
+    opacity: undefined,
+  };
+}
+
+/** 팝업 켜고 끄기: 아이콘 ↔ 원래 크기 스티커, 가운데는 같은 자리. pageAspect = 페이지 가로÷세로 */
+export function togglePopup(s: Sticker, on: boolean, imgW: number, imgH: number, pageAspect: number): Sticker {
+  if (on === !!s.popup) return s;
+  const fullH = stickerHeight(s, imgW, imgH, pageAspect);
+  if (on) {
+    const w = POPUP_ICON_W;
+    const h = w * pageAspect;
+    const cx = s.x + s.w / 2;
+    const cy = s.y + fullH / 2;
+    return { ...s, popup: { w }, x: clamp(cx - w / 2, 0, 1 - w), y: clamp(cy - h / 2, 0, Math.max(0, 1 - h)) };
+  }
+  const iw = s.popup!.w;
+  const cx = s.x + iw / 2;
+  const cy = s.y + (iw * pageAspect) / 2;
+  const { popup: _icon, ...rest } = s;
+  return { ...rest, x: clamp(cx - s.w / 2, -s.w * 0.8, 1 - s.w * 0.2), y: clamp(cy - fullH / 2, -0.1, 0.95) };
+}
+
+/** 틀 고치기(옮기기·크기·돌리기)의 바뀐 값: 팝업 그림이면 크기는 아이콘 폭(popup.w)으로 */
+export function framePatch(s: Sticker, frame: Pick<Sticker, "x" | "y" | "w" | "rotation">): Partial<Omit<Sticker, "id">> {
+  if (!s.popup) return frame;
+  return { x: frame.x, y: frame.y, rotation: frame.rotation, popup: { w: clamp(frame.w, MIN_STICKER_W, MAX_POPUP_ICON_W) } };
+}
+
+/** 크게 볼 때의 자리 (페이지 px): 보이는 부분 비율 그대로 페이지 가로 92%·세로 88% 안에 가장 크게, 가운데 */
+export function popupRect(s: Sticker, imgW: number, imgH: number, page: { width: number; height: number }) {
+  const a = visibleAspect(s, imgW, imgH);
+  const w = Math.min(page.width * 0.92, page.height * 0.88 * a);
+  const h = w / a;
+  return { left: (page.width - w) / 2, top: (page.height - h) / 2, width: w, height: h };
+}
+
 function mapStickers(pages: Page[], pageId: string, fn: (list: Sticker[]) => Sticker[]): Page[] {
   return pages.map((p) => (p.id === pageId ? { ...p, stickers: fn(p.stickers ?? []) } : p));
 }
@@ -66,6 +129,11 @@ export function addStickers(pages: Page[], pageId: string, added: Sticker[]): Pa
 
 export function patchSticker(pages: Page[], pageId: string, id: string, patch: Partial<Omit<Sticker, "id">>): Page[] {
   return mapStickers(pages, pageId, (list) => list.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+}
+
+/** 스티커 하나를 통째로 바꾼다 (값을 빼야 할 때: 팝업 끄기 등) */
+export function replaceSticker(pages: Page[], pageId: string, next: Sticker): Page[] {
+  return mapStickers(pages, pageId, (list) => list.map((s) => (s.id === next.id ? next : s)));
 }
 
 export function removeSticker(pages: Page[], pageId: string, id: string): Page[] {

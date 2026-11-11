@@ -1,4 +1,5 @@
 import { ImageOff } from "lucide-react";
+import type { HTMLAttributes, ReactNode } from "react";
 import { stickersOf } from "../doc/stickers";
 import { mediaAsset, type Asset, type Page, type Sticker } from "../doc/types";
 import type { PageSize } from "../ink/geometry";
@@ -15,8 +16,9 @@ interface Props {
 }
 
 // 페이지 위 이미지 스티커 층 (페이지 바로 위, 필기 아래). 누름은 늘 지나간다 — 고르기는 길게 누르기·텍스트 모드로.
+// 팝업 그림(v0.27)은 누를 수 있어야 해서 필기 위 PopupLayer가 그린다.
 export function StickerLayer({ page, assets, size, live, hiddenId }: Props) {
-  const list = stickersOf(page);
+  const list = stickersOf(page).filter((s) => !s.popup);
   if (!list.length) return null;
   return (
     <div className="sticker-layer" aria-hidden="true">
@@ -29,13 +31,27 @@ export function StickerLayer({ page, assets, size, live, hiddenId }: Props) {
   );
 }
 
-export function StickerView({ sticker: s, assets, size }: { sticker: Sticker; assets: Record<string, Asset>; size: PageSize }) {
+export function StickerView({
+  sticker: s,
+  assets,
+  size,
+  className,
+  children,
+  ...handlers
+}: {
+  sticker: Sticker;
+  assets: Record<string, Asset>;
+  size: PageSize;
+  className?: string;
+  children?: ReactNode;
+} & Pick<HTMLAttributes<HTMLDivElement>, "onPointerDown" | "onPointerUp" | "onPointerCancel" | "onClick" | "title" | "role" | "aria-label">) {
   const asset = mediaAsset(assets, s.asset);
   const b = stickerBox(s, asset, size);
   const radius = b.radius === Infinity ? "50%" : b.radius;
   return (
     <div
-      className={`sticker${asset ? "" : " missing"}`}
+      {...handlers}
+      className={["sticker", !asset && "missing", className].filter(Boolean).join(" ")}
       data-sticker-id={s.id}
       style={{
         left: b.left,
@@ -71,6 +87,7 @@ export function StickerView({ sticker: s, assets, size }: { sticker: Sticker; as
       ) : (
         <ImageOff size={Math.max(14, Math.min(b.width, b.height) / 4)} />
       )}
+      {children}
     </div>
   );
 }

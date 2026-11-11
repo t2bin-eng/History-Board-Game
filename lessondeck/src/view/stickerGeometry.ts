@@ -1,4 +1,4 @@
-import { cropOf, visibleAspect } from "../doc/stickers";
+import { cropOf, shownSticker, visibleAspect } from "../doc/stickers";
 import type { Sticker } from "../doc/types";
 import type { PageSize } from "../ink/geometry";
 
@@ -51,6 +51,11 @@ export function stickerBox(s: Sticker, natural: { width: number; height: number 
     radius,
     borderWidth: s.border ? (s.border.width * size.width) / 1000 : 0,
   };
+}
+
+/** 페이지에 보이는 모양(팝업 그림은 아이콘, v0.27)의 배치 */
+export function shownBox(s: Sticker, natural: { width: number; height: number } | undefined, size: PageSize): StickerBox {
+  return stickerBox(shownSticker(s, natural?.width || 4, natural?.height || 3), natural, size);
 }
 
 /** 돌린 틀을 감싸는 반쪽 너비·높이 (도구 막대 자리 잡기) */

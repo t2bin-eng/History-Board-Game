@@ -3486,6 +3486,106 @@ body:has(.select-bar) .toast {
   transform-origin: center;
 }
 
+/* ── 팝업 그림 (v0.27): 페이지에는 작은 아이콘(필기·글상자 위라 누를 수 있음), 누르면 크게 ── */
+.popup-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.popup-layer.interactive .popup-icon {
+  pointer-events: auto;
+  cursor: zoom-in;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.popup-layer.interactive .popup-icon:active {
+  filter: brightness(0.92);
+}
+
+/* 크게 본 동안 아이콘 자리는 비워 둔다 (거기서 커져 나온 것처럼) */
+.popup-icon.opened {
+  visibility: hidden;
+}
+
+/* 크게 보기 표시: 오른쪽 아래 작은 동그라미 */
+.popup-badge {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(20, 20, 20, 0.78);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+.popup-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: rgba(0, 0, 0, 0.58);
+  pointer-events: auto;
+  cursor: zoom-out;
+  touch-action: none;
+}
+
+.popup-frame {
+  position: absolute;
+  z-index: 21;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.popup-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.popup-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  border-radius: 50%;
+  background: rgba(20, 20, 20, 0.72);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.popup-close:active {
+  background: rgba(0, 0, 0, 0.9);
+}
+
+/* 스티커 막대의 팝업 단추는 글자도 */
+.sticker-toolbar .st-popup {
+  width: auto;
+  gap: 4px;
+  padding: 0 8px;
+  font-size: 13px;
+}
+
 .sticker-clip {
   position: absolute;
   inset: 0;

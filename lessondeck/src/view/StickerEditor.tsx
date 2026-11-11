@@ -7,6 +7,7 @@ import {
   Crop,
   FlipHorizontal2,
   FlipVertical2,
+  Maximize2,
   Paintbrush,
   RotateCcw,
   RotateCw,
@@ -22,9 +23,12 @@ import {
   applyCrop,
   clamp,
   cropOf,
+  framePatch,
   FULL_CROP,
+  MAX_POPUP_ICON_W,
   MIN_CROP,
   MIN_STICKER_W,
+  shownSticker,
   snapAngle,
   STICKER_BORDER_COLORS,
   STICKER_BORDER_WIDTHS,
@@ -58,6 +62,8 @@ interface Props {
   onDuplicate: () => void;
   onDelete: () => void;
   onOrder: (to: "front" | "back") => void;
+  /** 팝업 그림 켜고 끄기 (v0.27: 작은 아이콘 ↔ 원래 크기) */
+  onPopup: () => void;
 }
 
 type Gesture =
@@ -95,7 +101,9 @@ export function StickerEditor(props: Props) {
   }, [cropping]);
 
   const s = draft ?? sticker;
-  const b = stickerBox(s, asset, size);
+  /** 페이지에 보이는 모양 (팝업 그림은 아이콘). 틀·손잡이는 이것을 따른다 */
+  const iconOf = (x: Sticker) => shownSticker(x, nat.width, nat.height);
+  const b = stickerBox(iconOf(s), asset, size);
 
   /** 화면 좌표 → 페이지 px (확대 중이어도 맞게) */
   const toPage = (clientX: number, clientY: number): Pt => {
@@ -137,20 +145,26 @@ export function StickerEditor(props: Props) {
       if (!g.moved && Math.hypot(dx, dy) < 3) return;
       g.moved = true;
       const s0 = g.s0;
+      const w0 = iconOf(s0).w;
       setDraft({
         ...s0,
-        x: clamp(s0.x + dx / size.width, -s0.w * 0.8, 1 - s0.w * 0.2),
+        x: clamp(s0.x + dx / size.width, -w0 * 0.8, 1 - w0 * 0.2),
         y: clamp(s0.y + dy / size.height, -0.1, 0.95),
       });
     } else if (g.kind === "scale") {
+      // 팝업 그림이면 아이콘 크기를 바꾼다 (크게 볼 때 크기는 그대로)
       const k = Math.hypot(p.x - g.c.x, p.y - g.c.y) / Math.max(1, g.d0);
-      const w = clamp(g.s0.w * k, MIN_STICKER_W, 2);
-      const hpx = (w * size.width) / visibleAspect(g.s0, nat.width, nat.height);
+      const shown0 = iconOf(g.s0);
+      const w = clamp(shown0.w * k, MIN_STICKER_W, g.s0.popup ? MAX_POPUP_ICON_W : 2);
+      const hpx = (w * size.width) / visibleAspect(shown0, nat.width, nat.height);
       setDraft({
         ...g.s0,
-        w,
-        x: (g.c.x - (w * size.width) / 2) / size.width,
-        y: (g.c.y - hpx / 2) / size.height,
+        ...framePatch(g.s0, {
+          w,
+          x: (g.c.x - (w * size.width) / 2) / size.width,
+          y: (g.c.y - hpx / 2) / size.height,
+          rotation: g.s0.rotation,
+        }),
       });
     } else if (g.kind === "rotate") {
       const deg = (Math.atan2(p.y - g.c.y, p.x - g.c.x) * 180) / Math.PI + 90;
@@ -173,12 +187,14 @@ export function StickerEditor(props: Props) {
     }
     if (g.kind === "crop") return;
     if (draft && !cancelled)
-      props.onChange({
-        x: draft.x,
-        y: draft.y,
-        w: draft.w,
-        rotation: draft.rotation,
-      });
+      props.onChange(
+        framePatch(sticker, {
+          x: draft.x,
+          y: draft.y,
+          w: iconOf(draft).w,
+          rotation: draft.rotation,
+        }),
+      );
     setDraft(null);
   };
 
@@ -382,7 +398,15 @@ export function StickerEditor(props: Props) {
           </>
         ) : (
           <>
-            <ToolButton label="자르기" onClick={() => props.onCropMode(true)} disabled={!asset}>
+            <ToolButton
+              label={sticker.popup ? "팝업 끄기 (원래 크기로)" : "팝업: 작은 아이콘, 누르면 크게"}
+              onClick={props.onPopup}
+              active={!!sticker.popup}
+              className="st-popup"
+            >
+              <Maximize2 size={17} /> 팝업
+            </ToolButton>
+            <ToolButton label="자르기" onClick={() => props.onCropMode(true)} disabled={!asset || !!sticker.popup}>
               <Crop size={17} />
             </ToolButton>
             <ToolButton

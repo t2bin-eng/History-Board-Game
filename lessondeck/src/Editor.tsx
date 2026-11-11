@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   Crop,
   ImagePlus,
+  Maximize2,
   Move,
   MoveUpRight,
   Paintbrush,
@@ -72,7 +73,9 @@ import {
   placePasted,
   removeSticker,
   reorderSticker,
+  replaceSticker,
   stickerHeight,
+  togglePopup,
   stickersOf,
 } from "./doc/stickers";
 import { normalizeUrl } from "./doc/html";
@@ -133,8 +136,9 @@ import { BoxLayer } from "./view/BoxLayer";
 import type { LongPress } from "./view/PageView";
 import { PageView } from "./view/PageView";
 import { StickerEditor } from "./view/StickerEditor";
-import { stickerBox } from "./view/stickerGeometry";
+import { shownBox } from "./view/stickerGeometry";
 import { StickerLayer } from "./view/StickerLayer";
+import { PopupLayer } from "./view/PopupLayer";
 import { fittedSize } from "./view/textMeasure";
 
 type Popover =
@@ -1055,6 +1059,18 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
       return owner ? { ...d, pages: fn(d.pages, owner.id) } : d;
     });
 
+  /** 팝업 그림 켜고 끄기 (v0.27): 작은 아이콘 ↔ 원래 크기, 가운데는 같은 자리 */
+  const toggleStickerPopup = (id: string) => {
+    const page = docRef.current.pages.find((p) => p.stickers?.some((s) => s.id === id));
+    const s = page?.stickers?.find((x) => x.id === id);
+    if (!page || !s) return;
+    const asset = mediaAsset(docRef.current.assets, s.asset);
+    const next = togglePopup(s, !s.popup, asset?.width || 4, asset?.height || 3, pageAspect(page, docRef.current.assets));
+    setCropping(false);
+    editSticker(id, (pages, pageId) => replaceSticker(pages, pageId, next));
+    showToast(next.popup ? "팝업 그림: 작은 아이콘을 누르면 크게 보입니다 (모서리로 아이콘 크기)" : "팝업을 껐습니다 (원래 크기)");
+  };
+
   const selectSticker = (id: string, style = false) => {
     setSelectedSticker(id);
     setCropping(false);
@@ -1186,7 +1202,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     const px = ((clientX - r.left) * size.width) / Math.max(1, r.width);
     const py = ((clientY - r.top) * size.height) / Math.max(1, r.height);
     for (const s of [...page.stickers].reverse()) {
-      const b = stickerBox(s, mediaAsset(docRef.current.assets, s.asset), size);
+      const b = shownBox(s, mediaAsset(docRef.current.assets, s.asset), size);
       const dx = px - b.cx;
       const dy = py - b.cy;
       const lx = dx * Math.cos(b.angle) + dy * Math.sin(b.angle);
@@ -1417,13 +1433,23 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
           [
             { label: "크기·위치", icon: <Move size={18} />, onSelect: () => selectSticker(id) },
             {
-              label: "자르기",
-              icon: <Crop size={18} />,
-              onSelect: () => {
-                selectSticker(id);
-                setCropping(true);
-              },
+              label: findSticker(id)?.sticker.popup ? "팝업 끄기" : "팝업 (누르면 크게)",
+              icon: <Maximize2 size={18} />,
+              onSelect: () => toggleStickerPopup(id),
             },
+            // 팝업 그림은 아이콘이라 자르기는 팝업을 끄고 (원래 크기에서)
+            ...(findSticker(id)?.sticker.popup
+              ? []
+              : [
+                  {
+                    label: "자르기",
+                    icon: <Crop size={18} />,
+                    onSelect: () => {
+                      selectSticker(id);
+                      setCropping(true);
+                    },
+                  },
+                ]),
             { label: "꾸미기", icon: <Paintbrush size={18} />, onSelect: () => selectSticker(id, true) },
           ],
           [
@@ -2165,6 +2191,13 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
                   onDelete={(id) => deleteBox(id)}
                   onPickAt={pickStickerAt}
                 />
+                <PopupLayer
+                  page={currentPage}
+                  assets={doc.assets}
+                  size={size}
+                  live={liveSticker}
+                  interactive={!textMode && !selectedSticker && !selectedShape && !connectFrom}
+                />
                 {(() => {
                   const sticker = stickersOf(currentPage).find((s) => s.id === selectedSticker);
                   if (!sticker) return null;
@@ -2187,6 +2220,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
                       onDuplicate={() => void duplicateSticker(id)}
                       onDelete={() => deleteSticker(id)}
                       onOrder={(to) => editSticker(id, (pages, pageId) => reorderSticker(pages, pageId, id, to))}
+                      onPopup={() => toggleStickerPopup(id)}
                     />
                   );
                 })()}

@@ -148,6 +148,8 @@ export interface Sticker {
   opacity?: number;
   flipX?: boolean;
   flipY?: boolean;
+  /** 팝업 그림 (v0.27): 페이지에는 폭 w(페이지 가로 대비)의 정사각형 아이콘, 누르면 크게. x·y는 아이콘 왼쪽 위 */
+  popup?: { w: number };
 }
 
 export type Page = (

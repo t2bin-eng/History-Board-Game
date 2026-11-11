@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyCrop, clampCrop, newSticker, placePasted, reorderSticker, snapAngle, stickerHeight, visibleAspect } from "./stickers";
+import { applyCrop, clampCrop, framePatch, newSticker, placePasted, POPUP_ICON_W, popupRect, reorderSticker, shownSticker, snapAngle, stickerHeight, togglePopup, visibleAspect } from "./stickers";
 import type { Page, Sticker } from "./types";
 
 const base = (extra: Partial<Sticker> = {}): Sticker => ({ id: "s1", asset: "img", x: 0.2, y: 0.3, w: 0.4, ...extra });
@@ -77,5 +77,53 @@ describe("돌리기·순서·붙이기", () => {
     const [p2] = placePasted([], [base()], {}, { x: 0.5, y: 0.5 }, [0.2]);
     expect(p2.x + p2.w / 2).toBeCloseTo(0.5, 6);
     expect(p2.y + 0.1).toBeCloseTo(0.5, 6);
+  });
+});
+
+describe("팝업 그림 (v0.27)", () => {
+  const ASPECT = 1000 / 707;
+  it("페이지에는 정사각형 아이콘: 보이는 부분 가운데 정사각형, 기본 둥근·흰 테두리·그림자", () => {
+    const s = base({ popup: { w: 0.07 }, crop: { x: 0.1, y: 0, w: 0.8, h: 1 } });
+    const icon = shownSticker(s, 800, 400);
+    expect(icon.w).toBe(0.07);
+    // 보이는 부분 640×400 → 가운데 400×400 = 그림 대비 가로 0.5
+    expect(visibleAspect(icon, 800, 400)).toBeCloseTo(1, 6);
+    expect(icon.crop!.w).toBeCloseTo(0.5, 6);
+    expect(icon.crop!.x).toBeCloseTo(0.25, 6);
+    expect(icon).toMatchObject({ shape: "rounded", border: { color: "#ffffff" }, shadow: true });
+    // 직접 고른 모양·테두리는 그대로, 팝업이 아니면 그대로
+    expect(shownSticker(base({ popup: { w: 0.1 }, shape: "circle" }), 800, 400).shape).toBe("circle");
+    expect(shownSticker(base(), 800, 400)).toEqual(base());
+  });
+
+  it("켜고 끄기: 가운데 같은 자리, 끄면 원래 크기, popup 값이 빠짐", () => {
+    const s = base();
+    const cy = s.y + stickerHeight(s, 800, 400, ASPECT) / 2;
+    const on = togglePopup(s, true, 800, 400, ASPECT);
+    expect(on.popup).toEqual({ w: POPUP_ICON_W });
+    expect(on.w).toBe(0.4);
+    expect(on.x + POPUP_ICON_W / 2).toBeCloseTo(0.4, 6);
+    expect(on.y + (POPUP_ICON_W * ASPECT) / 2).toBeCloseTo(cy, 6);
+    const off = togglePopup(on, false, 800, 400, ASPECT);
+    expect("popup" in off).toBe(false);
+    expect(off.x).toBeCloseTo(s.x, 6);
+    expect(off.y).toBeCloseTo(s.y, 6);
+    expect(off.w).toBe(0.4);
+  });
+
+  it("틀 고치기: 팝업이면 크기는 아이콘 폭으로(0.03~0.5), 크게 볼 때는 원래 비율로 페이지 안에 가장 크게", () => {
+    const icon = base({ popup: { w: 0.07 } });
+    expect(framePatch(icon, { x: 0.1, y: 0.2, w: 0.12, rotation: 10 })).toEqual({ x: 0.1, y: 0.2, rotation: 10, popup: { w: 0.12 } });
+    expect(framePatch(icon, { x: 0, y: 0, w: 0.9 }).popup).toEqual({ w: 0.5 });
+    expect(framePatch(base(), { x: 0.1, y: 0.2, w: 0.3 })).toEqual({ x: 0.1, y: 0.2, w: 0.3 });
+    // 가로 2:1 그림, 페이지 1000×707 → 폭 920(가로 92%), 높이 460, 가운데
+    const r = popupRect(icon, 800, 400, PAGE);
+    expect(r.width).toBeCloseTo(920, 3);
+    expect(r.height).toBeCloseTo(460, 3);
+    expect(r.top).toBeCloseTo((707 - 460) / 2, 3);
+    // 세로로 긴 그림은 세로 88%
+    const t = popupRect(icon, 300, 900, PAGE);
+    expect(t.height).toBeCloseTo(707 * 0.88, 3);
+    expect(t.left + t.width / 2).toBeCloseTo(500, 3);
   });
 });

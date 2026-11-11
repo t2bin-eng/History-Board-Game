@@ -1,4 +1,4 @@
-import { cropOf, stickersOf } from "../doc/stickers";
+import { cropOf, shownSticker, stickersOf } from "../doc/stickers";
 import { mediaAsset, type Asset, type Page } from "../doc/types";
 import type { PageSize } from "../ink/geometry";
 import { stickerBox } from "./stickerGeometry";
@@ -39,10 +39,12 @@ export async function paintStickers(
     }),
   );
   if (!alive()) return;
-  list.forEach((s, i) => {
+  list.forEach((s0, i) => {
     const img = loaded[i];
-    const asset = mediaAsset(assets, s.asset);
+    const asset = mediaAsset(assets, s0.asset);
     if (!img || !asset) return;
+    // 팝업 그림은 페이지에 보이는 아이콘 모양으로 (v0.27)
+    const s = shownSticker(s0, asset.width, asset.height);
     const b = stickerBox(s, asset, size);
     const c = cropOf(s);
     const shape = new Path2D();
