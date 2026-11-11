@@ -24,6 +24,8 @@ interface Props {
 const TAP_SLOP = 10;
 const OPEN_MS = 320;
 const CLOSE_MS = 240;
+/** 열린 직후 이 시간 안의 바깥 누름은 닫기로 치지 않는다 (손가락 톡 뒤에 따라오는 클릭이 새로 깔린 배경에 떨어짐, v0.28.1) */
+const CLOSE_GUARD_MS = 450;
 
 export function PopupLayer({ page, assets, size, live, interactive }: Props) {
   const list = stickersOf(page).filter((s) => s.popup);
@@ -50,9 +52,14 @@ export function PopupLayer({ page, assets, size, live, interactive }: Props) {
   };
   const onUp = (s: Sticker, e: ReactPointerEvent) => {
     const p = press.current;
+    if (!p || p.id !== s.id || p.pointer !== e.pointerId) return;
+    // 뗀 자리를 적어 두고, 여는 것은 뒤따르는 클릭에서 (손을 뗄 때 열면 손가락 톡의 클릭이 새로 깔린 배경에 떨어져 바로 닫혔다)
+    if (e.type !== "pointerup" || Math.hypot(e.clientX - p.x, e.clientY - p.y) > TAP_SLOP) p.long = true;
+  };
+  const onClick = (s: Sticker) => {
+    const p = press.current;
     press.current = null;
-    if (!p || p.id !== s.id || p.pointer !== e.pointerId || e.type !== "pointerup" || p.long || !interactive) return;
-    if (Math.hypot(e.clientX - p.x, e.clientY - p.y) > TAP_SLOP) return;
+    if (!interactive || (p && (p.id !== s.id || p.long))) return;
     setOpen(s.id);
   };
 
@@ -77,6 +84,10 @@ export function PopupLayer({ page, assets, size, live, interactive }: Props) {
             onPointerDown={(e) => onDown(s, e)}
             onPointerUp={(e) => onUp(s, e)}
             onPointerCancel={(e) => onUp(s, e)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onClick(s);
+            }}
           >
             <span className="popup-badge" style={{ width: badge, height: badge }} aria-hidden="true">
               <Maximize2 size={Math.round(badge * 0.6)} strokeWidth={2.6} />
@@ -102,6 +113,7 @@ function PopupView({ sticker, asset, size, onClosed }: { sticker: Sticker; asset
   const frameRef = useRef<HTMLDivElement>(null);
   const backRef = useRef<HTMLDivElement>(null);
   const closing = useRef(false);
+  const openedAt = useRef(performance.now());
   const big = popupRect(sticker, asset.width, asset.height, size);
   const iconBox = stickerBox(shownSticker(sticker, asset.width, asset.height), asset, size);
   const from = { left: iconBox.left, top: iconBox.top, width: iconBox.width, height: iconBox.height };
@@ -167,6 +179,7 @@ function PopupView({ sticker, asset, size, onClosed }: { sticker: Sticker; asset
         onPointerDown={swallow}
         onClick={(e) => {
           e.stopPropagation();
+          if (performance.now() - openedAt.current < CLOSE_GUARD_MS) return;
           close();
         }}
       />
