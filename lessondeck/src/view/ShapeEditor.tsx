@@ -110,8 +110,23 @@ export function ShapeEditor({ stroke, size, onLive, onChange, onDuplicate, onDel
 
   // 도구 막대: 도형 위 (자리가 없으면 아래)
   const ey = line ? (Math.abs(Math.sin(f.rad)) * f.w) / 2 : (Math.abs(Math.sin(f.rad)) * f.w + Math.abs(Math.cos(f.rad)) * f.h) / 2;
-  const above = f.cy - ey - (line ? 20 : 48) - 46;
-  const tbTop = above >= 4 ? above : Math.min(size.height - 50, f.cy + ey + 18);
+  const mv = line ? moveSpot(spec, size) : { left: f.cx, top: f.cy };
+  let tbTop: number;
+  if (line) {
+    // 선·화살표 (v0.28.2): 옮기기 손잡이(선 한쪽 34px)와 휘기 손잡이(곡선 가운데)를 가리지 않게 막대는 옮기기 손잡이 반대쪽에.
+    // 0.28.1까지는 밑줄(가로선) 위에 막대를 두어 바로 위의 옮기기 손잡이를 덮어 선을 옮길 수 없었다
+    const mid = curveMid(spec, size);
+    const aboveTop = Math.min(f.cy - ey, mv.top - 13, mid[1] - 8) - 12 - 46;
+    const belowTop = Math.max(f.cy + ey, mv.top + 13, mid[1] + 8) + 12;
+    const fitsAbove = aboveTop >= 4;
+    const fitsBelow = belowTop + 46 <= size.height - 4;
+    const preferBelow = mv.top < f.cy - 1;
+    tbTop = preferBelow ? (fitsBelow ? belowTop : fitsAbove ? aboveTop : belowTop) : fitsAbove ? aboveTop : fitsBelow ? belowTop : aboveTop;
+    tbTop = Math.max(4, Math.min(size.height - 50, tbTop));
+  } else {
+    const above = f.cy - ey - 48 - 46;
+    tbTop = above >= 4 ? above : Math.min(size.height - 50, f.cy + ey + 18);
+  }
   const tbLeft = Math.min(Math.max(4, f.cx - 66), Math.max(4, size.width - 136));
 
   return (
@@ -173,7 +188,7 @@ export function ShapeEditor({ stroke, size, onLive, onChange, onDuplicate, onDel
         )}
         <span
           className="se-ui se-move"
-          style={line ? moveSpot(spec, size) : { left: f.cx, top: f.cy }}
+          style={mv}
           aria-label="옮기기"
           onPointerDown={(e) => start(e, { kind: "move", p0: [0, 0], s0: stroke.shape })}
           {...grab}
