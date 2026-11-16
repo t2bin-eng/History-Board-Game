@@ -36,7 +36,7 @@ import {
 } from "../doc/stickers";
 import type { MediaAsset, Sticker, StickerShape } from "../doc/types";
 import type { PageSize } from "../ink/geometry";
-import { rotatedExtent, stickerBox } from "./stickerGeometry";
+import { placeStylePanel, rotatedExtent, stickerBox } from "./stickerGeometry";
 
 type Patch = Partial<Omit<Sticker, "id" | "asset">>;
 type CropRect = { x: number; y: number; w: number; h: number };
@@ -233,14 +233,30 @@ export function StickerEditor(props: Props) {
 
   // ── 도구 막대 자리: 돌린 틀 위 (자리가 없으면 아래) ──
   const tbRef = useRef<HTMLDivElement>(null);
-  const [tbWidth, setTbWidth] = useState(360);
+  const [tbSize, setTbSize] = useState({ width: 360, height: 46 });
   useLayoutEffect(() => {
-    if (tbRef.current) setTbWidth(tbRef.current.offsetWidth);
-  }, [cropping, styleOpen]);
-  const { ey } = rotatedExtent(b);
-  const above = b.cy - ey - 46 - 34;
-  const tbTop = above >= 4 ? above : Math.min(size.height - 50, b.cy + ey + 14);
+    const el = tbRef.current;
+    if (el && (el.offsetWidth !== tbSize.width || el.offsetHeight !== tbSize.height)) setTbSize({ width: el.offsetWidth, height: el.offsetHeight });
+  });
+  const tbWidth = tbSize.width;
+  const { ex, ey } = rotatedExtent(b);
+  // 막대 높이는 잰 값으로 (좁은 화면에서 두 줄로 접히면 46px보다 큼)
+  const above = b.cy - ey - tbSize.height - 34;
+  const tbTop = above >= 4 ? above : Math.min(size.height - tbSize.height - 4, b.cy + ey + 14);
   const tbLeft = clamp(b.cx - tbWidth / 2, 4, Math.max(4, size.width - tbWidth - 4));
+  // 꾸미기 창: 그림(돌린 틀)과 막대를 가리지 않는 곳에 따로 (v0.28.3)
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [panelSize, setPanelSize] = useState({ width: 330, height: 260 });
+  useLayoutEffect(() => {
+    const el = panelRef.current;
+    if (el && (el.offsetWidth !== panelSize.width || el.offsetHeight !== panelSize.height)) setPanelSize({ width: el.offsetWidth, height: el.offsetHeight });
+  });
+  const panelAt = placeStylePanel(
+    { left: b.cx - ex, top: b.cy - ey, width: ex * 2, height: ey * 2 },
+    { left: tbLeft, top: tbTop, width: tbSize.width, height: tbSize.height },
+    panelSize,
+    size,
+  );
 
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
   const shown = cropping ? sticker : s;
@@ -447,8 +463,12 @@ export function StickerEditor(props: Props) {
             </ToolButton>
           </>
         )}
-        {styleOpen && !cropping && <StylePanel sticker={sticker} onChange={props.onChange} below={tbTop < b.cy} />}
       </div>
+      {styleOpen && !cropping && (
+        <div ref={panelRef} className="sticker-style-wrap" style={{ left: panelAt.left, top: panelAt.top }} onPointerDown={stop} onPointerUp={stop} onClick={stop}>
+          <StylePanel sticker={sticker} onChange={props.onChange} />
+        </div>
+      )}
     </div>
   );
 }
@@ -480,12 +500,12 @@ const SHAPES: { shape: StickerShape; label: string; icon: ReactNode }[] = [
 const WIDTH_LABELS = ["얇게", "보통", "굵게"];
 
 /** 꾸미기: 모양, 테두리 색·굵기, 그림자, 투명도, 상하 뒤집기 */
-function StylePanel({ sticker, onChange, below }: { sticker: Sticker; onChange: (p: Patch) => void; below: boolean }) {
+function StylePanel({ sticker, onChange }: { sticker: Sticker; onChange: (p: Patch) => void }) {
   const shape = sticker.shape ?? "rect";
   const border = sticker.border;
   const opacity = Math.round((sticker.opacity ?? 1) * 100);
   return (
-    <div className={`sticker-style${below ? " below" : " above"}`} role="group" aria-label="스티커 꾸미기">
+    <div className="sticker-style" role="group" aria-label="스티커 꾸미기">
       <div className="ss-row">
         <span className="ss-label">모양</span>
         {SHAPES.map((x) => (

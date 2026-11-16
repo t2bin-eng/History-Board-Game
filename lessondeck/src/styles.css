@@ -4093,9 +4093,14 @@ body:has(.select-bar) .toast {
 }
 
 /* 꾸미기 창 (도구 막대에 붙어서) */
-.sticker-style {
+/* 꾸미기 창은 막대와 따로, 그림과 막대를 가리지 않는 자리에 (v0.28.3) */
+.sticker-style-wrap {
   position: absolute;
-  left: 0;
+  z-index: 3;
+}
+
+.sticker-style {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -4108,13 +4113,6 @@ body:has(.select-bar) .toast {
   color: var(--text);
 }
 
-.sticker-style.below {
-  top: calc(100% + 6px);
-}
-
-.sticker-style.above {
-  bottom: calc(100% + 6px);
-}
 
 .ss-row {
   display: flex;

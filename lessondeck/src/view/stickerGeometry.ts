@@ -75,3 +75,50 @@ export function stickerShadow(s: Sticker, b: StickerBox, pageWidth: number): str
   }
   return parts.length ? parts.join(", ") : undefined;
 }
+
+type Box2 = { left: number; top: number; width: number; height: number };
+
+function overlapArea(a: Box2, b: Box2): number {
+  const w = Math.min(a.left + a.width, b.left + b.width) - Math.max(a.left, b.left);
+  const h = Math.min(a.top + a.height, b.top + b.height) - Math.max(a.top, b.top);
+  return w > 0 && h > 0 ? w * h : 0;
+}
+
+/**
+ * 꾸미기 창 자리 (v0.28.3): 스티커 틀(돌린 모양을 감싸는 네모)과 도구 막대를 가리지 않는 곳.
+ * 막대 바깥쪽(막대가 틀 위면 그 위) → 틀 오른쪽 → 틀 왼쪽 → 틀 반대쪽 차례로 페이지 안에 다 들어가는 첫 자리,
+ * 없으면 페이지 안으로 당겨 틀과 가장 덜 겹치는 자리. 0.28.2까지는 막대 바로 아래에 열어 막대가 틀 위일 때 그림을 덮었다
+ */
+export function placeStylePanel(frame: Box2, toolbar: Box2, panel: { width: number; height: number }, page: { width: number; height: number }): { left: number; top: number } {
+  const GAP = 10;
+  const M = 4;
+  const { width: pw, height: ph } = panel;
+  const tbAbove = toolbar.top + toolbar.height / 2 < frame.top + frame.height / 2;
+  const centerLeft = frame.left + frame.width / 2 - pw / 2;
+  const sideTop = tbAbove ? Math.max(frame.top, toolbar.top + toolbar.height + GAP) : frame.top;
+  const candidates = [
+    tbAbove ? { left: toolbar.left, top: toolbar.top - GAP - ph } : { left: toolbar.left, top: toolbar.top + toolbar.height + GAP },
+    { left: frame.left + frame.width + GAP, top: sideTop },
+    { left: frame.left - GAP - pw, top: sideTop },
+    tbAbove ? { left: centerLeft, top: frame.top + frame.height + GAP } : { left: centerLeft, top: frame.top - GAP - ph },
+  ];
+  const clampIn = (c: { left: number; top: number }) => ({
+    left: Math.min(Math.max(M, c.left), Math.max(M, page.width - pw - M)),
+    top: Math.min(Math.max(M, c.top), Math.max(M, page.height - ph - M)),
+  });
+  const pad = (b: Box2): Box2 => ({ left: b.left - 4, top: b.top - 4, width: b.width + 8, height: b.height + 8 });
+  const hits = (c: { left: number; top: number }) => {
+    const r = { ...c, width: pw, height: ph };
+    return overlapArea(r, pad(frame)) + overlapArea(r, pad(toolbar));
+  };
+  // 가로로만 페이지 안으로 당겨도 되는 것(위·아래 자리)은 당긴 뒤에 본다
+  for (const c of candidates) {
+    const fitted = { left: c.left, top: c.top };
+    if (c === candidates[0] || c === candidates[3]) fitted.left = clampIn(c).left;
+    const inside = fitted.left >= M && fitted.top >= M && fitted.left + pw <= page.width - M && fitted.top + ph <= page.height - M;
+    if (inside && hits(fitted) === 0) return fitted;
+  }
+  let best = clampIn(candidates[0]);
+  for (const c of candidates.map(clampIn)) if (hits(c) < hits(best)) best = c;
+  return best;
+}
