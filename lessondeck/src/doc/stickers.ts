@@ -62,11 +62,12 @@ export function newSticker(asset: string, imgW: number, imgH: number, pageAspect
 export const POPUP_ICON_W = 0.07;
 export const MAX_POPUP_ICON_W = 0.5;
 /** 아이콘 기본 흰 테두리 굵기 ("페이지 가로 = 1000" 단위) */
-const POPUP_ICON_BORDER = 4;
+export const POPUP_ICON_BORDER = 4;
 
 /**
  * 페이지에 보이는 모양: 팝업 그림이면 아이콘(보이는 부분 가운데 정사각형, 폭 popup.w, 기본 둥근 모서리·흰 테두리·그림자),
- * 아니면 그대로. 자리·크기 계산(stickerBox)·썸네일·고르기가 이것을 쓴다
+ * 아니면 그대로. 자리·크기 계산(stickerBox)·썸네일·고르기가 이것을 쓴다.
+ * 꾸미기로 고른 것은 그대로 따른다 (v0.28.4): 네모는 shape "rect", 테두리 없음은 굵기 0, 그림자 끔은 shadow false, 투명도도.
  */
 export function shownSticker(s: Sticker, imgW: number, imgH: number): Sticker {
   if (!s.popup) return s;
@@ -82,8 +83,7 @@ export function shownSticker(s: Sticker, imgW: number, imgH: number): Sticker {
     crop: { x: c.x + (c.w - cw) / 2, y: c.y + (c.h - ch) / 2, w: cw, h: ch },
     shape: s.shape ?? "rounded",
     border: s.border ?? { color: "#ffffff", width: POPUP_ICON_BORDER },
-    shadow: true,
-    opacity: undefined,
+    shadow: s.shadow !== false,
   };
 }
 

@@ -93,6 +93,9 @@ describe("팝업 그림 (v0.27)", () => {
     expect(icon).toMatchObject({ shape: "rounded", border: { color: "#ffffff" }, shadow: true });
     // 직접 고른 모양·테두리는 그대로, 팝업이 아니면 그대로
     expect(shownSticker(base({ popup: { w: 0.1 }, shape: "circle" }), 800, 400).shape).toBe("circle");
+    // 꾸미기로 고른 네모·테두리 없음(굵기 0)·그림자 끔·투명도도 아이콘에 (v0.28.4)
+    const plain = shownSticker(base({ popup: { w: 0.1 }, shape: "rect", border: { color: "#ffffff", width: 0 }, shadow: false, opacity: 0.5 }), 800, 400);
+    expect(plain).toMatchObject({ shape: "rect", border: { width: 0 }, shadow: false, opacity: 0.5 });
     expect(shownSticker(base(), 800, 400)).toEqual(base());
   });
 

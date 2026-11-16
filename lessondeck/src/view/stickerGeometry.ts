@@ -35,7 +35,8 @@ export function stickerBox(s: Sticker, natural: { width: number; height: number 
   const top = s.y * size.height;
   const imgW = width / c.w;
   const imgH = height / c.h;
-  const radius = s.shape === "circle" ? Infinity : s.shape === "rounded" ? Math.min(width, height) * 0.12 : 0;
+  // 둥근 모서리: 짧은 변의 20% (0.28.3까지 12%는 사진에서 잘 보이지 않았다)
+  const radius = s.shape === "circle" ? Infinity : s.shape === "rounded" ? Math.min(width, height) * 0.2 : 0;
   return {
     left,
     top,

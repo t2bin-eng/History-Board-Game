@@ -4046,7 +4046,8 @@ body:has(.select-bar) .toast {
   z-index: 2;
 }
 
-.sticker-toolbar button {
+.sticker-toolbar button,
+.sticker-style-wrap button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -4063,11 +4064,13 @@ body:has(.select-bar) .toast {
   cursor: pointer;
 }
 
-.sticker-toolbar button:hover:not(:disabled) {
+.sticker-toolbar button:hover:not(:disabled),
+.sticker-style-wrap button:hover:not(:disabled) {
   background: var(--hover);
 }
 
-.sticker-toolbar button.on {
+.sticker-toolbar button.on,
+.sticker-style-wrap button.on {
   background: var(--active-bg);
   color: var(--accent);
 }
@@ -4080,7 +4083,8 @@ body:has(.select-bar) .toast {
   font-weight: 700;
 }
 
-.sticker-toolbar button:disabled {
+.sticker-toolbar button:disabled,
+.sticker-style-wrap button:disabled {
   color: var(--icon-disabled);
   cursor: default;
 }
@@ -4092,11 +4096,18 @@ body:has(.select-bar) .toast {
   background: var(--panel-border);
 }
 
-/* 꾸미기 창 (도구 막대에 붙어서) */
+/* 꾸미기 창 (v0.28.3부터 막대와 따로 떠서. 단추 모양은 막대와 같게) */
 /* 꾸미기 창은 막대와 따로, 그림과 막대를 가리지 않는 자리에 (v0.28.3) */
 .sticker-style-wrap {
   position: absolute;
   z-index: 3;
+  font-size: 14px;
+}
+
+/* 모양 단추: 그림 + 이름 (v0.28.4) */
+.sticker-style-wrap .ss-shape {
+  padding: 0 10px 0 8px;
+  font-size: 13px;
 }
 
 .sticker-style {

@@ -14,7 +14,7 @@ import {
   Scissors,
   SendToBack,
   Square,
-  SquareRoundCorner,
+  Squircle,
   Trash2,
   X,
 } from "lucide-react";
@@ -28,6 +28,7 @@ import {
   MAX_POPUP_ICON_W,
   MIN_CROP,
   MIN_STICKER_W,
+  POPUP_ICON_BORDER,
   shownSticker,
   snapAngle,
   STICKER_BORDER_COLORS,
@@ -488,21 +489,23 @@ function ToolButton(props: { label: string; onClick: () => void; children: React
   );
 }
 
-const SHAPES: { shape: StickerShape; label: string; icon: ReactNode }[] = [
-  { shape: "rect", label: "사각", icon: <Square size={16} /> },
-  {
-    shape: "rounded",
-    label: "둥근 모서리",
-    icon: <SquareRoundCorner size={16} />,
-  },
-  { shape: "circle", label: "원", icon: <Circle size={16} /> },
+// 모양 단추는 그림과 이름을 함께 (0.28.3까지 둥근 모서리 그림이 한 모서리만 둥글어 "오른쪽 위만 접힘"처럼 보였다)
+const SHAPES: { shape: StickerShape; label: string; text: string; icon: ReactNode }[] = [
+  { shape: "rect", label: "사각", text: "네모", icon: <Square size={16} /> },
+  { shape: "rounded", label: "둥근 모서리", text: "둥글게", icon: <Squircle size={16} /> },
+  { shape: "circle", label: "원", text: "동그라미", icon: <Circle size={16} /> },
 ];
 const WIDTH_LABELS = ["얇게", "보통", "굵게"];
 
 /** 꾸미기: 모양, 테두리 색·굵기, 그림자, 투명도, 상하 뒤집기 */
 function StylePanel({ sticker, onChange }: { sticker: Sticker; onChange: (p: Patch) => void }) {
-  const shape = sticker.shape ?? "rect";
-  const border = sticker.border;
+  // 팝업 아이콘은 모양을 정하지 않으면 둥근 모서리 (shownSticker) — 창에도 그대로 보이고, 네모는 따로 적어 둔다 (v0.28.4)
+  const shape = sticker.shape ?? (sticker.popup ? "rounded" : "rect");
+  // 팝업 아이콘의 기본: 흰 테두리(얇게)·그림자 켬. 없음·끔은 따로 적어 둔다 (굵기 0, shadow false)
+  const popup = !!sticker.popup;
+  const border = popup ? (sticker.border ?? { color: "#ffffff", width: POPUP_ICON_BORDER }) : sticker.border;
+  const hasBorder = !!border && border.width > 0;
+  const shadow = popup ? sticker.shadow !== false : !!sticker.shadow;
   const opacity = Math.round((sticker.opacity ?? 1) * 100);
   return (
     <div className="sticker-style" role="group" aria-label="스티커 꾸미기">
@@ -514,10 +517,11 @@ function StylePanel({ sticker, onChange }: { sticker: Sticker; onChange: (p: Pat
             aria-label={x.label}
             title={x.label}
             aria-pressed={shape === x.shape}
-            className={shape === x.shape ? "on" : undefined}
-            onClick={() => onChange({ shape: x.shape === "rect" ? undefined : x.shape })}
+            className={`ss-shape${shape === x.shape ? " on" : ""}`}
+            onClick={() => onChange({ shape: sticker.popup ? (x.shape === "rounded" ? undefined : x.shape) : x.shape === "rect" ? undefined : x.shape })}
           >
             {x.icon}
+            {x.text}
           </button>
         ))}
       </div>
@@ -525,9 +529,9 @@ function StylePanel({ sticker, onChange }: { sticker: Sticker; onChange: (p: Pat
         <span className="ss-label">테두리</span>
         <button
           aria-label="테두리 없음"
-          aria-pressed={!border}
-          className={`ss-none${!border ? " on" : ""}`}
-          onClick={() => onChange({ border: undefined })}
+          aria-pressed={!hasBorder}
+          className={`ss-none${!hasBorder ? " on" : ""}`}
+          onClick={() => onChange({ border: popup ? { color: border?.color ?? "#ffffff", width: 0 } : undefined })}
         >
           없음
         </button>
@@ -536,13 +540,13 @@ function StylePanel({ sticker, onChange }: { sticker: Sticker; onChange: (p: Pat
             key={color}
             aria-label={color === "#ffffff" ? "흰 테두리 (스티커)" : `테두리 ${color}`}
             title={color === "#ffffff" ? "흰 테두리 (스티커)" : undefined}
-            aria-pressed={border?.color === color}
-            className={`ss-color${border?.color === color ? " on" : ""}`}
+            aria-pressed={hasBorder && border?.color === color}
+            className={`ss-color${hasBorder && border?.color === color ? " on" : ""}`}
             onClick={() =>
               onChange({
                 border: {
                   color,
-                  width: border?.width ?? STICKER_BORDER_WIDTHS[1],
+                  width: hasBorder ? border!.width : STICKER_BORDER_WIDTHS[1],
                 },
               })
             }
@@ -556,10 +560,10 @@ function StylePanel({ sticker, onChange }: { sticker: Sticker; onChange: (p: Pat
         {STICKER_BORDER_WIDTHS.map((width, i) => (
           <button
             key={width}
-            disabled={!border}
-            aria-pressed={border?.width === width}
-            className={`ss-text${border?.width === width ? " on" : ""}`}
-            onClick={() => border && onChange({ border: { ...border, width } })}
+            disabled={!hasBorder}
+            aria-pressed={hasBorder && border?.width === width}
+            className={`ss-text${hasBorder && border?.width === width ? " on" : ""}`}
+            onClick={() => hasBorder && onChange({ border: { ...border!, width } })}
           >
             {WIDTH_LABELS[i]}
           </button>
@@ -568,11 +572,11 @@ function StylePanel({ sticker, onChange }: { sticker: Sticker; onChange: (p: Pat
       <div className="ss-row">
         <span className="ss-label">그림자</span>
         <button
-          aria-pressed={!!sticker.shadow}
-          className={`ss-text${sticker.shadow ? " on" : ""}`}
-          onClick={() => onChange({ shadow: sticker.shadow ? undefined : true })}
+          aria-pressed={shadow}
+          className={`ss-text${shadow ? " on" : ""}`}
+          onClick={() => onChange({ shadow: popup ? (shadow ? false : undefined) : shadow ? undefined : true })}
         >
-          {sticker.shadow ? "켜짐" : "꺼짐"}
+          {shadow ? "켜짐" : "꺼짐"}
         </button>
         <span className="ss-label">뒤집기</span>
         <button
