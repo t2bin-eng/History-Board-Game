@@ -13,8 +13,8 @@ export interface MenuItem {
   hint?: string;
 }
 
-/** 줄 묶음 (묶음 사이에 구분선) */
-export type MenuGroups = (MenuItem | false | null | undefined)[][];
+/** 줄 묶음 (묶음 사이에 구분선). 묶음째 false면 뺀다 */
+export type MenuGroups = ((MenuItem | false | null | undefined)[] | false | null | undefined)[];
 
 interface Props {
   /** 화면 좌표: 이 점의 오른쪽 아래에 연다 (화면 밖으로 나가면 안쪽으로) */
@@ -49,7 +49,7 @@ export function ContextMenu({ x, y, title, groups, onClose }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const visible = groups.map((g) => g.filter((i): i is MenuItem => !!i)).filter((g) => g.length);
+  const visible = groups.map((g) => (g || []).filter((i): i is MenuItem => !!i)).filter((g) => g.length);
 
   return (
     <div

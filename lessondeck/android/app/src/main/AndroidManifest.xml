@@ -35,6 +35,14 @@
         </provider>
     </application>
 
+    <!-- AI로 보내기 (v0.31): 그림 공유를 받는 앱(Claude·ChatGPT·Gemini)이 깔려 있는지 보려면 안드로이드 11부터 이렇게 밝혀야 한다 -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+            <data android:mimeType="image/*" />
+        </intent>
+    </queries>
+
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />

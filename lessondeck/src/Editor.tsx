@@ -109,7 +109,7 @@ import {
 import { parseYouTube } from "./doc/youtube";
 import { applyInk, type InkAction, type InkBook } from "./ink/history";
 import { docThumbPage, setDocThumbPage, useLibraryView } from "./store/library";
-import { snapshotPage, thumbTarget } from "./view/pageSnapshot";
+import { pageBaseImage, pageFullImage, snapshotPage, thumbTarget, type PageImage } from "./view/pageSnapshot";
 import { DEFAULT_PRESETS, ERASER_LEVELS } from "./ink/palette";
 import type { InkTool, PenPreset, Stroke, Tool } from "./ink/types";
 import { safeFileName, shareOrDownload } from "./lib/files";
@@ -122,6 +122,9 @@ import { cleanFormat, type BoxFormat } from "./doc/boxFonts";
 import { josa } from "./lib/josa";
 import { ShapeEditor } from "./view/ShapeEditor";
 import { isNativeApp, showToast } from "./lib/platform";
+import { AI_APPS, captureShownPage, lastAiApp, rememberAiApp, shareToAi, type AiAppId } from "./lib/aiShare";
+import { AI_SHOT_ID, type AiRequest } from "./doc/aiScratch";
+import { AiBar, AiIcon } from "./ui/AiBar";
 import { usePersistentFlag } from "./lib/usePersistentFlag";
 import { collectAssets, importAssets } from "./store/assetTransfer";
 import { putAsset, saveInk, saveManifest, setThumb, toManifest, type OpenedDoc } from "./store/docStore";
@@ -183,6 +186,12 @@ interface Props {
   onDocChange: (doc: DocState) => void;
   /** 상단 바 오른쪽에 붙일 것 (동기화 상태 버튼) */
   headerExtra?: ReactNode;
+  /** AI로 보내기 (v0.31): 보고 있는 페이지로 AI 창을 연다 */
+  onAi?: (req: AiRequest) => void;
+  /** 이 화면이 AI 창이다 (저장하지 않는 임시 문서, SPEC 5장) */
+  ai?: { onClose: () => void };
+  /** AI 창에서 돌아올 때 강의 모드였으면 그대로 */
+  resumeLecture?: boolean;
 }
 
 function lastPageKey(docId: string) {
@@ -200,7 +209,10 @@ function initialPageId(doc: DocState): string {
 }
 
 // 문서 하나를 열어 판서하는 화면
-export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
+export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, resumeLecture }: Props) {
+  /** AI 창: 기기 저장소에 아무것도 쓰지 않는다 */
+  const aiMode = !!ai;
+  const storeAsset = (docId: string, id: string, blob: Blob) => (aiMode ? Promise.resolve() : putAsset(docId, id, blob));
   const [doc, setDoc] = useState<DocState>(opened.doc);
   useEffect(() => {
     onDocChange(doc);
@@ -289,7 +301,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   /** 메뉴의 "꾸미기"로 골랐을 때 꾸미기 창을 바로 연다 */
   const [stickerStyleReq, setStickerStyleReq] = useState(0);
   /** 강의 모드: 도구 막대·페이지 바를 숨기고 페이지를 화면 가득 */
-  const [lecture, setLecture] = useState(false);
+  const [lecture, setLecture] = useState(!!resumeLecture);
   /** 스포트라이트 (v0.28, 강의 모드): 켜짐 · 크기 단계 (기기에 기억) */
   const [spotOn, setSpotOn] = useState(false);
   const [spotStep, setSpotStep] = useState(() => {
@@ -354,6 +366,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   const savedDocRef = useRef(opened.doc);
   const flushManifest = useCallback(() => {
     clearTimeout(manifestTimer.current);
+    if (aiMode) return Promise.resolve();
     const current = docRef.current;
     if (current === savedDocRef.current) return Promise.resolve();
     savedDocRef.current = current;
@@ -374,12 +387,16 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   const savedInkRef = useRef(opened.ink);
   /** 홈 카드 썸네일 그림을 지금 필기로 다시 만든다 (너무 오래 걸리면 기다리지 않음) */
   const refreshThumb = useCallback(
-    () => Promise.race([updateThumb(docRef.current, savedInkRef.current), new Promise<void>((r) => setTimeout(r, 1500))]).catch(() => undefined),
+    () =>
+      aiMode
+        ? Promise.resolve()
+        : Promise.race([updateThumb(docRef.current, savedInkRef.current), new Promise<void>((r) => setTimeout(r, 1500))]).catch(() => undefined),
     [],
   );
   useEffect(() => {
     const prev = savedInkRef.current;
     savedInkRef.current = ink;
+    if (aiMode) return;
     for (const [pageId, hist] of Object.entries(ink)) {
       if (prev[pageId]?.present !== hist.present) {
         saveInk(doc.id, pageId, hist.present).catch((err) => {
@@ -393,7 +410,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   // 마지막으로 본 페이지 기억
   useEffect(() => {
     try {
-      if (currentId) localStorage.setItem(lastPageKey(doc.id), currentId);
+      if (currentId && !aiMode) localStorage.setItem(lastPageKey(doc.id), currentId);
     } catch {
       // 기억하지 못해도 문제없다
     }
@@ -456,7 +473,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   const insertPdf = async (file: File, index: number) => {
     try {
       const asset = await loadPdfAsset(await file.arrayBuffer(), file.name);
-      await putAsset(doc.id, asset.id, file.type ? file : new Blob([file], { type: "application/pdf" }));
+      await storeAsset(doc.id, asset.id, file.type ? file : new Blob([file], { type: "application/pdf" }));
       const added = pagesForAsset(asset);
       addAssetAndPages(asset, index, added);
       showToast(`${asset.name} ${added.length}쪽을 추가했습니다`);
@@ -468,7 +485,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
 
   const insertHtml = async (file: File, index: number) => {
     const asset = loadHtmlAsset(await file.arrayBuffer(), file.name);
-    await putAsset(doc.id, asset.id, new Blob([asset.html], { type: "text/html;charset=utf-8" }));
+    await storeAsset(doc.id, asset.id, new Blob([asset.html], { type: "text/html;charset=utf-8" }));
     addAssetAndPages(asset, index, [{ id: newPageId(), kind: "html", asset: asset.id, aspect: "16:9" }]);
     showToast(asset.warnings.length ? `${asset.name}: ${asset.warnings[0]}` : `${asset.name} 페이지를 넣었습니다 (조작 모드)`);
   };
@@ -483,7 +500,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
         if (!video && /hei[cf]|tiff?$/i.test(file.name)) showToast(`${file.name} 변환 중…`);
         const prep = video ? await prepareVideo(file) : await prepareImage(file);
         const id = newId(video ? "video" : "img");
-        await putAsset(doc.id, id, prep.blob);
+        await storeAsset(doc.id, id, prep.blob);
         const asset: Asset = {
           kind: video ? "video" : "image",
           id,
@@ -638,12 +655,16 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   const pastePages = async (index: number) => {
     const c = getClip();
     if (c?.kind !== "pages") return;
+    if (aiMode) {
+      showToast("AI 창에는 페이지를 붙일 수 없습니다. 글상자·스티커·그림을 붙여 보세요");
+      return;
+    }
     const pc = c.clip;
     const d0 = docRef.current;
     const other = pc.docId !== d0.id;
     if (other) showToast("페이지를 붙이는 중…");
     try {
-      const imported = await importAssets(d0, pc.docId, pc.assets, other ? pdfPagesUsed(pc.pages) : {});
+      const imported = await importAssets(d0, pc.docId, pc.assets, other ? pdfPagesUsed(pc.pages) : {}, !aiMode);
       const plan = planPaste(pc, d0.id, docRef.current.pages, imported.assetMap, imported.pdfIndexMap);
       setDoc((d) => ({ ...d, assets: { ...d.assets, ...imported.added }, pages: insertPages(d.pages, index, plan.pages) }));
       if (Object.keys(plan.ink).length) {
@@ -861,6 +882,88 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
 
   // 안드로이드 뒤로 가기는 앱을 닫기 전에 강의 모드부터 끝낸다
   useEffect(() => (lecture ? onBackPress(exitLecture) : undefined), [lecture, exitLecture]);
+
+  // ── AI로 보내기 (v0.31, SPEC 5장) ─────────────────────────
+  // 보고 있는 페이지의 바탕을 그림으로 굳히고, 글상자·스티커·필기는 고칠 수 있게 옮겨 AI 창(저장하지 않는 임시 문서)을 연다
+  const [aiBusy, setAiBusy] = useState(false);
+  const startAi = async () => {
+    const page = docRef.current.pages.find((p) => p.id === currentIdRef.current);
+    if (!onAi || !page || aiBusy) return;
+    setAiBusy(true);
+    setPopover(null);
+    setAddMenu(null);
+    setMenu(null);
+    setSelectedBox(null);
+    setEditingBox(null);
+    setSelectedSticker(null);
+    setCropping(false);
+    setSelectedShape(null);
+    setSelectedArrow(null);
+    setConnectFrom(null);
+    try {
+      await flushManifest();
+      let base: PageImage | null = null;
+      // 웹·동영상 페이지: 앱에서는 보이는 그대로 찍는다 (웹 버전은 썸네일과 같은 대체 그림)
+      if (isInteractivePage(page)) base = await captureShownPage();
+      if (!base) base = await pageBaseImage(page, docRef.current);
+      if (!base) {
+        showToast("이 페이지를 그림으로 만들지 못했습니다");
+        return;
+      }
+      onAi({ base, page, strokes: inkRef.current[page.id]?.present ?? [], ink: inkRef.current, lecture });
+    } catch (err) {
+      console.error(err);
+      showToast("AI 창을 열지 못했습니다");
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  // AI 창: 보낼 앱 · 할 말 · 보내기 · 닫기
+  const [aiApp, setAiApp] = useState<AiAppId>(lastAiApp);
+  const [aiText, setAiText] = useState("");
+  const [aiSending, setAiSending] = useState(false);
+  const closeAi = useCallback(() => {
+    if (!ai) return;
+    const changed = docRef.current !== opened.doc || inkRef.current !== opened.ink;
+    if (changed && !window.confirm("보내지 않고 닫을까요? AI 창에서 고친 것은 사라집니다. (원래 페이지는 그대로)")) return;
+    ai.onClose();
+  }, [ai, opened]);
+  useEffect(() => (ai ? onBackPress(closeAi) : undefined), [ai, closeAi]);
+  const sendToAi = async () => {
+    const page = docRef.current.pages[0];
+    if (!ai || !page || aiSending) return;
+    setAiSending(true);
+    // 고치던 글상자·도형은 끝내고 그린다
+    setEditingBox(null);
+    setSelectedBox(null);
+    setSelectedShape(null);
+    setSelectedSticker(null);
+    setCropping(false);
+    const app = AI_APPS.find((a) => a.id === aiApp) ?? AI_APPS[0];
+    try {
+      await new Promise((r) => setTimeout(r, 60));
+      const shot = docRef.current.assets[AI_SHOT_ID];
+      const width = shot && shot.kind === "image" ? shot.width : 1600;
+      const image = await pageFullImage(page, docRef.current, inkRef.current[page.id]?.present ?? [], width);
+      if (!image) {
+        showToast("보낼 그림을 만들지 못했습니다");
+        return;
+      }
+      rememberAiApp(app.id);
+      const via = await shareToAi(app.id, image.blob, aiText.trim());
+      if (via === "cancelled") return;
+      if (via === "app") showToast(`${app.label} 앱을 열었습니다. 그곳에서 전송을 누르세요${aiText.trim() ? " (적은 말은 클립보드에도 담았습니다)" : ""}`);
+      else if (via === "chooser") showToast(isNativeApp ? `${app.label} 앱을 찾지 못해(또는 그림을 받지 않아) 공유 창을 열었습니다` : "보냈습니다");
+      else showToast(`그림을 내려받았습니다. 열린 ${app.label}에 붙여넣거나 끌어 놓으세요${aiText.trim() ? " (적은 말은 클립보드에)" : ""}`);
+      ai.onClose();
+    } catch (err) {
+      console.error(err);
+      showToast("보내지 못했습니다");
+    } finally {
+      setAiSending(false);
+    }
+  };
 
   // ── 텍스트 상자·하이퍼링크 ─────────────────────────────
   const leaveTextMode = () => {
@@ -1128,7 +1231,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
         if (/hei[cf]|tiff?$/i.test(file.name)) showToast(`${file.name} 변환 중…`);
         const prep = await prepareImage(file, STICKER_MAX_SIDE);
         const id = newId("img");
-        await putAsset(docRef.current.id, id, prep.blob);
+        await storeAsset(docRef.current.id, id, prep.blob);
         const asset: Asset = {
           kind: "image",
           id,
@@ -1203,7 +1306,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   const pasteStickers = async (c: StickerClip, at?: { x: number; y: number }) => {
     const pageId = currentIdRef.current;
     try {
-      const imported = await importAssets(docRef.current, c.docId, c.assets);
+      const imported = await importAssets(docRef.current, c.docId, c.assets, {}, !aiMode);
       const page = docRef.current.pages.find((p) => p.id === pageId);
       if (!page) return;
       const placed = placePasted(stickersOf(page), c.stickers, imported.assetMap, at, c.heights);
@@ -1307,7 +1410,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     if (c.kind === "boxes") {
       setDoc((d) => ({ ...d, pages: pasteBoxes(insertPages(d.pages, index, [blank]), blank.id, c.clip, d.id).pages }));
     } else {
-      const imported = await importAssets(docRef.current, c.clip.docId, c.clip.assets);
+      const imported = await importAssets(docRef.current, c.clip.docId, c.clip.assets, {}, !aiMode);
       const page = { ...blank, stickers: placePasted([], c.clip.stickers, imported.assetMap) };
       setDoc((d) => ({ ...d, assets: { ...d.assets, ...imported.added }, pages: insertPages(d.pages, index, [page]) }));
     }
@@ -1330,7 +1433,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
 
   /** 메뉴 이름: 무엇을 붙일지 (기기 클립보드는 읽기 전에는 모르므로 "복사한 그림·링크·글") */
   /** 메뉴 이름은 짧게 (무엇을 붙일지는 붙이고 나서 보인다). 페이지 안에서 복사한 페이지는 지금 페이지 뒤에 */
-  const pasteHereLabel = (): string => (!preferSystem() && getClip()?.kind === "pages" ? "페이지 붙여넣기" : "붙여넣기");
+  const pasteHereLabel = (): string => (!aiMode && !preferSystem() && getClip()?.kind === "pages" ? "페이지 붙여넣기" : "붙여넣기");
 
   // 길게 누르기(펜·손가락)·오른쪽 클릭: 글상자 위면 상자 메뉴, 아니면 페이지 메뉴
   const onLongPress = (p: LongPress) => {
@@ -1543,7 +1646,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
                 createBox(at.x, at.y);
               },
             },
-            at && { label: "링크", icon: <Link2 size={18} />, onSelect: () => createLinkBox(at) },
+            at && !aiMode && { label: "링크", icon: <Link2 size={18} />, onSelect: () => createLinkBox(at) },
             at && {
               label: "베일 (가리기)",
               icon: <Blinds size={18} />,
@@ -1580,7 +1683,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
             },
             strokes.length > 0 && { label: "필기 지우기", icon: <Eraser size={18} />, onSelect: () => inkAction({ type: "clear" }) },
           ],
-          [
+          !aiMode && [
             { label: "빈 페이지 추가", icon: <FilePlus2 size={18} />, onSelect: () => addBlank(pageIndex + 1, "plain") },
             currentPage && { label: "페이지 복제", icon: <CopyPlus size={18} />, onSelect: () => duplicatePage(currentPage.id) },
             currentPage && { label: "페이지 복사", icon: <Copy size={18} />, onSelect: () => void copyPage(currentPage.id) },
@@ -1597,12 +1700,14 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
             },
             isWebPage(currentPage) && { label: "새로고침", icon: <RotateCw size={18} />, onSelect: reloadWebPage },
           ],
-          [
+          !aiMode && [
             lecture
               ? { label: "강의 끝내기", icon: <Minimize2 size={18} />, hint: "Esc", onSelect: exitLecture }
               : { label: "강의 모드", icon: <Presentation size={18} />, hint: "F5", onSelect: enterLecture },
             !paletteOpen && { label: "펜 바 보이기", icon: <Palette size={18} />, onSelect: () => setPaletteOpen(true) },
+            onAi && { label: "AI로 보내기", icon: <AiIcon size={18} />, onSelect: () => void startAi() },
           ],
+          aiMode && [!paletteOpen && { label: "펜 바 보이기", icon: <Palette size={18} />, onSelect: () => setPaletteOpen(true) }],
         ],
       };
     }
@@ -1889,9 +1994,9 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
         e.preventDefault();
         deleteBox(selectedBox);
       } else if (e.key === "F5") {
-        // 파워포인트처럼 F5로 강의 시작, Esc로 끝
+        // 파워포인트처럼 F5로 강의 시작, Esc로 끝 (AI 창에서는 쓰지 않음)
         e.preventDefault();
-        enterLecture();
+        if (!aiMode) enterLecture();
       } else if (e.key === "Escape" && lecture) {
         exitLecture();
       } else if (pageKey && penButtonRecently()) {
@@ -1910,7 +2015,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
   const popoverPreset = popover?.kind === "preset" ? presets.find((p) => p.id === popover.id) : undefined;
 
   return (
-    <div className={`app${lecture ? " lecture" : ""}`}>
+    <div className={`app${lecture ? " lecture" : ""}${aiMode ? " ai-mode" : ""}`}>
       {lecture && (
         // 강의 모드 화면 위: 링크로 보고 돌아온 쪽을 다음·이전에서 건너뛸지
         <button
@@ -1930,6 +2035,19 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
           {skipLinked && seenViaLink.length > 0 && <span className="ls-count">{seenViaLink.length}쪽</span>}
         </button>
       )}
+      {aiMode ? (
+        <AiBar
+          app={aiApp}
+          onApp={setAiApp}
+          text={aiText}
+          onText={setAiText}
+          sending={aiSending}
+          onSend={() => void sendToAi()}
+          onClose={closeAi}
+          fingerDraw={fingerDraw}
+          onFingerDraw={() => setFingerDraw((v) => !v)}
+        />
+      ) : (
       <header className="topbar">
         <div className="topbar-left">
           <IconButton label="문서 목록" onClick={goHome}>
@@ -1982,18 +2100,19 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
             <EllipsisVertical size={22} />
           </IconButton>
         </div>
-        <input
-          ref={fileRef}
-          type="file"
-          accept={fileAccept}
-          multiple
-          hidden
-          onChange={(e) => {
-            onPickFiles(e.target.files);
-            e.target.value = "";
-          }}
-        />
       </header>
+      )}
+      <input
+        ref={fileRef}
+        type="file"
+        accept={fileAccept}
+        multiple
+        hidden
+        onChange={(e) => {
+          onPickFiles(e.target.files);
+          e.target.value = "";
+        }}
+      />
 
       <nav className="toolrow" aria-label="필기 도구">
         <IconButton label="실행 취소" disabled={!pageInk?.past.length} onClick={() => inkAction({ type: "undo" })}>
@@ -2051,9 +2170,11 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
         >
           <Blinds size={23} />
         </IconButton>
-        <IconButton label="링크 만들기" disabled={!currentPage} onClick={() => createLinkBox()}>
-          <Link2 size={23} />
-        </IconButton>
+        {!aiMode && (
+          <IconButton label="링크 만들기" disabled={!currentPage} onClick={() => createLinkBox()}>
+            <Link2 size={23} />
+          </IconButton>
+        )}
         <IconButton label="이미지 스티커" disabled={!currentPage} onClick={() => pickFile("sticker", pageIndex)}>
           <ImagePlus size={23} />
         </IconButton>
@@ -2078,6 +2199,11 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
         <IconButton label={paletteOpen ? "펜 바 감추기" : "펜 바 보이기"} active={paletteOpen} onClick={() => setPaletteOpen((v) => !v)}>
           <Palette size={22} />
         </IconButton>
+        {onAi && (
+          <IconButton label="AI로 보내기" disabled={!currentPage || aiBusy} onClick={() => void startAi()}>
+            {aiBusy ? <span className="spinner" aria-hidden="true" /> : <AiIcon />}
+          </IconButton>
+        )}
         {onInteractive && (
           <>
             <span className="toolrow-sep" />
@@ -2114,7 +2240,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
           void insertStickers(files, inside ? { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height } : undefined);
         }}
       >
-        {pagePanelOpen && !lecture && doc.pages.length > 0 && (
+        {pagePanelOpen && !lecture && !aiMode && doc.pages.length > 0 && (
           <PagePanel
             doc={doc}
             ink={ink}
@@ -2346,6 +2472,11 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
                 >
                   <Palette size={20} />
                 </button>
+                {onAi && (
+                  <button aria-label="AI로 보내기" disabled={aiBusy} onClick={() => void startAi()}>
+                    {aiBusy ? <span className="spinner" aria-hidden="true" /> : <AiIcon size={20} />}
+                  </button>
+                )}
                 <button
                   aria-label={spotOn ? "스포트라이트 끄기" : "스포트라이트"}
                   title="스포트라이트: 펜·손가락이 있는 곳만 밝게"

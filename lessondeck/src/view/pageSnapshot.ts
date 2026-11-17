@@ -118,8 +118,8 @@ async function paintBase(ctx: CanvasRenderingContext2D, page: Page, doc: DocStat
   }
 }
 
-/** 페이지 한 장을 썸네일 그림(JPEG data URL)으로. 못 만들면 null (PDF·그림 원본이 없으면 빈 종이를 만들지 않는다) */
-export async function snapshotPage(page: Page, doc: DocState, strokes: Stroke[], width = SNAPSHOT_WIDTH): Promise<string | null> {
+/** 페이지를 폭 width의 캔버스에 그린다: 바탕 + (objects면) 스티커 + 필기 + 글상자. 못 그리면 null */
+async function renderPage(page: Page, doc: DocState, strokes: Stroke[], width: number, objects: boolean): Promise<HTMLCanvasElement | null> {
   if (page.kind === "pdf" && !pdfAsset(doc.assets, page.asset)) return null;
   if (page.kind === "image" && !mediaAsset(doc.assets, page.asset)) return null;
   const height = Math.round(width / pageAspect(page, doc.assets));
@@ -131,17 +131,66 @@ export async function snapshotPage(page: Page, doc: DocState, strokes: Stroke[],
   const size = { width, height };
   try {
     await paintBase(ctx, page, doc, width, height);
-    await paintStickers(ctx, page, doc.assets, size).catch(() => undefined);
-    paintInk(ctx, strokes, size);
-    await loadBoxFonts(boxesOf(page));
-    paintBoxes(ctx, page, doc.pages, doc.hidden, size);
-    return canvas.toDataURL("image/jpeg", 0.86);
+    if (objects) {
+      await paintStickers(ctx, page, doc.assets, size).catch(() => undefined);
+      paintInk(ctx, strokes, size);
+      await loadBoxFonts(boxesOf(page));
+      paintBoxes(ctx, page, doc.pages, doc.hidden, size);
+    }
+    return canvas;
   } catch {
+    canvas.width = 0;
+    canvas.height = 0;
     return null;
+  }
+}
+
+/** 페이지 한 장을 썸네일 그림(JPEG data URL)으로. 못 만들면 null (PDF·그림 원본이 없으면 빈 종이를 만들지 않는다) */
+export async function snapshotPage(page: Page, doc: DocState, strokes: Stroke[], width = SNAPSHOT_WIDTH): Promise<string | null> {
+  const canvas = await renderPage(page, doc, strokes, width, true);
+  if (!canvas) return null;
+  try {
+    return canvas.toDataURL("image/jpeg", 0.86);
   } finally {
     canvas.width = 0;
     canvas.height = 0;
   }
+}
+
+/** AI로 보내기 (v0.31): 긴 변을 이만큼으로 그린다 */
+export const AI_LONG_SIDE = 2400;
+
+export interface PageImage {
+  blob: Blob;
+  width: number;
+  height: number;
+}
+
+function toBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob | null> {
+  return new Promise((resolve) => canvas.toBlob((b) => resolve(b), "image/jpeg", quality));
+}
+
+async function canvasImage(canvas: HTMLCanvasElement | null, quality: number): Promise<PageImage | null> {
+  if (!canvas) return null;
+  try {
+    const blob = await toBlob(canvas, quality);
+    return blob ? { blob, width: canvas.width, height: canvas.height } : null;
+  } finally {
+    canvas.width = 0;
+    canvas.height = 0;
+  }
+}
+
+/** AI로 보내기의 배경: 페이지 바탕만 (글상자·스티커·필기 없이), 긴 변 AI_LONG_SIDE */
+export function pageBaseImage(page: Page, doc: DocState): Promise<PageImage | null> {
+  const aspect = pageAspect(page, doc.assets);
+  const width = aspect >= 1 ? AI_LONG_SIDE : Math.round(AI_LONG_SIDE * aspect);
+  return renderPage(page, doc, [], width, false).then((c) => canvasImage(c, 0.92));
+}
+
+/** AI로 보낼 그림: 페이지 전체(바탕 + 스티커 + 필기 + 글상자)를 폭 width로 */
+export function pageFullImage(page: Page, doc: DocState, strokes: Stroke[], width: number): Promise<PageImage | null> {
+  return renderPage(page, doc, strokes, width, true).then((c) => canvasImage(c, 0.9));
 }
 
 /** 홈 카드 썸네일로 쓸 페이지: 고른 페이지(지금 문서에 있으면), 아니면 처음 보이는 페이지 */

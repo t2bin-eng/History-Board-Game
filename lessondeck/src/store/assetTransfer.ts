@@ -11,7 +11,9 @@ export async function collectAssets(docId: string, ids: string[], assets: Record
   const out: Record<string, ClipAsset> = {};
   for (const id of ids) {
     const asset = assets[id];
-    const blob = asset && (await getAsset(docId, id));
+    let blob = asset && (await getAsset(docId, id));
+    // 저장하지 않는 AI 창(v0.31)의 그림: 화면용 주소에서 읽는다
+    if (asset && !blob && asset.kind === "image") blob = await fetch(asset.url).then((r) => r.blob()).catch(() => undefined);
     if (asset && blob) out[id] = { meta: assetMeta(asset), blob };
   }
   return out;
@@ -43,12 +45,14 @@ export async function importAssets(
   clipDocId: string,
   clipAssets: Record<string, ClipAsset>,
   pdfPages: Record<string, number[]> = {},
+  /** false: 기기 저장소에 쓰지 않는다 (AI 창, v0.31) */
+  store = true,
 ): Promise<ImportedAssets> {
   const result: ImportedAssets = { added: {}, assetMap: {}, pdfIndexMap: {} };
   for (const [id, { meta, blob }] of Object.entries(clipAssets)) {
     const existing = target.assets[id];
     if (existing && clipDocId === target.id) continue;
-    if (existing && (await sameFile(target.id, id, existing, meta, blob))) continue;
+    if (existing && store && (await sameFile(target.id, id, existing, meta, blob))) continue;
 
     let outMeta = meta;
     let outBlob = blob;
@@ -69,7 +73,7 @@ export async function importAssets(
         console.warn("PDF 쪽을 뽑지 못해 전체를 넣습니다", err);
       }
     }
-    await putAsset(target.id, outId, outBlob);
+    if (store) await putAsset(target.id, outId, outBlob);
     result.added[outId] = await toRuntimeAsset(outId, outMeta, outBlob);
     if (outId !== id) result.assetMap[id] = outId;
   }

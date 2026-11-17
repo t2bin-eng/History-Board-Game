@@ -8,7 +8,7 @@ import { isNativeApp } from "./platform";
 interface WebFramesPlugin {
   setHosts(options: { hosts: string[] }): Promise<void>;
   openExternal(options: { url: string }): Promise<void>;
-  snapshot(options: { x: number; y: number; width: number; height: number; outWidth: number }): Promise<{ dataUrl: string }>;
+  snapshot(options: { x: number; y: number; width: number; height: number; outWidth: number; quality?: number }): Promise<{ dataUrl: string }>;
   /** 0.17부터: 짧은 공유 주소를 열어 보고 실제 주소 */
   resolve(options: { url: string }): Promise<{ url: string }>;
 }
@@ -119,11 +119,11 @@ export function routeExternalLinks() {
   );
 }
 
-/** 안드로이드 앱: 화면의 한 부분(CSS 픽셀)을 찍어 작은 JPEG data URL로 */
-export async function snapshotRegion(rect: { x: number; y: number; width: number; height: number }, outWidth = 320): Promise<string | null> {
+/** 안드로이드 앱: 화면의 한 부분(CSS 픽셀)을 찍어 JPEG data URL로 (폭 outWidth까지, 품질 quality 기본 72) */
+export async function snapshotRegion(rect: { x: number; y: number; width: number; height: number }, outWidth = 320, quality?: number): Promise<string | null> {
   if (!isNativeApp) return null;
   try {
-    return (await WebFrames.snapshot({ ...rect, outWidth })).dataUrl;
+    return (await WebFrames.snapshot({ ...rect, outWidth, ...(quality ? { quality } : {}) })).dataUrl;
   } catch {
     return null;
   }

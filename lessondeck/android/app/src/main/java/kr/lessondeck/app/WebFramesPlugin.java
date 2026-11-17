@@ -143,6 +143,7 @@ public class WebFramesPlugin extends Plugin {
         double width = call.getDouble("width", 0.0);
         double height = call.getDouble("height", 0.0);
         int outWidth = call.getInt("outWidth", 320);
+        int quality = Math.max(40, Math.min(95, call.getInt("quality", 72)));
         Activity activity = getActivity();
         activity.runOnUiThread(() -> {
             try {
@@ -167,7 +168,7 @@ public class WebFramesPlugin extends Plugin {
                         src,
                         bitmap,
                         (result) -> {
-                            if (result == PixelCopy.SUCCESS) resolveImage(call, bitmap, outWidth);
+                            if (result == PixelCopy.SUCCESS) resolveImage(call, bitmap, outWidth, quality);
                             else call.reject("화면을 찍지 못했습니다 (" + result + ")");
                         },
                         new Handler(Looper.getMainLooper())
@@ -176,7 +177,7 @@ public class WebFramesPlugin extends Plugin {
                     Canvas canvas = new Canvas(bitmap);
                     canvas.translate(-(src.left - loc[0]), -(src.top - loc[1]));
                     webView.draw(canvas);
-                    resolveImage(call, bitmap, outWidth);
+                    resolveImage(call, bitmap, outWidth, quality);
                 }
             } catch (Exception e) {
                 call.reject("화면을 찍지 못했습니다");
@@ -184,12 +185,12 @@ public class WebFramesPlugin extends Plugin {
         });
     }
 
-    private static void resolveImage(PluginCall call, Bitmap bitmap, int outWidth) {
+    private static void resolveImage(PluginCall call, Bitmap bitmap, int outWidth, int quality) {
         int w = Math.max(1, Math.min(outWidth, bitmap.getWidth()));
         int h = Math.max(1, Math.round(bitmap.getHeight() * (w / (float) bitmap.getWidth())));
         Bitmap scaled = Bitmap.createScaledBitmap(bitmap, w, h, true);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        scaled.compress(Bitmap.CompressFormat.JPEG, 72, out);
+        scaled.compress(Bitmap.CompressFormat.JPEG, quality, out);
         JSObject result = new JSObject();
         result.put("dataUrl", "data:image/jpeg;base64," + Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP));
         call.resolve(result);

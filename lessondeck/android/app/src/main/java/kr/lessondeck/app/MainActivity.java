@@ -23,6 +23,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(GoogleDrivePlugin.class);
         registerPlugin(WebFramesPlugin.class);
         registerPlugin(SystemClipboardPlugin.class);
+        registerPlugin(AiSharePlugin.class);
         super.onCreate(savedInstanceState);
         // 웹 주소 페이지(iframe)가 하얗게 남지 않게: iframe 안의 이동은 그 안에서, 띄우기 거부 머리글 처리
         getBridge().setWebViewClient(new LessonDeckWebViewClient(getBridge()));

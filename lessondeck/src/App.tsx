@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AI_DOC_ID, openAiScratch, releaseAiScratch, type AiRequest } from "./doc/aiScratch";
 import type { DocState } from "./doc/types";
 import { Editor } from "./Editor";
 import { showToast } from "./lib/platform";
@@ -14,7 +15,7 @@ import { Toaster } from "./ui/Toaster";
 type Route =
   | { screen: "loading" }
   | { screen: "home" }
-  | { screen: "editor"; docId: string; opened: OpenedDoc; version: number };
+  | { screen: "editor"; docId: string; opened: OpenedDoc; version: number; ai?: boolean; resumeLecture?: boolean };
 
 // 문서 목록 ↔ 편집 화면. 앱을 열면 마지막으로 보던 문서를 바로 연다.
 export default function App() {
@@ -23,6 +24,9 @@ export default function App() {
   const editorDoc = useRef<DocState | null>(null);
   const routeRef = useRef(route);
   routeRef.current = route;
+  /** AI 창(v0.31)을 연 동안: 돌아갈 문서(화면용 원본·필기 그대로)와 AI 창의 임시 문서 */
+  const aiBack = useRef<{ docId: string; opened: OpenedDoc; lecture: boolean } | null>(null);
+  const aiDoc = useRef<DocState | null>(null);
 
   const closeCurrent = () => {
     if (editorDoc.current) releaseDoc(editorDoc.current);
@@ -74,6 +78,38 @@ export default function App() {
     [open],
   );
 
+  // AI로 보내기: 문서는 닫지 않고(PDF·그림을 그대로 둔 채) 임시 문서 화면으로 바꾼다
+  const startAi = useCallback(async (req: AiRequest) => {
+    const r = routeRef.current;
+    if (r.screen !== "editor" || r.ai) return;
+    const main = editorDoc.current ?? r.opened.doc;
+    let scratch: OpenedDoc;
+    try {
+      scratch = await openAiScratch(req, main);
+    } catch (err) {
+      console.error(err);
+      showToast("AI 창을 열지 못했습니다");
+      return;
+    }
+    aiBack.current = { docId: r.docId, opened: { doc: main, ink: req.ink, missingAssets: [] }, lecture: req.lecture };
+    aiDoc.current = scratch.doc;
+    setRoute({ screen: "editor", docId: AI_DOC_ID, opened: scratch, version: Date.now(), ai: true });
+  }, []);
+
+  const endAi = useCallback(() => {
+    const back = aiBack.current;
+    if (aiDoc.current) releaseAiScratch(aiDoc.current, back?.opened.doc ?? { assets: {} } as DocState);
+    aiDoc.current = null;
+    aiBack.current = null;
+    if (!back) {
+      setRoute({ screen: "home" });
+      return;
+    }
+    editorDoc.current = back.opened.doc;
+    setRoute({ screen: "editor", docId: back.docId, opened: back.opened, version: Date.now(), resumeLecture: back.lecture });
+  }, []);
+  const aiProps = useRef({ onClose: endAi }).current;
+
   const syncButton = <SyncButton onClick={() => setSyncOpen(true)} />;
 
   return (
@@ -84,13 +120,17 @@ export default function App() {
         </div>
       )}
       {route.screen === "home" && <HomeScreen onOpen={(id) => open(id)} headerExtra={syncButton} />}
+      {route.screen === "editor" && route.ai && <div className="ai-backdrop" aria-hidden="true" />}
       {route.screen === "editor" && (
         <Editor
           key={`${route.docId}:${route.version}`}
           opened={route.opened}
           onHome={goHome}
-          onDocChange={(doc) => (editorDoc.current = doc)}
-          headerExtra={syncButton}
+          onDocChange={route.ai ? (doc) => (aiDoc.current = doc) : (doc) => (editorDoc.current = doc)}
+          headerExtra={route.ai ? undefined : syncButton}
+          onAi={route.ai ? undefined : startAi}
+          ai={route.ai ? aiProps : undefined}
+          resumeLecture={route.resumeLecture}
         />
       )}
       {syncOpen && <SyncPanel onClose={() => setSyncOpen(false)} />}
