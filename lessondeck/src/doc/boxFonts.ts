@@ -51,7 +51,7 @@ export function canvasFont(style: BoxTextStyle, px: number): string {
 }
 
 /** 서식 바꾸기 값 (꺼진 것은 undefined → 저장할 때 뺀다) */
-export type BoxFormat = Partial<Pick<TextBox, "font" | "bold" | "italic" | "underline" | "align">>;
+export type BoxFormat = Partial<Pick<TextBox, "font" | "bold" | "italic" | "underline" | "align" | "valign">>;
 
 /** 서식 값 다듬기: 기본값(기본 글꼴·끔·왼쪽)은 빼서 0.24까지와 같은 상자로 */
 export function cleanFormat<T extends BoxFormat>(box: T): T {
@@ -59,10 +59,11 @@ export function cleanFormat<T extends BoxFormat>(box: T): T {
   if (!out.font || !BOX_FONTS.some((f) => f.id === out.font)) delete out.font;
   for (const k of ["bold", "italic", "underline"] as const) if (!out[k]) delete out[k];
   if (out.align !== "center" && out.align !== "right") delete out.align;
+  if (out.valign !== "top" && out.valign !== "bottom") delete out.valign;
   return out;
 }
 
 /** 상자에서 서식만 (다음 새 상자에 쓰려고) */
 export function formatOf(box: TextBox): BoxFormat {
-  return cleanFormat({ font: box.font, bold: box.bold, italic: box.italic, underline: box.underline, align: box.align });
+  return cleanFormat({ font: box.font, bold: box.bold, italic: box.italic, underline: box.underline, align: box.align, valign: box.valign });
 }

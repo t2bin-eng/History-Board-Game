@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boxChrome, fitSize, layoutBox, LINE_HEIGHT, wrapLines, type Measure } from "./textLayout";
+import { boxChrome, fitSize, heightForSize, layoutBox, LINE_HEIGHT, textBlockHeight, valignRatio, wrapLines, type Measure } from "./textLayout";
 import type { TextBox } from "./types";
 
 // 고정폭: 글자 하나 = 글자 크기만큼
@@ -55,11 +55,31 @@ describe("상자 배치", () => {
     expect(l.lines).toEqual(["가나다라", "마바사"]);
   });
 
-  it("크기가 있는 상자는 글자 크기를 맞춘다 (세로는 페이지 비율로)", () => {
+  it("크기가 있는 상자: 글자는 고른 크기 그대로 (상자를 키워도 커지지 않음, v0.29)", () => {
     const l = layoutBox({ ...base, w: 0.2, h: 0.05 }, "가나", 1.4, mono);
     expect(l.fitted).toBe(true);
+    expect(l.size).toBe(24);
+    expect(l.lines).toEqual(["가나"]);
+    expect(layoutBox({ ...base, w: 0.8, h: 0.5 }, "가나", 1.4, mono).size).toBe(24);
+  });
+
+  it("크기가 있는 상자: 고른 크기로 다 안 들어가면 들어가는 크기로 줄임 (세로는 페이지 비율로)", () => {
+    const l = layoutBox({ ...base, size: 200, w: 0.2, h: 0.05 }, "가나", 1.4, mono);
     // 가로 200에 두 글자 → 100, 세로 0.05×1000×1.4 = 70 (여유 3% 빼고) → 67.9/1.3
     expect(l.size).toBeCloseTo((70 * 0.97) / LINE_HEIGHT, 0);
     expect(l.lines).toEqual(["가나"]);
+  });
+
+  it("세로 맞춤 비율과, 고른 크기에 필요한 상자 높이", () => {
+    expect(valignRatio({})).toBe(0.5);
+    expect(valignRatio({ valign: "top" })).toBe(0);
+    expect(valignRatio({ valign: "bottom" })).toBe(1);
+    const box = { ...base, w: 0.1, h: 0.02 };
+    // 가로 97에 글자 24 → 한 줄 4자 → "가나다라마바사" 두 줄 → 2×24×1.3 = 62.4 → ÷0.97 ÷(1000×1.4)
+    const h = heightForSize(box, "가나다라마바사", 24, 1.4, mono);
+    expect(h).toBeCloseTo((2 * 24 * LINE_HEIGHT) / 0.97 / 1400, 3);
+    const l = layoutBox({ ...box, h }, "가나다라마바사", 1.4, mono);
+    expect(l.size).toBe(24);
+    expect(textBlockHeight(l)).toBeCloseTo(2 * 24 * LINE_HEIGHT, 6);
   });
 });

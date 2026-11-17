@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { placeStylePanel } from "./stickerGeometry";
+import { anchoredScale, placeStylePanel } from "./stickerGeometry";
 
 const PAGE = { width: 1000, height: 700 };
 const PANEL = { width: 330, height: 260 };
@@ -35,5 +35,35 @@ describe("꾸미기 창 자리 (v0.28.3)", () => {
     const p = placeStylePanel(huge, { left: 300, top: 600, width: 380, height: 46 }, PANEL, PAGE);
     expect(p.left).toBeGreaterThanOrEqual(4);
     expect(p.top + PANEL.height).toBeLessThanOrEqual(PAGE.height - 4);
+  });
+});
+
+describe("스티커 크기 손잡이 (v0.29)", () => {
+  const box = { cx: 300, cy: 200, width: 200, height: 100, angle: 0 };
+  it("모서리: 맞은편 모서리는 그대로, 비율 유지", () => {
+    // 오른쪽 아래를 (600, 350)으로 → 왼쪽 위 (200, 150) 고정, 두 배
+    const r = anchoredScale(box, "se", { x: 600, y: 350 }, 10, 5000);
+    expect(r.width).toBeCloseTo(400, 6);
+    expect(r.height).toBeCloseTo(200, 6);
+    expect(r.cx - r.width / 2).toBeCloseTo(200, 6);
+    expect(r.cy - r.height / 2).toBeCloseTo(150, 6);
+  });
+  it("변: 맞은편 변은 그대로 (가운데 줄 유지), 비율 유지", () => {
+    const r = anchoredScale(box, "w", { x: 100, y: 999 }, 10, 5000);
+    // 왼쪽 변을 100으로 → 오른쪽 변 400 고정, 폭 300
+    expect(r.width).toBeCloseTo(300, 6);
+    expect(r.cx + r.width / 2).toBeCloseTo(400, 6);
+    expect(r.cy).toBeCloseTo(200, 6);
+    const n = anchoredScale(box, "n", { x: 0, y: 50 }, 10, 5000);
+    expect(n.cy + n.height / 2).toBeCloseTo(250, 6);
+    expect(n.height).toBeCloseTo(200, 6);
+  });
+  it("돌린 틀(90°)도 맞은편이 그대로, 가장 작게 막힘", () => {
+    const rot = { ...box, angle: Math.PI / 2 };
+    // 90° 돌리면 틀의 "오른쪽(e)"은 화면 아래쪽: 맞은편(틀의 왼쪽 변) = 화면 위 y = 200 - 100
+    const r = anchoredScale(rot, "e", { x: 300, y: 500 }, 10, 5000);
+    expect(r.cy - r.width / 2).toBeCloseTo(100, 6);
+    const tiny = anchoredScale(box, "se", { x: 200, y: 150 }, 30, 5000);
+    expect(tiny.width).toBe(30);
   });
 });

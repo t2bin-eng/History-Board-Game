@@ -1,6 +1,7 @@
 import { Check, Trash2 } from "lucide-react";
 import { useEffect, useRef } from "react";
-import { ERASER_LEVELS, HIGHLIGHTER_ALPHA, HIGHLIGHTER_COLORS, PEN_COLORS, WIDTH_LEVELS } from "../ink/palette";
+import { RICH_COLORS, RICH_HIGHLIGHTERS } from "../doc/swatches";
+import { ERASER_LEVELS, HIGHLIGHTER_ALPHA, WIDTH_LEVELS } from "../ink/palette";
 import type { PenPreset } from "../ink/types";
 
 interface Anchor {
@@ -65,7 +66,7 @@ export function ToolSettings(props: Props) {
         <>
           <div className="ts-title">{props.preset.tool === "highlighter" ? "형광펜" : "펜"}</div>
           <div className="ts-row ts-colors" role="radiogroup" aria-label="색상">
-            {(props.preset.tool === "highlighter" ? HIGHLIGHTER_COLORS : PEN_COLORS).map((c) => (
+            {(props.preset.tool === "highlighter" ? RICH_HIGHLIGHTERS : RICH_COLORS).map((c) => (
               <button
                 key={c}
                 role="radio"
@@ -78,10 +79,10 @@ export function ToolSettings(props: Props) {
             ))}
             {/* 다른 색: 기기의 색 고르기 창 (목록에 없는 색이면 그 색으로 보여 준다) */}
             <label
-              className={`ts-swatch ts-custom${(props.preset.tool === "highlighter" ? HIGHLIGHTER_COLORS : PEN_COLORS).includes(props.preset.color.toLowerCase()) ? "" : " active"}`}
+              className={`ts-swatch ts-custom${(props.preset.tool === "highlighter" ? RICH_HIGHLIGHTERS : RICH_COLORS).includes(props.preset.color.toLowerCase()) ? "" : " active"}`}
               title="다른 색"
               style={
-                (props.preset.tool === "highlighter" ? HIGHLIGHTER_COLORS : PEN_COLORS).includes(props.preset.color.toLowerCase())
+                (props.preset.tool === "highlighter" ? RICH_HIGHLIGHTERS : RICH_COLORS).includes(props.preset.color.toLowerCase())
                   ? undefined
                   : { background: props.preset.color }
               }

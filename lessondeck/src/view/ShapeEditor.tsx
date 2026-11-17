@@ -34,7 +34,7 @@ interface Props {
 const MIN_PX = 10;
 
 // 고른 도형 고치기: 손잡이만 누름을 받고 나머지는 지나가게 해서, 도형을 고른 채로도 바로 이어 쓸 수 있다.
-// 선·화살표는 두 끝, 그 밖은 모서리(비율 유지)·변(한쪽으로 늘이기)·위 손잡이(돌리기, 15° 근처 붙음)·가운데(옮기기)
+// 선·화살표는 두 끝, 그 밖은 모서리(그 모서리만)·변(한쪽으로 늘이기)·위 손잡이(돌리기, 15° 근처 붙음)·가운데(옮기기)
 export function ShapeEditor({ stroke, size, onLive, onChange, onDuplicate, onDelete, onDone }: Props) {
   const [draft, setDraft] = useState<ShapeSpec | null>(null);
   const [gesture, setGesture] = useState<Gesture | null>(null);
@@ -222,7 +222,7 @@ function moveSpot(spec: ShapeSpec, size: PageSize): { left: number; top: number 
   return { left: f.cx - Math.sin(f.rad) * off, top: f.cy + Math.cos(f.rad) * off };
 }
 
-/** 모서리(비율 유지, 맞은편 모서리 고정)·변(그 방향만, 맞은편 변 고정)으로 크기 바꾸기 */
+/** 모서리(그 모서리만, 맞은편 모서리 고정)·변(그 방향만, 맞은편 변 고정)으로 크기 바꾸기 */
 function resize(s0: ShapeSpec, handle: Handle, p: Pt, size: PageSize): ShapeSpec {
   const f = shapeFrame(s0, size);
   const cos = Math.cos(f.rad);
@@ -239,14 +239,13 @@ function resize(s0: ShapeSpec, handle: Handle, p: Pt, size: PageSize): ShapeSpec
   let ox = 0;
   let oy = 0;
   if (sx && sy) {
-    // 맞은편 모서리 o에서 이 모서리까지(d) 위로 비춘 비율만큼
-    const o: Pt = [(-sx * f.w) / 2, (-sy * f.h) / 2];
-    const d: Pt = [sx * f.w, sy * f.h];
-    const k = Math.max(MIN_PX / Math.max(1, Math.min(f.w, f.h)), ((lx - o[0]) * d[0] + (ly - o[1]) * d[1]) / (d[0] ** 2 + d[1] ** 2));
-    w = f.w * k;
-    h = f.h * k;
-    ox = o[0] + (d[0] * k) / 2;
-    oy = o[1] + (d[1] * k) / 2;
+    // 모서리 (v0.29): 그 모서리만 펜을 따라가고 맞은편 모서리는 그대로 — 가로·세로 따로 (0.28까지는 비율을 지켜 전체가 함께 커짐)
+    const fx = (-sx * f.w) / 2;
+    const fy = (-sy * f.h) / 2;
+    w = Math.max(MIN_PX, (lx - fx) * sx);
+    h = Math.max(MIN_PX, (ly - fy) * sy);
+    ox = fx + (sx * w) / 2;
+    oy = fy + (sy * h) / 2;
   } else if (sx) {
     const fixed = (-sx * f.w) / 2;
     w = Math.max(MIN_PX, (lx - fixed) * sx);

@@ -31,13 +31,13 @@ import {
   POPUP_ICON_BORDER,
   shownSticker,
   snapAngle,
-  STICKER_BORDER_COLORS,
   STICKER_BORDER_WIDTHS,
-  visibleAspect,
 } from "../doc/stickers";
+import { RICH_COLORS } from "../doc/swatches";
 import type { MediaAsset, Sticker, StickerShape } from "../doc/types";
+import { ColorGrid } from "../ui/ColorGrid";
 import type { PageSize } from "../ink/geometry";
-import { placeStylePanel, rotatedExtent, stickerBox } from "./stickerGeometry";
+import { anchoredScale, placeStylePanel, rotatedExtent, stickerBox } from "./stickerGeometry";
 
 type Patch = Partial<Omit<Sticker, "id" | "asset">>;
 type CropRect = { x: number; y: number; w: number; h: number };
@@ -69,7 +69,7 @@ interface Props {
 
 type Gesture =
   | { kind: "move"; pointer: number; p0: Pt; s0: Sticker; moved: boolean }
-  | { kind: "scale"; pointer: number; s0: Sticker; c: Pt; d0: number }
+  | { kind: "scale"; pointer: number; s0: Sticker; handle: string }
   | { kind: "rotate"; pointer: number; s0: Sticker; c: Pt }
   | { kind: "crop"; pointer: number; mode: CropMode; p0: Pt; c0: CropRect }
   | { kind: "bg"; pointer: number; p0: Pt; client: Pt };
@@ -153,17 +153,15 @@ export function StickerEditor(props: Props) {
         y: clamp(s0.y + dy / size.height, -0.1, 0.95),
       });
     } else if (g.kind === "scale") {
-      // 팝업 그림이면 아이콘 크기를 바꾼다 (크게 볼 때 크기는 그대로)
-      const k = Math.hypot(p.x - g.c.x, p.y - g.c.y) / Math.max(1, g.d0);
-      const shown0 = iconOf(g.s0);
-      const w = clamp(shown0.w * k, MIN_STICKER_W, g.s0.popup ? MAX_POPUP_ICON_W : 2);
-      const hpx = (w * size.width) / visibleAspect(shown0, nat.width, nat.height);
+      // 끈 손잡이의 맞은편은 그대로 두고 비율을 지켜서 (v0.29). 팝업 그림이면 아이콘 크기를 바꾼다 (크게 볼 때 크기는 그대로)
+      const b0 = stickerBox(iconOf(g.s0), asset, size);
+      const r = anchoredScale(b0, g.handle, p, MIN_STICKER_W * size.width, (g.s0.popup ? MAX_POPUP_ICON_W : 2) * size.width);
       setDraft({
         ...g.s0,
         ...framePatch(g.s0, {
-          w,
-          x: (g.c.x - (w * size.width) / 2) / size.width,
-          y: (g.c.y - hpx / 2) / size.height,
+          w: r.width / size.width,
+          x: (r.cx - r.width / 2) / size.width,
+          y: (r.cy - r.height / 2) / size.height,
           rotation: g.s0.rotation,
         }),
       });
@@ -294,21 +292,19 @@ export function StickerEditor(props: Props) {
             })
           }
         >
-          {(["nw", "ne", "sw", "se"] as const).map((corner) => (
+          {/* 크기 손잡이 (v0.29): 네 모서리 + 네 변. 끈 쪽만 움직이고 맞은편은 그대로 (그림이라 비율은 유지) */}
+          {(["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const).map((handle) => (
             <span
-              key={corner}
-              className={`sf-handle ${corner}`}
-              onPointerDown={(e) => {
-                const p = toPage(e.clientX, e.clientY);
-                const c = { x: b.cx, y: b.cy };
+              key={handle}
+              className={`sf-handle ${handle}${handle.length === 1 ? " side" : ""}`}
+              onPointerDown={(e) =>
                 begin(e, {
                   kind: "scale",
                   pointer: e.pointerId,
                   s0: sticker,
-                  c,
-                  d0: Math.hypot(p.x - c.x, p.y - c.y),
-                });
-              }}
+                  handle,
+                })
+              }
             />
           ))}
           <span className="sf-stem" />
@@ -535,25 +531,14 @@ function StylePanel({ sticker, onChange }: { sticker: Sticker; onChange: (p: Pat
         >
           없음
         </button>
-        {STICKER_BORDER_COLORS.map((color) => (
-          <button
-            key={color}
-            aria-label={color === "#ffffff" ? "흰 테두리 (스티커)" : `테두리 ${color}`}
-            title={color === "#ffffff" ? "흰 테두리 (스티커)" : undefined}
-            aria-pressed={hasBorder && border?.color === color}
-            className={`ss-color${hasBorder && border?.color === color ? " on" : ""}`}
-            onClick={() =>
-              onChange({
-                border: {
-                  color,
-                  width: hasBorder ? border!.width : STICKER_BORDER_WIDTHS[1],
-                },
-              })
-            }
-          >
-            <span style={{ background: color }} />
-          </button>
-        ))}
+        <ColorGrid
+          colors={RICH_COLORS}
+          value={hasBorder ? border?.color : undefined}
+          inactive={!hasBorder}
+          onPick={(color) => onChange({ border: { color, width: hasBorder ? border!.width : STICKER_BORDER_WIDTHS[1] } })}
+          label={(c) => (c === "#ffffff" ? "흰 테두리 (스티커)" : `테두리 ${c}`)}
+          custom="다른 테두리 색"
+        />
       </div>
       <div className="ss-row">
         <span className="ss-label">굵기</span>

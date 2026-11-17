@@ -123,3 +123,36 @@ export function placeStylePanel(frame: Box2, toolbar: Box2, panel: { width: numb
   for (const c of candidates.map(clampIn)) if (hits(c) < hits(best)) best = c;
   return best;
 }
+
+/**
+ * 손잡이로 크기 바꾸기 (v0.29): 끈 손잡이의 맞은편(모서리면 맞은편 모서리, 변이면 맞은편 변)은 그대로 두고 비율을 지켜 키우고 줄인다.
+ * 0.28까지는 가운데를 축으로 사방으로 함께 커졌다. 돌린 틀도 틀 방향대로. 결과는 새 가운데와 크기 (페이지 px)
+ */
+export function anchoredScale(
+  b: Pick<StickerBox, "cx" | "cy" | "width" | "height" | "angle">,
+  handle: string,
+  p: { x: number; y: number },
+  minW: number,
+  maxW: number,
+): { cx: number; cy: number; width: number; height: number } {
+  const cos = Math.cos(b.angle);
+  const sin = Math.sin(b.angle);
+  const dx = p.x - b.cx;
+  const dy = p.y - b.cy;
+  // 틀 안쪽 좌표 (가운데 0, 돌리기 전)
+  const lx = dx * cos + dy * sin;
+  const ly = -dx * sin + dy * cos;
+  const sx = handle.includes("e") ? 1 : handle.includes("w") ? -1 : 0;
+  const sy = handle.includes("s") ? 1 : handle.includes("n") ? -1 : 0;
+  const W = Math.max(1, b.width);
+  const H = Math.max(1, b.height);
+  // 붙들어 둘 곳: 맞은편 모서리 또는 맞은편 변의 가운데
+  const ax = (-sx * W) / 2;
+  const ay = (-sy * H) / 2;
+  const k = sx && sy ? ((lx - ax) * sx * W + (ly - ay) * sy * H) / (W * W + H * H) : sx ? ((lx - ax) * sx) / W : ((ly - ay) * sy) / H;
+  const width = Math.min(maxW, Math.max(minW, W * k));
+  const height = (H * width) / W;
+  const ncx = ax + (sx * width) / 2;
+  const ncy = ay + (sy * height) / 2;
+  return { cx: b.cx + ncx * cos - ncy * sin, cy: b.cy + ncx * sin + ncy * cos, width, height };
+}

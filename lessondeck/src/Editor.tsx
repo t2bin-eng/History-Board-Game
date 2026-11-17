@@ -145,7 +145,8 @@ import { shownBox } from "./view/stickerGeometry";
 import { StickerLayer } from "./view/StickerLayer";
 import { SPOTLIGHT_SIZES } from "./view/Spotlight";
 import { PopupLayer } from "./view/PopupLayer";
-import { fittedSize } from "./view/textMeasure";
+import { fittedSize, measureFor } from "./view/textMeasure";
+import { heightForSize } from "./doc/textLayout";
 
 type Popover =
   | { kind: "preset"; id: string; left: number; top: number }
@@ -958,57 +959,42 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
     editBoxes(id, (pages, pageId, box) => {
       // 베일은 글이 없어도 둔다 (베일 위에 "?")
       if (!box.text.trim() && !box.link && !box.veil) return removeBox(pages, pageId, id);
-      if (box.w == null || box.h == null) return pages;
-      // 크기가 정해진 상자: 글에 맞춰 바뀐 글자 크기를 적어 둔다 (이전 버전·썸네일용)
-      const page = pages.find((p) => p.id === pageId)!;
-      const size = fittedSize(box, boxLabel(box, pages, docRef.current.hidden), 1 / pageAspect(page, docRef.current.assets));
-      return size === box.size ? pages : patchBox(pages, pageId, id, { size });
+      // 크기가 정해진 상자도 고른 글자 크기(size)는 그대로 둔다 (v0.29: 넘치면 화면에서만 줄여 보임)
+      return pages;
     });
   };
 
-  /** 글자 작게/크게: 크기가 정해진 상자는 상자를 키우고 줄여(글자는 맞춰서), 아니면 글자 크기 단계로 */
+  /**
+   * 크기가 정해진 상자의 글자 크기를 size로 (v0.29): 그 크기로 글이 다 안 들어가면 상자 폭은 두고 아래로 늘린다 (페이지 끝까지).
+   * 크기가 정해지지 않은 상자는 글자 크기만
+   */
+  const setBoxFontSize = (pages: Page[], pageId: string, box: TextBox, size: number): Page[] => {
+    if (box.w == null || box.h == null) return patchBox(pages, pageId, box.id, { size });
+    const page = pages.find((p) => p.id === pageId)!;
+    const ratio = 1 / pageAspect(page, docRef.current.assets);
+    const need = heightForSize(box, boxLabel(box, pages, docRef.current.hidden), size, ratio, measureFor(box));
+    const h = need > box.h ? Math.min(1 - box.y, need) : box.h;
+    return patchBox(pages, pageId, box.id, h === box.h ? { size } : { size, h });
+  };
+
+  /** 글자 작게/크게: 지금 보이는 글자 크기에서 한 단계 (크기가 정해진 상자는 모자라면 아래로 늘림) */
   const resizeBox = (id: string, step: 1 | -1) =>
     editBoxes(id, (pages, pageId, box) => {
-      if (box.w != null && box.h != null) {
-        const page = pages.find((p) => p.id === pageId)!;
-        const factor = step > 0 ? 1.15 : 1 / 1.15;
-        const w = Math.min(1 - box.x, Math.max(0.04, box.w * factor));
-        const h = Math.min(1 - box.y, Math.max(0.02, box.h * factor));
-        const sized = { ...box, w, h };
-        const size = fittedSize(sized, boxLabel(sized, pages, docRef.current.hidden), 1 / pageAspect(page, docRef.current.assets));
-        return patchBox(pages, pageId, id, { w, h, size });
-      }
-      return patchBox(pages, pageId, id, { size: stepBoxSize(box.size, step) });
+      const page = pages.find((p) => p.id === pageId)!;
+      const shown = box.w != null && box.h != null ? fittedSize(box, boxLabel(box, pages, docRef.current.hidden), 1 / pageAspect(page, docRef.current.assets)) : box.size;
+      return setBoxFontSize(pages, pageId, box, stepBoxSize(shown, step));
     });
 
-  /** 크기가 정해진 상자의 글자 크기를 글에 맞춰 다시 적어 둔다 (서식·크기를 바꾼 뒤) */
-  const refit = (pages: Page[], pageId: string, id: string): Page[] => {
-    const page = pages.find((p) => p.id === pageId);
-    const box = page?.boxes?.find((b) => b.id === id);
-    if (!page || !box || box.w == null || box.h == null) return pages;
-    const size = fittedSize(box, boxLabel(box, pages, docRef.current.hidden), 1 / pageAspect(page, docRef.current.assets));
-    return size === box.size ? pages : patchBox(pages, pageId, id, { size });
-  };
-
-  /** 서식 (v0.25): 글꼴·굵게·기울임·밑줄·줄 맞춤. 다음 새 상자에도 쓴다 */
+  /** 서식 (v0.25): 글꼴·굵게·기울임·밑줄·줄 맞춤·세로 맞춤. 다음 새 상자에도 쓴다 */
   const formatTextBox = (id: string, patch: BoxFormat) => {
     setBoxFormat((f) => cleanFormat({ ...f, ...patch }));
-    editBoxes(id, (pages, pageId) => refit(formatBox(pages, pageId, id, patch), pageId, id));
+    editBoxes(id, (pages, pageId) => formatBox(pages, pageId, id, patch));
   };
 
-  /** 글자 크기 고르기 (v0.25): 크기가 정해진 상자는 글자가 그 크기쯤 되도록 상자를 키우고 줄인다 */
+  /** 글자 크기 고르기 (v0.25 → v0.29): 글자는 그 크기로, 크기가 정해진 상자에 다 안 들어가면 상자를 아래로 늘린다 */
   const sizeTextBox = (id: string, size: number) => {
     setBoxSize(size);
-    editBoxes(id, (pages, pageId, box) => {
-      if (box.w == null || box.h == null) return patchBox(pages, pageId, id, { size });
-      const page = pages.find((p) => p.id === pageId)!;
-      const ratio = 1 / pageAspect(page, docRef.current.assets);
-      const now = fittedSize(box, boxLabel(box, pages, docRef.current.hidden), ratio);
-      const factor = size / Math.max(1, now);
-      const w = Math.min(1 - box.x, Math.max(0.04, box.w * factor));
-      const h = Math.min(1 - box.y, Math.max(0.02, box.h * factor));
-      return refit(patchBox(pages, pageId, id, { w, h }), pageId, id);
-    });
+    editBoxes(id, (pages, pageId, box) => setBoxFontSize(pages, pageId, box, size));
   };
 
   const deleteBox = (id: string, message = "상자를 지웠습니다") => {
@@ -2215,7 +2201,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra }: Props) {
                   }}
                   onFontSize={sizeTextBox}
                   onFormat={formatTextBox}
-                  onBoxSize={(id, w, h, size) => editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { w, h, size }))}
+                  onBoxSize={(id, r) => editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, r))}
                   onColor={(id, color) => {
                     setTextColor(color);
                     editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { color }));

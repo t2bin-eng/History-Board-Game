@@ -2,6 +2,9 @@ import {
   AlignCenter,
   AlignLeft,
   AlignRight,
+  AlignVerticalJustifyCenter,
+  AlignVerticalJustifyEnd,
+  AlignVerticalJustifyStart,
   ArrowLeftRight,
   ArrowRight,
   Bold,
@@ -33,8 +36,10 @@ import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type C
 import { arrowEnds, arrowPathD, arrowShape, arrowsOf, bendFromHandle, cleanBend, type ArrowShape, type ArrowTarget, type Rect } from "../doc/arrows";
 import { EMPHASES, MAX_NOTE_W, MIN_NOTE_W, NOTE_COLORS, NOTE_LABEL_MAX, noteOf, VEIL_COLORS, veilLabel } from "../doc/boxAnim";
 import { BOX_FONTS, boxTextStyle, type BoxFormat } from "../doc/boxFonts";
-import { BOX_BG_COLORS, BOX_COLORS, BOX_SIZES, boxBackground, boxBorder, boxLabel, boxesOf, boxPlainLabel, isAutoPageLink, isDangling } from "../doc/boxes";
-import { layoutBox } from "../doc/textLayout";
+import { RICH_BG_COLORS, RICH_COLORS } from "../doc/swatches";
+import { ColorGrid } from "../ui/ColorGrid";
+import { BOX_SIZES, boxBackground, boxBorder, boxLabel, boxesOf, boxPlainLabel, isAutoPageLink, isDangling } from "../doc/boxes";
+import { layoutBox, LINE_HEIGHT } from "../doc/textLayout";
 import { frameAt, typedLines, typingPlan } from "../doc/typing";
 import type { BoxAnim, BoxArrow, BoxBorder, BoxEmphasis, BoxLink, Page, TextBox } from "../doc/types";
 import type { PageSize } from "../ink/geometry";
@@ -65,7 +70,8 @@ interface Props {
   /** 서식: 글꼴·굵게·기울임·밑줄·줄 맞춤 (v0.25) */
   onFormat: (id: string, patch: BoxFormat) => void;
   /** 손잡이로 상자 크기를 바꿈 (그 크기에 맞춘 글자 크기 함께) */
-  onBoxSize: (id: string, w: number, h: number, size: number) => void;
+  /** 손잡이로 상자 자리·크기를 바꿈 (v0.29: 끈 쪽 변만 움직이고 맞은편은 그대로, 글자 크기는 그대로) */
+  onBoxSize: (id: string, r: { x: number; y: number; w: number; h: number }) => void;
   onColor: (id: string, color: string) => void;
   /** 배경색: "auto"(글자가 잘 보이는 색) · "#rrggbb" · undefined(없음) */
   onBg: (id: string, bg: string | undefined) => void;
@@ -111,7 +117,10 @@ const DRAG_SLOP = 5;
 const MIN_W = 0.04;
 const MIN_H = 0.02;
 
-type HandleMode = "e" | "s" | "se";
+/** 크기 손잡이: 네 변 가운데 · 네 모서리 (v0.29, 0.28까지는 오른쪽·아래·오른쪽 아래만) */
+type HandleMode = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
+const HANDLES: HandleMode[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
+const HANDLE_NAMES: Record<HandleMode, string> = { n: "위", s: "아래", e: "오른쪽", w: "왼쪽", ne: "오른쪽 위", nw: "왼쪽 위", se: "오른쪽 아래", sw: "왼쪽 아래" };
 
 /**
  * 애니메이션 (v0.26 · 쪽지 v0.28): 쪽지가 떼어지며 상자가 펼쳐지는 시간 · 다시 접히는 시간 · 미리 보기에서 접힌 채 보여 주는 시간 ·
@@ -139,6 +148,30 @@ interface Play {
   preview?: boolean;
 }
 
+/**
+ * 손잡이로 끈 만큼 상자 자리·크기 (페이지 대비, v0.29): 끈 쪽 변만 움직이고 맞은편 변은 그대로.
+ * 페이지 밖으로 나가지 않고, 가장 작은 크기(MIN_W·MIN_H)보다 작아지지 않는다
+ */
+export function resizeFrame(r: { x: number; y: number; w0: number; h0: number }, mode: string, dx: number, dy: number): { x: number; y: number; w: number; h: number } {
+  const right = r.x + r.w0;
+  const bottom = r.y + r.h0;
+  let x = r.x;
+  let y = r.y;
+  let w = r.w0;
+  let h = r.h0;
+  if (mode.includes("e")) w = clamp(r.w0 + dx, MIN_W, 1 - r.x);
+  if (mode.includes("w")) {
+    x = clamp(r.x + dx, 0, right - MIN_W);
+    w = right - x;
+  }
+  if (mode.includes("s")) h = clamp(r.h0 + dy, MIN_H, 1 - r.y);
+  if (mode.includes("n")) {
+    y = clamp(r.y + dy, 0, bottom - MIN_H);
+    h = bottom - y;
+  }
+  return { x, y, w, h };
+}
+
 /** 상자마다 조금씩 다르게 기운 쪽지 (-4.5° ~ 4.5°, id로 정해져 늘 같음) */
 function noteTilt(id: string): number {
   let h = 0;
@@ -152,10 +185,10 @@ export function BoxLayer(props: Props) {
   const layerRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ id: string; pointer: number; sx: number; sy: number; dx: number; dy: number; moved: boolean } | null>(null);
   const [dragPos, setDragPos] = useState<{ id: string; x: number; y: number } | null>(null);
-  const resize = useRef<{ id: string; pointer: number; mode: HandleMode; w0: number; h0: number; x: number; y: number } | null>(null);
+  const resize = useRef<{ id: string; pointer: number; mode: HandleMode; w0: number; h0: number; x: number; y: number; px: number; py: number } | null>(null);
   /** 고른 화살표의 끝·휘기 손잡이를 끄는 중 (페이지 px) */
   const [arrowDrag, setArrowDrag] = useState<{ id: string; kind: "end" | "bend"; pointer: number; x: number; y: number; moved: boolean } | null>(null);
-  const [liveSize, setLiveSize] = useState<{ id: string; w: number; h: number } | null>(null);
+  const [liveSize, setLiveSize] = useState<{ id: string; x: number; y: number; w: number; h: number } | null>(null);
   /** 애니메이션 상자를 펼치거나 접는 중 (v0.26) */
   const [play, setPlay] = useState<Play | null>(null);
   /** 고른 상자 막대에서 연 창 (애니메이션 창이면 접힌 쪽지를 미리 보여 준다) */
@@ -398,7 +431,7 @@ export function BoxLayer(props: Props) {
     else props.onSelect(b.id);
   };
 
-  // 크기 손잡이: 오른쪽(가로), 아래(세로), 모서리(둘 다). 줄바꿈과 글자 크기는 상자에 맞춰 저절로
+  // 크기 손잡이 (v0.29): 네 변·네 모서리. 끈 쪽 변만 움직이고 맞은편 변은 그대로. 글은 새 폭에서 줄바꿈, 글자 크기는 그대로
   const onHandleDown = (b: TextBox, mode: HandleMode, e: ReactPointerEvent<HTMLElement>) => {
     e.stopPropagation();
     if (e.button > 0) return;
@@ -406,8 +439,9 @@ export function BoxLayer(props: Props) {
     const el = (e.currentTarget as HTMLElement).closest(".text-box") as HTMLElement;
     const w0 = b.w ?? el.offsetWidth / size.width;
     const h0 = b.h ?? el.offsetHeight / size.height;
-    resize.current = { id: b.id, pointer: e.pointerId, mode, w0, h0, x: b.x, y: b.y };
-    setLiveSize({ id: b.id, w: w0, h: h0 });
+    const p0 = toRatio(e.clientX, e.clientY);
+    resize.current = { id: b.id, pointer: e.pointerId, mode, w0, h0, x: b.x, y: b.y, px: p0.x, py: p0.y };
+    setLiveSize({ id: b.id, x: b.x, y: b.y, w: w0, h: h0 });
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
@@ -420,9 +454,7 @@ export function BoxLayer(props: Props) {
     if (!r || r.pointer !== e.pointerId) return;
     e.stopPropagation();
     const p = toRatio(e.clientX, e.clientY);
-    const w = r.mode === "s" ? r.w0 : clamp(p.x - r.x, MIN_W, 1 - r.x);
-    const h = r.mode === "e" ? r.h0 : clamp(p.y - r.y, MIN_H, 1 - r.y);
-    setLiveSize({ id: r.id, w, h });
+    setLiveSize({ id: r.id, ...resizeFrame(r, r.mode, p.x - r.px, p.y - r.py) });
   };
 
   const onHandleUp = (b: TextBox, e: ReactPointerEvent<HTMLElement>) => {
@@ -430,17 +462,14 @@ export function BoxLayer(props: Props) {
     if (!r || r.pointer !== e.pointerId) return;
     e.stopPropagation();
     resize.current = null;
-    if (liveSize && liveSize.id === b.id) {
-      const sized = { ...b, w: liveSize.w, h: liveSize.h };
-      props.onBoxSize(b.id, liveSize.w, liveSize.h, layoutBox(sized, boxLabel(sized, pages, hidden), heightRatio, measureFor(sized)).size);
-    }
+    if (liveSize && liveSize.id === b.id) props.onBoxSize(b.id, { x: liveSize.x, y: liveSize.y, w: liveSize.w, h: liveSize.h });
     setLiveSize(null);
   };
 
   // 화살표가 이을 상자 자리 (끄는 중·크기를 바꾸는 중의 모양 그대로)
   const rects = new Map<string, Rect>();
   for (const b of boxes) {
-    const pos = dragPos?.id === b.id ? dragPos : b;
+    const pos = dragPos?.id === b.id ? dragPos : liveSize?.id === b.id ? liveSize : b;
     const live = liveSize?.id === b.id ? { ...b, w: liveSize.w, h: liveSize.h } : b;
     const label = boxLabel(b, pages, hidden);
     rects.set(b.id, boxRectPx({ ...live, x: pos.x, y: pos.y }, editingId === b.id ? b.text || label : label, size));
@@ -614,7 +643,7 @@ export function BoxLayer(props: Props) {
         />
       )}
       {boxes.map((b) => {
-        const pos = dragPos?.id === b.id ? dragPos : b;
+        const pos = dragPos?.id === b.id ? dragPos : liveSize?.id === b.id ? liveSize : b;
         const live = liveSize?.id === b.id ? { ...b, w: liveSize.w, h: liveSize.h } : b;
         const label = boxLabel(b, pages, hidden);
         const dangling = isDangling(b, pages);
@@ -713,6 +742,7 @@ export function BoxLayer(props: Props) {
           props.connectFrom === b.id && "connect-from",
           b.underline && "underline",
           b.align && `align-${b.align}`,
+          layout.fitted && `valign-${b.valign ?? "middle"}`,
           playing && "playing",
           playing && (play!.dir === "open" ? "unfolding" : "folding"),
           b.veil && "veil-box",
@@ -756,7 +786,14 @@ export function BoxLayer(props: Props) {
                   placeholder={b.link ? label : "글자 입력"}
                   aria-label="텍스트 상자 글자"
                   className={layout.fitted ? "fill" : undefined}
-                  style={{ fontSize, color: b.color, ...textStyle, textDecoration: b.underline ? "underline" : undefined }}
+                  style={{
+                    fontSize,
+                    color: b.color,
+                    ...textStyle,
+                    textDecoration: b.underline ? "underline" : undefined,
+                    // 크기가 정해진 상자: 글 높이만큼만 (상자의 세로 맞춤대로 위·가운데·아래에, v0.29)
+                    ...(layout.fitted ? { height: Math.max(1, layout.lines.length) * fontSize * LINE_HEIGHT + 2, maxHeight: "100%" } : {}),
+                  }}
                   onChange={(e) => props.onText(b.id, e.target.value)}
                   onBlur={() => props.onEndEdit(b.id)}
                   onKeyDown={(e) => e.key === "Escape" && e.currentTarget.blur()}
@@ -805,11 +842,12 @@ export function BoxLayer(props: Props) {
         const handles =
           selected && !dragPos && !editing && !playing ? (
             <>
-              {(["e", "s", "se"] as const).map((mode) => (
+              {HANDLES.map((mode) => (
                 <span
                   key={mode}
                   className={`tb-handle ${mode}`}
-                  aria-hidden="true"
+                  role="slider"
+                  aria-label={`크기 ${HANDLE_NAMES[mode]}`}
                   onPointerDown={(e) => onHandleDown(b, mode, e)}
                   onPointerMove={onHandleMove}
                   onPointerUp={(e) => onHandleUp(b, e)}
@@ -821,7 +859,7 @@ export function BoxLayer(props: Props) {
         const toolbar = selected && !dragPos && !liveSize && !playing && (
           <BoxToolbar
             box={b}
-            below={pos.y * size.height < toolbarRoom(boxPanel?.id === b.id ? boxPanel.panel : null)}
+            boxTop={pos.y * size.height}
             boxLeft={pos.x * size.width}
             pageWidth={size.width}
             onEdit={() => props.onStartEdit(b.id)}
@@ -927,7 +965,7 @@ export function BoxLayer(props: Props) {
 
 function BoxToolbar({
   box,
-  below,
+  boxTop,
   boxLeft,
   pageWidth,
   onEdit,
@@ -950,7 +988,8 @@ function BoxToolbar({
   onDelete,
 }: {
   box: TextBox;
-  below: boolean;
+  /** 상자 위쪽 자리 (페이지 px): 막대 높이보다 모자라면 상자 아래에 둔다 */
+  boxTop: number;
   /** 상자 왼쪽 위치와 페이지 폭: 막대가 페이지 밖으로 나가지 않게 옆으로 민다 */
   boxLeft: number;
   pageWidth: number;
@@ -980,6 +1019,13 @@ function BoxToolbar({
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
   const ref = useRef<HTMLDivElement>(null);
   const [left, setLeft] = useState(-2);
+  // 막대 높이를 재서 상자 위에 들어가지 않으면 아래로 (v0.29: 색 칸·서식 창이 커져서 정해 둔 높이로는 모자랐다)
+  const [height, setHeight] = useState(48);
+  useLayoutEffect(() => {
+    const h = ref.current?.offsetHeight ?? 48;
+    if (h !== height) setHeight(h);
+  });
+  const below = boxTop < height + 12;
 
   useLayoutEffect(() => {
     const w = ref.current!.offsetWidth;
@@ -994,12 +1040,8 @@ function BoxToolbar({
           <Pencil size={16} />
         </button>
         <span className="box-sep" />
-        <span role="radiogroup" aria-label="베일 색" className="box-veil-colors">
-          {VEIL_COLORS.map((c) => (
-            <button key={c} role="radio" aria-checked={box.veil!.color === c} className={`box-color${box.veil!.color === c ? " on" : ""}`} aria-label={`베일 색 ${c}`} onClick={() => onVeilColor(c)}>
-              <span style={{ background: c }} />
-            </button>
-          ))}
+        <span aria-label="베일 색" className="box-veil-colors">
+          <ColorGrid colors={VEIL_COLORS} value={box.veil!.color} onPick={onVeilColor} label={(c) => `베일 색 ${c}`} custom="다른 베일 색" columns={6} />
         </span>
         <span className="box-sep" />
         <button aria-label="상자 복사" title="복사 (Ctrl+C)" onClick={onCopy}>
@@ -1125,6 +1167,29 @@ function BoxToolbar({
               </button>
             ))}
           </div>
+          {/* 세로 맞춤 (v0.29): 크기가 정해진 상자에서 위·가운데(기본)·아래. 크기가 안 정해진 상자는 글에 꼭 맞아 차이가 없음 */}
+          <div className="box-format-row" role="radiogroup" aria-label="세로 맞춤">
+            <span className="box-anim-title">세로</span>
+            {(
+              [
+                ["top", "위 맞춤", <AlignVerticalJustifyStart key="t" size={16} />],
+                [undefined, "세로 가운데 맞춤", <AlignVerticalJustifyCenter key="m" size={16} />],
+                ["bottom", "아래 맞춤", <AlignVerticalJustifyEnd key="b" size={16} />],
+              ] as const
+            ).map(([v, label, icon]) => (
+              <button
+                key={label}
+                role="radio"
+                aria-checked={box.valign === v}
+                aria-label={label}
+                title={box.w == null ? `${label} (손잡이로 상자 크기를 정하면 보임)` : label}
+                className={box.valign === v ? "on" : undefined}
+                onClick={() => onFormat({ valign: v })}
+              >
+                {icon}
+              </button>
+            ))}
+          </div>
         </div>
       )}
       {panel === "anim" && (
@@ -1148,11 +1213,7 @@ function BoxToolbar({
             <>
               <div className="box-format-row" role="radiogroup" aria-label="쪽지 색">
                 <span className="box-anim-title">쪽지</span>
-                {NOTE_COLORS.map((c) => (
-                  <button key={c} role="radio" aria-checked={note.color === c} className={`box-color${note.color === c ? " on" : ""}`} aria-label={`쪽지 색 ${c}`} onClick={() => onAnim({ ...anim, note: { ...anim?.note, color: c } })}>
-                    <span style={{ background: c }} />
-                  </button>
-                ))}
+                <ColorGrid colors={NOTE_COLORS} value={note.color} onPick={(c) => onAnim({ ...anim, note: { ...anim?.note, color: c } })} label={(c) => `쪽지 색 ${c}`} custom="다른 쪽지 색" columns={6} />
                 <button
                   aria-pressed={!!anim?.typing}
                   className={`box-bg-opt${anim?.typing ? " on" : ""}`}
@@ -1212,12 +1273,8 @@ function BoxToolbar({
         </div>
       )}
       {panel === "color" && (
-        <div className="box-palette" role="radiogroup" aria-label="글자색 고르기">
-          {BOX_COLORS.map((c) => (
-            <button key={c} role="radio" aria-checked={box.color === c} className={`box-color${box.color === c ? " on" : ""}`} aria-label={`글자색 ${c}`} onClick={() => onColor(c)}>
-              <span style={{ background: c }} />
-            </button>
-          ))}
+        <div className="box-palette" aria-label="글자색 고르기">
+          <ColorGrid colors={RICH_COLORS} value={box.color} onPick={onColor} label={(c) => `글자색 ${c}`} custom="다른 글자색" />
         </div>
       )}
       {panel === "border" && (
@@ -1234,18 +1291,6 @@ function BoxToolbar({
           >
             글자색
           </button>
-          {BOX_COLORS.map((c) => (
-            <button
-              key={c}
-              role="radio"
-              aria-checked={box.border?.color === c}
-              className={`box-color${box.border?.color === c ? " on" : ""}`}
-              aria-label={`테두리 ${c}`}
-              onClick={() => onBorder({ color: c, w: box.border?.w ?? 2 })}
-            >
-              <span style={{ background: c }} />
-            </button>
-          ))}
           <span className="box-sep" />
           {([1, 2, 3] as const).map((w) => (
             <button
@@ -1259,6 +1304,14 @@ function BoxToolbar({
               <span className="box-border-sample" style={{ borderTopWidth: w + 1 }} />
             </button>
           ))}
+          <ColorGrid
+            colors={RICH_COLORS}
+            value={box.border?.color}
+            inactive={!box.border || box.border.color === "auto"}
+            onPick={(c) => onBorder({ color: c, w: box.border?.w ?? 2 })}
+            label={(c) => `테두리 ${c}`}
+            custom="다른 테두리 색"
+          />
         </div>
       )}
       {panel === "bg" && (
@@ -1269,11 +1322,7 @@ function BoxToolbar({
           <button role="radio" aria-checked={!box.bg} className={`box-bg-opt${!box.bg ? " on" : ""}`} onClick={() => onBg(undefined)}>
             없음
           </button>
-          {BOX_BG_COLORS.map((c) => (
-            <button key={c} role="radio" aria-checked={box.bg === c} className={`box-color${box.bg === c ? " on" : ""}`} aria-label={`배경색 ${c}`} onClick={() => onBg(c)}>
-              <span style={{ background: c }} />
-            </button>
-          ))}
+          <ColorGrid colors={RICH_BG_COLORS} value={box.bg} inactive={!box.bg || box.bg === "auto"} onPick={(c) => onBg(c)} label={(c) => `배경색 ${c}`} custom="다른 배경색" />
         </div>
       )}
     </div>
@@ -1292,10 +1341,6 @@ function endHandleSpot(s: ArrowShape, toBox: boolean): [number, number] {
 
 type ToolbarPanel = "format" | "color" | "bg" | "border" | "anim";
 
-/** 막대를 상자 위에 둘 때 필요한 자리 (페이지 px): 창을 펼치면 더. 모자라면 상자 아래로 */
-function toolbarRoom(panel: ToolbarPanel | null): number {
-  return panel === "anim" ? 330 : panel === "format" ? 190 : panel ? 120 : 60;
-}
 
 /** 접힌 쪽지 자리: 상자 왼쪽 위 모서리에 살짝 걸쳐 붙음, 한 변 px, 상자마다 조금씩 기울어짐 */
 function noteStyle(r: Rect, px: number, note: { color: string }, id: string): CSSProperties {
@@ -1399,7 +1444,9 @@ function ArrowToolbar({
   onDelete: () => void;
 }) {
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
-  const width = 330;
+  // 색은 단추를 누르면 펼치는 색 칸 모음에서 (v0.29: 0.28까지는 막대에 7가지만)
+  const [colorsOpen, setColorsOpen] = useState(false);
+  const width = colorsOpen ? 340 : 200;
   const left = clamp(at.x - width / 2, 4, Math.max(4, pageWidth - width - 4));
   const top = at.y > 70 ? at.y - 64 : at.y + 18;
   return (
@@ -1412,14 +1459,17 @@ function ArrowToolbar({
       <button aria-label="양쪽 화살표" title="양쪽 화살표" className={arrow.both ? "on" : undefined} onClick={onBoth}>
         <MoveHorizontal size={16} />
       </button>
-      {BOX_COLORS.filter((c) => c !== "#ffffff").map((c) => (
-        <button key={c} className={`box-color${arrow.color === c ? " on" : ""}`} aria-label={`화살표 색 ${c}`} onClick={() => onColor(c)}>
-          <span style={{ background: c }} />
-        </button>
-      ))}
+      <button aria-label="화살표 색" title="화살표 색" className={colorsOpen ? "on" : undefined} onClick={() => setColorsOpen((v) => !v)}>
+        <span className="arrow-color-dot" style={{ background: arrow.color }} />
+      </button>
       <button aria-label="화살표 지우기" title="지우기" onClick={onDelete}>
         <Trash2 size={16} />
       </button>
+      {colorsOpen && (
+        <div className="box-palette" aria-label="화살표 색 고르기">
+          <ColorGrid colors={RICH_COLORS} value={arrow.color} onPick={onColor} label={(c) => `화살표 색 ${c}`} custom="다른 화살표 색" />
+        </div>
+      )}
     </div>
   );
 }

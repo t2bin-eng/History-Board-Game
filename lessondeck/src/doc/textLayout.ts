@@ -94,8 +94,30 @@ export interface BoxLayout {
   size: number;
   lines: string[];
   chrome: BoxChrome;
-  /** 상자 크기가 정해져 있어 글자 크기를 맞춘 상자 */
+  /** 상자 크기가 정해져 있는 상자 (글자는 size 그대로, 넘치면 줄여서) */
   fitted: boolean;
+}
+
+/** 글 덩어리 높이 (같은 단위, 위아래 여백 포함) */
+export function textBlockHeight(layout: BoxLayout): number {
+  return layout.lines.length * layout.size * LINE_HEIGHT + layout.size * layout.chrome.padY * 2;
+}
+
+/** 세로 맞춤 비율 (v0.29): 위 0 · 가운데 0.5 · 아래 1 */
+export function valignRatio(box: Pick<TextBox, "valign">): number {
+  return box.valign === "top" ? 0 : box.valign === "bottom" ? 1 : 0.5;
+}
+
+/**
+ * 크기가 정해진 상자에서 글이 size로 다 들어가려면 필요한 상자 높이 (페이지 세로 대비).
+ * 글자 크기를 고를 때 상자가 모자라면 이만큼 늘린다 (v0.29)
+ */
+export function heightForSize(box: TextBox, label: string, size: number, heightRatio: number, measure: Measure): number {
+  const chrome = boxChrome(box);
+  const width = (box.w ?? 0.3) * 1000 * 0.97;
+  const lines = wrapLines(label || " ", width - size * chromeWidth(chrome), size, measure);
+  const units = lines.length * size * LINE_HEIGHT + size * chrome.padY * 2;
+  return units / 0.97 / (1000 * Math.max(1e-6, heightRatio)) + 1e-4;
 }
 
 /**
@@ -109,7 +131,8 @@ export function layoutBox(box: TextBox, label: string, heightRatio: number, meas
     // 화면 글자 그리기와 잰 값 사이의 작은 차이로 넘치지 않게 조금 여유를 둔다
     const width = box.w * 1000 * 0.97;
     const height = box.h * 1000 * heightRatio * 0.97;
-    const size = fitSize(text, width, height, chrome, measure);
+    // 글자는 고른 크기(size) 그대로, 상자에 다 들어가지 않을 때만 줄인다 (v0.29: 0.28까지는 상자에 꽉 차게 늘리고 줄임)
+    const size = Math.min(box.size, fitSize(text, width, height, chrome, measure));
     return { size, lines: wrapLines(text, width - size * chromeWidth(chrome), size, measure), chrome, fitted: true };
   }
   const size = box.size;

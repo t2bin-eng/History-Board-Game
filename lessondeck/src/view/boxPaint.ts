@@ -1,6 +1,6 @@
 import { arrowsOf, shapeOfArrow, type Rect } from "../doc/arrows";
 import { boxBackground, boxBorder, boxLabel, boxesOf, isDangling } from "../doc/boxes";
-import { chromeWidth, layoutBox, LINE_HEIGHT } from "../doc/textLayout";
+import { chromeWidth, layoutBox, LINE_HEIGHT, valignRatio } from "../doc/textLayout";
 import type { Page } from "../doc/types";
 import type { PageSize } from "../ink/geometry";
 import { boxRectPx } from "./boxGeometry";
@@ -69,6 +69,8 @@ export function paintBoxes(ctx: CanvasRenderingContext2D, page: Page, pages: Pag
     const textWidth = Math.max(...lineWidths);
     const boxW = layout.fitted ? b.w! * size.width : textWidth + fs * chromeWidth(layout.chrome);
     const boxH = layout.fitted ? b.h! * size.height : lh * layout.lines.length + fs * padY * 2;
+    // 세로 맞춤 (v0.29): 크기가 정해진 상자에서 글 덩어리를 위·가운데(기본)·아래로
+    const oy = layout.fitted ? Math.max(0, boxH - (lh * layout.lines.length + fs * padY * 2)) * valignRatio(b) : 0;
     ctx.globalAlpha = dangling ? 0.45 : 1;
     if (b.link) {
       // 링크는 필기와 헷갈리지 않게 단추 모양 (화면과 같은 색)
@@ -82,13 +84,13 @@ export function paintBoxes(ctx: CanvasRenderingContext2D, page: Page, pages: Pag
       if (icon) {
         ctx.fillStyle = "#1565c0";
         ctx.beginPath();
-        ctx.arc(x + fs * (padX + 0.45), y + fs * padY + lh / 2, fs * 0.3, 0, Math.PI * 2);
+        ctx.arc(x + fs * (padX + 0.45), y + oy + fs * padY + lh / 2, fs * 0.3, 0, Math.PI * 2);
         ctx.fill();
       }
       if (trail) {
         // 뒤 화살표: 가기 →, 돌아가기 ←
         const cx = x + boxW - fs * (padX + 0.45);
-        const cy = y + fs * padY + lh / 2;
+        const cy = y + oy + fs * padY + lh / 2;
         const d = b.role === "back" ? -1 : 1;
         ctx.strokeStyle = "#1565c0";
         ctx.lineWidth = Math.max(0.6, fs * 0.13);
@@ -127,7 +129,7 @@ export function paintBoxes(ctx: CanvasRenderingContext2D, page: Page, pages: Pag
     const k = b.align === "center" ? 0.5 : b.align === "right" ? 1 : 0;
     layout.lines.forEach((line, i) => {
       const lx = textLeft + Math.max(0, room - lineWidths[i]) * k;
-      const ly = y + fs * padY + i * lh + (lh - fs) / 2;
+      const ly = y + oy + fs * padY + i * lh + (lh - fs) / 2;
       ctx.fillText(line, lx, ly);
       if (b.underline && line.trim()) ctx.fillRect(lx, ly + fs * 1.02, lineWidths[i], Math.max(0.5, fs * 0.07));
     });

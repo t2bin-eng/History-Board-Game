@@ -80,6 +80,8 @@ export interface TextBox {
   underline?: boolean;
   /** 줄 맞춤 (v0.25): 없으면 왼쪽 */
   align?: "center" | "right";
+  /** 세로 맞춤 (v0.29): 크기가 정해진 상자에서 없으면 가운데, 위 · 아래 */
+  valign?: "top" | "bottom";
   /** 애니메이션 (v0.26, 쪽지·강조 v0.28): 강의 모드에서 어떻게 나타나고 강조되는지. 없으면 늘 보임 */
   anim?: BoxAnim;
   /** 베일 (v0.28): 글상자가 아니라 이 자리를 덮는 천. 강의 모드에서 누르면 걷힌다. text는 베일 위 짧은 글 */
