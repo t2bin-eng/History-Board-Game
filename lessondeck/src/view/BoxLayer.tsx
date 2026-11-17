@@ -1,3 +1,6 @@
+import { ARROW_HEADS } from "../ink/arrowHeads";
+import type { ArrowHead } from "../ink/types";
+import { HeadIcon } from "../ui/HeadIcon";
 import {
   AlignCenter,
   AlignLeft,
@@ -88,7 +91,7 @@ interface Props {
   selectedArrow?: string | null;
   onSelectArrow: (id: string | null) => void;
   onArrowFlip: (id: string) => void;
-  onArrowPatch: (id: string, patch: Partial<Pick<BoxArrow, "both" | "color" | "bend">>) => void;
+  onArrowPatch: (id: string, patch: Partial<Pick<BoxArrow, "both" | "color" | "bend" | "head">>) => void;
   /** 화살 끝을 옮김: 다른 상자 또는 아무 곳 */
   onArrowEnd: (id: string, target: ArrowTarget) => void;
   onArrowDelete: (id: string) => void;
@@ -502,7 +505,7 @@ export function BoxLayer(props: Props) {
         bend = cleanBend(bendFromHandle(center(ends.from), p1, arrowDrag.x, arrowDrag.y)) ?? 0;
       }
     }
-    return { shape: arrowShape(ends.from, target, lineW, a.both, bend), bend, target: to };
+    return { shape: arrowShape(ends.from, target, lineW, a.both, bend, a.head ?? "tri", !!a.rev), bend, target: to };
   };
   // 접힌 상자에 닿은 화살표는 펼칠 때까지 감추고, 펼치는 상자의 화살표는 펼친 뒤 그려 나간다 (v0.26)
   const veiled = new Set(boxes.filter((b) => isFolded(b) || (play?.id === b.id && play.dir === "close")).map((b) => b.id));
@@ -575,8 +578,11 @@ export function BoxLayer(props: Props) {
               <g key={a.id} data-arrow-id={a.id} className={grow ? "arrow-grow" : undefined} style={grow ? ({ "--grow-delay": `${UNFOLD_MS}ms` } as CSSProperties) : undefined}>
                 {picked?.arrow.id === a.id && <path d={d} className="arrow-glow" strokeWidth={lineW + 10} />}
                 <path d={d} className="arrow-line" pathLength={grow ? 1 : undefined} stroke={a.color} strokeWidth={lineW} strokeLinecap="round" fill="none" />
-                {s.heads.map((h, i) => (
-                  <polygon key={i} className="arrow-head" points={h.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ")} fill={a.color} stroke={a.color} strokeWidth={lineW * 0.4} strokeLinejoin="round" />
+                {s.heads.fills.map((h, i) => (
+                  <polygon key={`f${i}`} className="arrow-head" points={ptsAttr(h)} fill={a.color} stroke={a.color} strokeWidth={lineW * 0.4} strokeLinejoin="round" />
+                ))}
+                {s.heads.lines.map((h, i) => (
+                  <polyline key={`l${i}`} className="arrow-head" points={ptsAttr(h)} fill="none" stroke={a.color} strokeWidth={lineW} strokeLinecap="round" strokeLinejoin="round" />
                 ))}
                 {editMode && !props.connectFrom && (
                   <path
@@ -639,6 +645,7 @@ export function BoxLayer(props: Props) {
           onFlip={() => props.onArrowFlip(picked.arrow.id)}
           onBoth={() => props.onArrowPatch(picked.arrow.id, { both: !picked.arrow.both })}
           onColor={(color) => props.onArrowPatch(picked.arrow.id, { color })}
+          onHead={(head) => props.onArrowPatch(picked.arrow.id, { head })}
           onDelete={() => props.onArrowDelete(picked.arrow.id)}
         />
       )}
@@ -1332,11 +1339,13 @@ function BoxToolbar({
 /** 끝 손잡이 자리: 가리키는 화살표는 촉 끝, 상자로 이은 화살표는 상자를 가리지 않게 촉 끝에서 조금 뒤로 */
 function endHandleSpot(s: ArrowShape, toBox: boolean): [number, number] {
   if (!toBox) return s.tip;
-  const [tip, w1, w2] = s.heads[0];
-  const bx = (w1[0] + w2[0]) / 2 - tip[0];
-  const by = (w1[1] + w2[1]) / 2 - tip[1];
-  const l = Math.hypot(bx, by) || 1;
-  return [tip[0] + (bx / l) * 16, tip[1] + (by / l) * 16];
+  const [ux, uy] = s.endDir;
+  return [s.tip[0] - ux * 16, s.tip[1] - uy * 16];
+}
+
+/** SVG points 값 */
+function ptsAttr(pts: [number, number][]): string {
+  return pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
 }
 
 type ToolbarPanel = "format" | "color" | "bg" | "border" | "anim";
@@ -1433,6 +1442,7 @@ function ArrowToolbar({
   onFlip,
   onBoth,
   onColor,
+  onHead,
   onDelete,
 }: {
   arrow: BoxArrow;
@@ -1441,33 +1451,67 @@ function ArrowToolbar({
   onFlip: () => void;
   onBoth: () => void;
   onColor: (color: string) => void;
+  onHead: (head: ArrowHead) => void;
   onDelete: () => void;
 }) {
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
-  // 색은 단추를 누르면 펼치는 색 칸 모음에서 (v0.29: 0.28까지는 막대에 7가지만)
-  const [colorsOpen, setColorsOpen] = useState(false);
-  const width = colorsOpen ? 340 : 200;
+  // 색·촉 모양은 단추를 누르면 펼치는 줄에서 (v0.29 색, v0.30 촉 모양)
+  const [open, setOpen] = useState<"color" | "head" | null>(null);
+  const colorsOpen = open === "color";
+  const head = arrow.head ?? "tri";
+  const width = colorsOpen ? 340 : open === "head" ? 290 : 240;
   const left = clamp(at.x - width / 2, 4, Math.max(4, pageWidth - width - 4));
-  const top = at.y > 70 ? at.y - 64 : at.y + 18;
+  // 막대 높이를 재서 화살표 가운데(휘기 손잡이) 위에 아랫변을 둔다 — 촉·색 줄을 펴도 화살표를 가리지 않게 (v0.30)
+  const ref = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState(46);
+  useLayoutEffect(() => {
+    const h = ref.current?.offsetHeight ?? 46;
+    if (h !== height) setHeight(h);
+  });
+  const top = at.y - 18 - height >= 4 ? at.y - 18 - height : at.y + 18;
   return (
-    <div className="box-toolbar arrow-toolbar" style={{ left, top }} onPointerDown={stop} onPointerUp={stop} onClick={stop}>
-      {arrow.to && (
-        <button aria-label="방향 바꾸기" title="방향 바꾸기" onClick={onFlip}>
-          <ArrowLeftRight size={16} />
-        </button>
-      )}
+    <div ref={ref} className="box-toolbar arrow-toolbar" style={{ left, top }} onPointerDown={stop} onPointerUp={stop} onClick={stop}>
+      {/* 방향 바꾸기 (v0.30: 아무 곳을 가리키는 화살표도 — 촉이 상자 쪽으로) */}
+      <button aria-label="방향 바꾸기" title={arrow.to ? "방향 바꾸기" : "방향 바꾸기 (가리키는 곳 ↔ 상자)"} aria-pressed={arrow.to ? undefined : !!arrow.rev} className={!arrow.to && arrow.rev ? "on" : undefined} onClick={onFlip}>
+        <ArrowLeftRight size={16} />
+      </button>
       <button aria-label="양쪽 화살표" title="양쪽 화살표" className={arrow.both ? "on" : undefined} onClick={onBoth}>
         <MoveHorizontal size={16} />
       </button>
-      <button aria-label="화살표 색" title="화살표 색" className={colorsOpen ? "on" : undefined} onClick={() => setColorsOpen((v) => !v)}>
+      <button aria-label="촉 모양" title="촉 모양" className={open === "head" ? "on" : undefined} onClick={() => setOpen(open === "head" ? null : "head")}>
+        <HeadIcon head={head} size={24} />
+      </button>
+      <button aria-label="화살표 색" title="화살표 색" className={colorsOpen ? "on" : undefined} onClick={() => setOpen(colorsOpen ? null : "color")}>
         <span className="arrow-color-dot" style={{ background: arrow.color }} />
       </button>
       <button aria-label="화살표 지우기" title="지우기" onClick={onDelete}>
         <Trash2 size={16} />
       </button>
+      {open === "head" && (
+        <div className="box-palette" role="radiogroup" aria-label="촉 모양 고르기">
+          {ARROW_HEADS.map((h) => (
+            <button key={h.id} role="radio" aria-checked={head === h.id} aria-label={`촉 ${h.label}`} title={h.label} className={`head-opt${head === h.id ? " on" : ""}`} onClick={() => {
+                onHead(h.id);
+                setOpen(null);
+              }}>
+              <HeadIcon head={h.id} />
+            </button>
+          ))}
+        </div>
+      )}
       {colorsOpen && (
         <div className="box-palette" aria-label="화살표 색 고르기">
-          <ColorGrid colors={RICH_COLORS} value={arrow.color} onPick={onColor} label={(c) => `화살표 색 ${c}`} custom="다른 화살표 색" />
+          <ColorGrid
+            colors={RICH_COLORS}
+            value={arrow.color}
+            onPick={(c) => {
+              onColor(c);
+              // 고르면 접는다 (펼친 색 칸이 옆 상자를 가리지 않게). 다른 색 창은 고르는 동안 열어 둔다
+              if (RICH_COLORS.includes(c)) setOpen(null);
+            }}
+            label={(c) => `화살표 색 ${c}`}
+            custom="다른 화살표 색"
+          />
         </div>
       )}
     </div>

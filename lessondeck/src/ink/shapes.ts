@@ -2,6 +2,7 @@
 // 그리기는 선분마다 직사각형, 꼭짓점마다 원을 같은 방향으로 이어 붙인 외곽선(nonzero로 채우면 합쳐진 모양)이라
 // 겹치는 곳에 구멍이 생기지 않고, 화살표처럼 떨어진 선도 한 번에 채운다.
 
+import { headParts, trimEnd, trimStart } from "./arrowHeads";
 import { PAGE_UNITS, type InkPoint, type InkTool, type ShapeKind, type ShapeSpec, type Stroke } from "./types";
 
 type P = [number, number];
@@ -144,6 +145,62 @@ function cubicAt([p0, c1, c2, p3]: [P, P, P, P], t: number): P {
 }
 
 /** 회전 전, 중심이 (0,0)인 px 좌표의 선들 */
+/**
+ * 화살표 도형의 몸통과 촉 (도형 안쪽 좌표, v0.30 촉 모양). 촉은 곡선이 끝나는 방향으로(끝에서 촉 길이 절반쯤 안쪽 점 → 끝).
+ * 채운 촉(삼각형·동그라미·마름모)이면 몸통을 촉 안쪽에서 끊는다
+ */
+function arrowLocal(spec: ShapeSpec, w: number, lineW: number, body: P[], ctrl: P[] | null): { lines: P[][]; fills: P[][] } {
+  const head = Math.min(w * 0.4, Math.max(lineW * 4, w * 0.18));
+  const style = spec.head ?? "open";
+  const dirAt = (end: P, inner: P): P => {
+    const dx = end[0] - inner[0];
+    const dy = end[1] - inner[1];
+    const l = Math.hypot(dx, dy) || 1;
+    return [dx / l, dy / l];
+  };
+  const innerPoint = (fromEnd: boolean): P => {
+    if (!ctrl) return fromEnd ? [-w / 2, 0] : [w / 2, 0];
+    // 촉 길이의 절반쯤 들어간 곡선 위 점
+    const pts = fromEnd ? body.slice().reverse() : body;
+    const end = pts[0];
+    return pts.find((p) => Math.hypot(p[0] - end[0], p[1] - end[1]) >= head * 0.5) ?? pts[pts.length - 1];
+  };
+  const end: P = [w / 2, 0];
+  const start: P = [-w / 2, 0];
+  const e = headParts(style, end, dirAt(end, innerPoint(true)), head, lineW);
+  let trunk = trimEnd(body, e.inset);
+  const lines: P[][] = [...e.lines];
+  const fills: P[][] = [...e.fills];
+  if (spec.kind === "arrow2") {
+    const st = headParts(style, start, dirAt(start, innerPoint(false)), head, lineW);
+    trunk = trimStart(trunk, st.inset);
+    lines.push(...st.lines);
+    fills.push(...st.fills);
+  }
+  return { lines: [trunk, ...lines], fills };
+}
+
+/** 화살표 도형의 채운 촉 (페이지 px, v0.30) — 그릴 때 면으로 채운다 */
+export function shapeFillsPx(spec: ShapeSpec, page: Size, lineW: number): P[][] {
+  if (spec.kind !== "arrow" && spec.kind !== "arrow2") return [];
+  const f = shapeFrame(spec, page);
+  const ctrl = spec.curve ? curveControls(spec.curve, f.w) : null;
+  const body: P[] = ctrl ? Array.from({ length: 41 }, (_, i) => cubicAt(ctrl, i / 40)) : [[-f.w / 2, 0], [f.w / 2, 0]];
+  const cos = Math.cos(f.rad);
+  const sin = Math.sin(f.rad);
+  return arrowLocal(spec, f.w, lineW, body, ctrl).fills.map((path) => path.map(([x, y]): P => [f.cx + x * cos - y * sin, f.cy + x * sin + y * cos]));
+}
+
+/** 화살표 방향 바꾸기 (v0.30): 두 끝을 맞바꾼다 — 180° 돌리고 곡선 조절점을 거꾸로 (모양 그대로) */
+export function flipLineSpec(spec: ShapeSpec): ShapeSpec {
+  const next: ShapeSpec = { ...spec, rot: ((spec.rot + 180) % 360 + 360) % 360 };
+  if (spec.curve) {
+    const [u1, v1, u2, v2] = spec.curve;
+    next.curve = [-u2, -v2, -u1, -v1];
+  }
+  return next;
+}
+
 function localPaths(spec: ShapeSpec, w: number, h: number, lineW: number): P[][] {
   const scale = (pts: P[]): P[] => pts.map(([x, y]) => [x * w, y * h]);
   switch (spec.kind) {
@@ -159,37 +216,9 @@ function localPaths(spec: ShapeSpec, w: number, h: number, lineW: number): P[][]
             [w / 2, 0],
           ];
       if (spec.kind === "line") return [body];
-      const head = Math.min(w * 0.4, Math.max(lineW * 4, w * 0.18));
-      // 촉은 곡선이 끝나는 방향으로: 끝에서 촉 길이쯤 안쪽 점 → 끝
-      const dirAt = (end: P, inner: P): P => {
-        const dx = end[0] - inner[0];
-        const dy = end[1] - inner[1];
-        const l = Math.hypot(dx, dy) || 1;
-        return [dx / l, dy / l];
-      };
-      const innerPoint = (fromEnd: boolean): P => {
-        if (!ctrl) return fromEnd ? [-w / 2, 0] : [w / 2, 0];
-        // 촉 길이의 절반쯤 들어간 곡선 위 점
-        const pts = fromEnd ? body.slice().reverse() : body;
-        const end = pts[0];
-        return pts.find((p) => Math.hypot(p[0] - end[0], p[1] - end[1]) >= head * 0.5) ?? pts[pts.length - 1];
-      };
-      const wing = (tip: P, [ux, uy]: P): P[] => {
-        const a = (25 * Math.PI) / 180;
-        const bx = tip[0] - ux * head * Math.cos(a);
-        const by = tip[1] - uy * head * Math.cos(a);
-        const s = head * Math.sin(a);
-        return [
-          [bx + uy * s, by - ux * s],
-          tip,
-          [bx - uy * s, by + ux * s],
-        ];
-      };
-      const end: P = [w / 2, 0];
-      const start: P = [-w / 2, 0];
-      const paths: P[][] = [body, wing(end, dirAt(end, innerPoint(true)))];
-      if (spec.kind === "arrow2") paths.push(wing(start, dirAt(start, innerPoint(false))));
-      return paths;
+      const a = arrowLocal(spec, w, lineW, body, ctrl);
+      // 채운 촉의 테두리도 선으로 (둥근 모서리, 누르기·지우개가 촉에도 닿게)
+      return [...a.lines, ...a.fills.map((f) => close(f))];
     }
     case "ellipse":
       return [
@@ -360,7 +389,7 @@ export function withShape(stroke: Stroke, spec: ShapeSpec, page: Size): Stroke {
 }
 
 /** 고른 굵기 선의 외곽선 path (페이지 px). nonzero로 채운다 */
-export function shapeOutlinePath(paths: P[][], lineW: number): string {
+export function shapeOutlinePath(paths: P[][], lineW: number, fills: P[][] = []): string {
   const r = Math.max(0.5, lineW / 2);
   const parts: string[] = [];
   const poly = (pts: P[]) => parts.push(`M${pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join("L")}Z`);
@@ -402,13 +431,24 @@ export function shapeOutlinePath(paths: P[][], lineW: number): string {
       ]);
     }
   }
+  // 채운 면 (v0.30 채운 화살촉): 다른 조각과 같은 방향(음수 넓이)으로 맞춰 합집합이 되게
+  for (const f of fills) {
+    if (f.length < 3) continue;
+    let area = 0;
+    for (let i = 0; i < f.length; i++) {
+      const [x1, y1] = f[i];
+      const [x2, y2] = f[(i + 1) % f.length];
+      area += x1 * y2 - x2 * y1;
+    }
+    poly(area > 0 ? f.slice().reverse() : f);
+  }
   return parts.join("");
 }
 
 /** 도형 획의 외곽선 path (페이지 px) */
 export function shapeStrokePath(stroke: Stroke & { shape: ShapeSpec }, page: Size): string {
   const w = widthPx(stroke.width, page);
-  return shapeOutlinePath(shapePathsPx(stroke.shape, page, w), w);
+  return shapeOutlinePath(shapePathsPx(stroke.shape, page, w), w, shapeFillsPx(stroke.shape, page, w));
 }
 
 /** 점에서 선분까지 거리 */

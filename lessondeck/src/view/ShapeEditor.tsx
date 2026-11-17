@@ -1,9 +1,11 @@
-import { Check, CopyPlus, Move, RotateCw, Trash2 } from "lucide-react";
-import { useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { ArrowLeftRight, Check, CopyPlus, Move, RotateCw, Trash2 } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { ARROW_HEADS } from "../ink/arrowHeads";
+import { HeadIcon } from "../ui/HeadIcon";
 import { snapAngle } from "../doc/stickers";
 import { snapLineEnd } from "../ink/beautify";
 import type { PageSize } from "../ink/geometry";
-import { bendCurve, curveMid, isLineShape, lineEnds, lineSpec, shapeFrame, shapeStrokePath, withShape } from "../ink/shapes";
+import { bendCurve, curveMid, flipLineSpec, isLineShape, lineEnds, lineSpec, shapeFrame, shapeStrokePath, withShape } from "../ink/shapes";
 import type { ShapeSpec, Stroke } from "../ink/types";
 import { HIGHLIGHT_LAYER_STYLE, isHighlighter, strokeColor } from "../ink/inkPaint";
 
@@ -41,6 +43,16 @@ export function ShapeEditor({ stroke, size, onLive, onChange, onDuplicate, onDel
   const spec = draft ?? stroke.shape;
   const f = shapeFrame(spec, size);
   const line = isLineShape(spec.kind);
+  const arrow = spec.kind === "arrow" || spec.kind === "arrow2";
+  // 화살표: 촉 모양 고르기 줄 (v0.30)
+  const [headsOpen, setHeadsOpen] = useState(false);
+  // 막대 크기 (화살표는 단추가 많고 촉 줄을 펴면 두 줄): 재서 자리를 잡는다
+  const tbRef = useRef<HTMLDivElement>(null);
+  const [tb, setTb] = useState({ width: 136, height: 46 });
+  useLayoutEffect(() => {
+    const el = tbRef.current;
+    if (el && (el.offsetWidth !== tb.width || el.offsetHeight !== tb.height)) setTb({ width: el.offsetWidth, height: el.offsetHeight });
+  });
 
   // 끄는 중의 모양은 끄는 자리에서 바로 알린다 (렌더마다 알리면 부모가 다시 그리며 되풀이된다)
   const show = (next: ShapeSpec | null) => {
@@ -116,18 +128,18 @@ export function ShapeEditor({ stroke, size, onLive, onChange, onDuplicate, onDel
     // 선·화살표 (v0.28.2): 옮기기 손잡이(선 한쪽 34px)와 휘기 손잡이(곡선 가운데)를 가리지 않게 막대는 옮기기 손잡이 반대쪽에.
     // 0.28.1까지는 밑줄(가로선) 위에 막대를 두어 바로 위의 옮기기 손잡이를 덮어 선을 옮길 수 없었다
     const mid = curveMid(spec, size);
-    const aboveTop = Math.min(f.cy - ey, mv.top - 13, mid[1] - 8) - 12 - 46;
+    const aboveTop = Math.min(f.cy - ey, mv.top - 13, mid[1] - 8) - 12 - tb.height;
     const belowTop = Math.max(f.cy + ey, mv.top + 13, mid[1] + 8) + 12;
     const fitsAbove = aboveTop >= 4;
-    const fitsBelow = belowTop + 46 <= size.height - 4;
+    const fitsBelow = belowTop + tb.height <= size.height - 4;
     const preferBelow = mv.top < f.cy - 1;
     tbTop = preferBelow ? (fitsBelow ? belowTop : fitsAbove ? aboveTop : belowTop) : fitsAbove ? aboveTop : fitsBelow ? belowTop : aboveTop;
-    tbTop = Math.max(4, Math.min(size.height - 50, tbTop));
+    tbTop = Math.max(4, Math.min(size.height - tb.height - 4, tbTop));
   } else {
-    const above = f.cy - ey - 48 - 46;
-    tbTop = above >= 4 ? above : Math.min(size.height - 50, f.cy + ey + 18);
+    const above = f.cy - ey - 48 - tb.height;
+    tbTop = above >= 4 ? above : Math.min(size.height - tb.height - 4, f.cy + ey + 18);
   }
-  const tbLeft = Math.min(Math.max(4, f.cx - 66), Math.max(4, size.width - 136));
+  const tbLeft = Math.min(Math.max(4, f.cx - tb.width / 2), Math.max(4, size.width - tb.width - 4));
 
   return (
     <>
@@ -196,7 +208,18 @@ export function ShapeEditor({ stroke, size, onLive, onChange, onDuplicate, onDel
           <Move size={15} />
         </span>
         {!gesture && (
-          <div className="se-ui sticker-toolbar se-toolbar" style={{ left: tbLeft, top: tbTop }} onPointerDown={(e) => e.stopPropagation()}>
+          <div ref={tbRef} className="se-ui sticker-toolbar se-toolbar" style={{ left: tbLeft, top: tbTop, maxWidth: size.width - 8 }} onPointerDown={(e) => e.stopPropagation()}>
+            {/* 화살표 (v0.30): 방향 바꾸기(두 끝 맞바꿈, 곡선 모양 그대로) · 촉 모양 */}
+            {spec.kind === "arrow" && (
+              <button aria-label="방향 바꾸기" title="방향 바꾸기" onClick={() => onChange(withShape(stroke, flipLineSpec(stroke.shape), size))}>
+                <ArrowLeftRight size={17} />
+              </button>
+            )}
+            {arrow && (
+              <button aria-label="촉 모양" title="촉 모양" className={headsOpen ? "on" : undefined} onClick={() => setHeadsOpen((v) => !v)}>
+                <HeadIcon head={stroke.shape.head ?? "open"} size={24} />
+              </button>
+            )}
             <button aria-label="도형 복제" title="복제" onClick={onDuplicate}>
               <CopyPlus size={17} />
             </button>
@@ -206,6 +229,29 @@ export function ShapeEditor({ stroke, size, onLive, onChange, onDuplicate, onDel
             <button className="primary" aria-label="도형 고치기 끝" title="완료" onClick={onDone}>
               <Check size={17} />
             </button>
+            {arrow && headsOpen && (
+              <div className="se-heads" role="radiogroup" aria-label="촉 모양 고르기">
+                {ARROW_HEADS.map((h) => {
+                  const now = (stroke.shape.head ?? "open") === h.id;
+                  return (
+                    <button
+                      key={h.id}
+                      role="radio"
+                      aria-checked={now}
+                      aria-label={`촉 ${h.label}`}
+                      title={h.label}
+                      className={now ? "on" : undefined}
+                      onClick={() => {
+                        const { head: _old, ...rest } = stroke.shape;
+                        onChange(withShape(stroke, h.id === "open" ? rest : { ...rest, head: h.id }, size));
+                      }}
+                    >
+                      <HeadIcon head={h.id} />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -20,6 +20,9 @@ export interface Stroke {
   shape?: ShapeSpec;
 }
 
+/** 화살촉 모양 (v0.30): 열린 V · 채운 삼각형 · 동그라미 · 마름모 · 가로 막대 · 없음 */
+export type ArrowHead = "open" | "tri" | "dot" | "diamond" | "bar" | "none";
+
 export type ShapeKind =
   | "line"
   | "arrow"
@@ -51,6 +54,8 @@ export interface ShapeSpec {
   pts?: [number, number][];
   /** 선·화살표 곡선 (v0.24): 3차 베지어 조절점 [u1, v1, u2, v2] — 두 끝을 잇는 곧은 선이 x축(-0.5~0.5), 길이 1 */
   curve?: [number, number, number, number];
+  /** 화살촉 모양 (v0.30, arrow·arrow2만). 없으면 열린 V */
+  head?: ArrowHead;
 }
 
 export interface PenPreset {

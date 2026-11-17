@@ -1,3 +1,5 @@
+import { headParts } from "../ink/arrowHeads";
+import type { ArrowHead } from "../ink/types";
 import { parseHex, luminance } from "./colors";
 import { newId, type BoxArrow, type Page } from "./types";
 
@@ -77,8 +79,9 @@ export function patchArrow(pages: Page[], pageId: string, id: string, patch: Par
     list.map((a) => {
       if (a.id !== id) return a;
       const next = { ...a, ...patch };
-      // 곧게 되면 bend를 빼 둔다 (0.23까지와 같은 모양)
+      // 곧게 되면 bend를 빼 둔다 (0.23까지와 같은 모양). 기본 촉(삼각형)도 빼 둔다
       if ("bend" in patch && next.bend === undefined) delete next.bend;
+      if ("head" in patch && (next.head === undefined || next.head === "tri")) delete next.head;
       return next;
     }),
   );
@@ -88,10 +91,21 @@ export function removeArrow(pages: Page[], pageId: string, id: string): Page[] {
   return mapArrows(pages, pageId, (list) => list.filter((a) => a.id !== id));
 }
 
-/** 방향 바꾸기 (상자끼리 이은 것만. 휜 쪽도 그대로 보이게 bend 부호를 바꾼다) */
+/**
+ * 방향 바꾸기: 상자끼리 이은 것은 두 상자를 맞바꾸고(휜 쪽도 그대로 보이게 bend 부호를 바꾼다),
+ * 아무 곳을 가리키는 것은 촉을 상자 쪽으로 (rev, v0.30 — 가리키는 곳에서 상자로 들어오는 화살표)
+ */
 export function flipArrow(pages: Page[], pageId: string, id: string): Page[] {
   return mapArrows(pages, pageId, (list) =>
-    list.map((a) => (a.id === id && a.to ? { ...a, from: a.to, to: a.from, ...(a.bend ? { bend: -a.bend } : {}) } : a)),
+    list.map((a) => {
+      if (a.id !== id) return a;
+      if (a.to) return { ...a, from: a.to, to: a.from, ...(a.bend ? { bend: -a.bend } : {}) };
+      if (a.rev) {
+        const { rev: _rev, ...rest } = a;
+        return rest;
+      }
+      return { ...a, rev: true };
+    }),
   );
 }
 
@@ -127,8 +141,10 @@ type Pt = [number, number];
 export interface ArrowShape {
   /** 몸통: 2차 베지어 [시작, 조절점, 끝] (페이지 px). 곧으면 조절점이 가운데 */
   curve: [Pt, Pt, Pt];
-  /** 화살촉 삼각형들 */
-  heads: Pt[][];
+  /** 화살촉 (v0.30 촉 모양): 선으로 그을 것 · 채울 면 */
+  heads: { lines: Pt[][]; fills: Pt[][] };
+  /** 끝(촉 끝 쪽)에서 곡선이 나가는 방향 (단위 벡터) — 끝 손잡이 자리 */
+  endDir: Pt;
   /** 화살 끝(촉 끝) — 끝 손잡이 자리 */
   tip: Pt;
   /** 곡선 가운데 (상자 가운데 → 끝 곡선의 t = 0.5) — 휘기 손잡이·막대 자리 */
@@ -178,7 +194,15 @@ function stepAlong(p0: Pt, c: Pt, p1: Pt, t: number, dist: number, dir: 1 | -1):
  * 상자 가운데 → 끝(상자 가운데·점)을 잇는 2차 베지어를 시작 상자 테두리(+조금 띄움)에서 자르고,
  * 끝이 상자면 그 테두리 앞에서, 점이면 그 점에 촉 끝이 닿게. 끝이 시작 상자 안이거나 남는 길이가 없으면 null
  */
-export function arrowShape(a: Rect, target: Rect | Pt, lineW: number, both = false, bend = 0): ArrowShape | null {
+export function arrowShape(
+  a: Rect,
+  target: Rect | Pt,
+  lineW: number,
+  both = false,
+  bend = 0,
+  head: ArrowHead = "tri",
+  rev = false,
+): ArrowShape | null {
   const p0: Pt = [a.x + a.w / 2, a.y + a.h / 2];
   const toRect = Array.isArray(target) ? null : target;
   const p1: Pt = toRect ? [toRect.x + toRect.w / 2, toRect.y + toRect.h / 2] : (target as Pt);
@@ -213,28 +237,39 @@ export function arrowShape(a: Rect, target: Rect | Pt, lineW: number, both = fal
     t1 = stepAlong(p0, c, p1, crossing(p0, c, p1, toRect, Math.min(1, into + 1 / 64), into), gap, -1);
   }
   if (t1 - t0 < 0.02) return null;
-  const head = Math.max(8, lineW * 4.2);
-  const half = head * 0.55;
+  const headLen = Math.max(8, lineW * 4.2);
   const tipAt = (t: number, sign: 1 | -1): { tip: Pt; dir: Pt } => {
     const [tx, ty] = quadTangent(p0, c, p1, t);
     const l = Math.hypot(tx, ty) || 1;
     return { tip: quad(p0, c, p1, t), dir: [(sign * tx) / l, (sign * ty) / l] };
   };
-  const tri = ({ tip: [x, y], dir: [ux, uy] }: { tip: Pt; dir: Pt }): Pt[] => [
-    [x, y],
-    [x - ux * head - uy * half, y - uy * head + ux * half],
-    [x - ux * head + uy * half, y - uy * head - ux * half],
-  ];
   const end = tipAt(t1, 1);
-  const heads = [tri(end)];
-  if (both) heads.push(tri(tipAt(t0, -1)));
-  // 선은 화살촉 안쪽까지만 (촉 끝이 뭉툭해지지 않게)
-  const inset = head * 0.6;
-  const s1 = Math.max(t0, stepAlong(p0, c, p1, t1, inset, -1));
-  const s0 = both ? Math.min(s1, stepAlong(p0, c, p1, t0, inset, 1)) : t0;
+  const start = tipAt(t0, -1);
+  // 촉: 끝(rev가 아니거나 양쪽) · 시작(양쪽이거나 rev)
+  const atEnd = !rev || both;
+  const atStart = both || rev;
+  const heads: { lines: Pt[][]; fills: Pt[][] } = { lines: [], fills: [] };
+  let insetEnd = 0;
+  let insetStart = 0;
+  if (atEnd) {
+    const h = headParts(head, end.tip, end.dir, headLen, lineW);
+    heads.lines.push(...h.lines);
+    heads.fills.push(...h.fills);
+    insetEnd = h.inset;
+  }
+  if (atStart) {
+    const h = headParts(head, start.tip, start.dir, headLen, lineW);
+    heads.lines.push(...h.lines);
+    heads.fills.push(...h.fills);
+    insetStart = h.inset;
+  }
+  // 선은 채운 촉 안쪽까지만 (촉 끝이 뭉툭해지지 않게)
+  const s1 = insetEnd ? Math.max(t0, stepAlong(p0, c, p1, t1, insetEnd, -1)) : t1;
+  const s0 = insetStart ? Math.min(s1, stepAlong(p0, c, p1, t0, insetStart, 1)) : t0;
   return {
     curve: [quad(p0, c, p1, s0), subControl(p0, c, p1, s0, s1), quad(p0, c, p1, s1)],
     heads,
+    endDir: end.dir,
     tip: end.tip,
     mid: quad(p0, c, p1, 0.5),
   };
@@ -278,5 +313,5 @@ export function shapeOfArrow(
   lineW: number,
 ): ArrowShape | null {
   const ends = arrowEnds(a, rects, size);
-  return ends ? arrowShape(ends.from, ends.target, lineW, a.both, a.bend ?? 0) : null;
+  return ends ? arrowShape(ends.from, ends.target, lineW, a.both, a.bend ?? 0, a.head ?? "tri", !!a.rev) : null;
 }

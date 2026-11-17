@@ -1,3 +1,4 @@
+import type { ArrowHead } from "../ink/types";
 import type { PDFDocumentProxy } from "../pdf/pdfjs";
 
 // 문서 = 원본 파일(assets) + 페이지 목록 (SPEC.md 2장·5장)
@@ -128,6 +129,10 @@ export interface BoxArrow {
   color: string;
   /** 양쪽 화살표 */
   both?: boolean;
+  /** 촉이 시작 상자 쪽에만 (v0.30: 가리키는 곳 → 상자. at 화살표의 방향 바꾸기) */
+  rev?: boolean;
+  /** 촉 모양 (v0.30). 없으면 채운 삼각형 */
+  head?: ArrowHead;
 }
 
 /** 이미지 스티커 꾸미기: 모양 */

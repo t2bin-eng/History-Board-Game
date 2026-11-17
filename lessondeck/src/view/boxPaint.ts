@@ -29,11 +29,18 @@ export function paintBoxes(ctx: CanvasRenderingContext2D, page: Page, pages: Pag
     ctx.moveTo(x0, y0);
     ctx.quadraticCurveTo(cx, cy, x1, y1);
     ctx.stroke();
-    for (const head of shape.heads) {
+    // 촉 (v0.30 촉 모양): 채운 면, 선
+    for (const head of shape.heads.fills) {
       ctx.beginPath();
       head.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
       ctx.closePath();
       ctx.fill();
+    }
+    ctx.lineJoin = "round";
+    for (const head of shape.heads.lines) {
+      ctx.beginPath();
+      head.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.stroke();
     }
   }
   for (const b of boxesOf(page)) {

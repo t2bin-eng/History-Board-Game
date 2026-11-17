@@ -47,10 +47,10 @@ describe("상자 잇는 화살표", () => {
     expect(s.curve[0][1]).toBeCloseTo(20, 5);
     expect(s.curve[2][1]).toBeCloseTo(20, 5);
     expect(s.curve[0][0]).toBeGreaterThan(100);
-    expect(s.heads).toHaveLength(1);
-    expect(s.heads[0][0][0]).toBeLessThan(300);
-    expect(s.heads[0][0][0]).toBeGreaterThan(290);
-    expect(arrowShape({ x: 0, y: 0, w: 100, h: 40 }, { x: 300, y: 0, w: 100, h: 40 }, 3, true)!.heads).toHaveLength(2);
+    expect(s.heads.fills).toHaveLength(1);
+    expect(s.heads.fills[0][0][0]).toBeLessThan(300);
+    expect(s.heads.fills[0][0][0]).toBeGreaterThan(290);
+    expect(arrowShape({ x: 0, y: 0, w: 100, h: 40 }, { x: 300, y: 0, w: 100, h: 40 }, 3, true)!.heads.fills).toHaveLength(2);
     expect(arrowShape({ x: 0, y: 0, w: 100, h: 40 }, { x: 50, y: 10, w: 100, h: 40 }, 3)).toBeNull();
   });
 
@@ -79,7 +79,7 @@ describe("상자 잇는 화살표", () => {
     const s = shapeOfArrow(pages[0].arrows![0], rects, { width: 1000, height: 1000 }, 3)!;
     expect(s.tip[0]).toBeCloseTo(200, 3);
     expect(s.tip[1]).toBeCloseTo(800, 3);
-    expect(s.heads[0][0]).toEqual(s.tip);
+    expect(s.heads.fills[0][0]).toEqual(s.tip);
     // 끝이 시작 상자 안이면 그리지 않음
     expect(arrowShape({ x: 100, y: 100, w: 100, h: 40 }, [150, 110], 3)).toBeNull();
   });
@@ -92,7 +92,7 @@ describe("상자 잇는 화살표", () => {
     expect(s.mid[1]).toBeCloseTo(120, 5);
     // 촉은 곡선이 끝나는 방향(위에서 내려와 오른쪽 위로 올라오며 끝남)
     expect(s.tip).toEqual([450, 20]);
-    const [, w1, w2] = s.heads[0];
+    const [, w1, w2] = s.heads.fills[0];
     expect((w1[1] + w2[1]) / 2).toBeGreaterThan(20);
     expect(bendFromHandle([50, 20], [450, 20], 250, 120)).toBeCloseTo(0.25, 5);
     expect(bendFromHandle([50, 20], [450, 20], 250, -60)).toBeCloseTo(-0.2, 5);
