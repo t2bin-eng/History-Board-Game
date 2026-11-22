@@ -7,6 +7,7 @@ import { captureFramePreview } from "../lib/framePreviews";
 import { isNativeApp } from "../lib/platform";
 import { pageFrameUrl, retryShortLink, shortLinkState, useShortLinks } from "../lib/shortLinks";
 import { frameErrorMessage, onFrameError, useFrameHosts } from "../lib/webFrames";
+import { guardHtml } from "./htmlFrame";
 
 interface Props {
   /** 열어 둔 웹앱·동영상 페이지들 (처음 연 순서). 넘겼다 돌아와도 상태가 유지된다. */
@@ -38,6 +39,19 @@ const URL_SANDBOX = `${HTML_SANDBOX} allow-same-origin allow-popups-to-escape-sa
 const URL_ALLOW = "fullscreen; autoplay; clipboard-read; clipboard-write; encrypted-media; picture-in-picture";
 const YOUTUBE_ALLOW = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen";
 const YOUTUBE_ORIGINS = ["https://www.youtube-nocookie.com", "https://www.youtube.com"];
+
+/** 문서 안 링크가 레슨덱 앱 주소로 빠지지 않게 안내 스크립트를 넣은 HTML (htmlFrame.ts). 큰 파일을 매번 다시 잇지 않게 기억 */
+const guarded = new Map<string, string>();
+function guardedHtml(html: string | undefined): string {
+  if (html == null) return "<p>원본 HTML을 찾을 수 없습니다</p>";
+  let out = guarded.get(html);
+  if (out === undefined) {
+    out = guardHtml(html);
+    if (guarded.size > 8) guarded.clear();
+    guarded.set(html, out);
+  }
+  return out;
+}
 
 function urlSandbox(url: string): string {
   try {
@@ -222,7 +236,7 @@ export function WebStage({ pages, currentId, assets, size, reloads, frameUrls = 
               <iframe
                 key={reloadKey(page.id)}
                 title={htmlAsset(assets, page.asset)?.name ?? "HTML 페이지"}
-                srcDoc={htmlAsset(assets, page.asset)?.html ?? "<p>원본 HTML을 찾을 수 없습니다</p>"}
+                srcDoc={guardedHtml(htmlAsset(assets, page.asset)?.html)}
                 sandbox={HTML_SANDBOX}
                 allow="fullscreen; autoplay; clipboard-write"
                 style={style}
