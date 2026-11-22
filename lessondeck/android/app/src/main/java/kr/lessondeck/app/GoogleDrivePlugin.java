@@ -9,6 +9,7 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.google.android.gms.auth.GoogleAuthUtil;
 import com.google.android.gms.auth.api.identity.AuthorizationRequest;
 import com.google.android.gms.auth.api.identity.AuthorizationResult;
 import com.google.android.gms.auth.api.identity.Identity;
@@ -77,6 +78,28 @@ public class GoogleDrivePlugin extends Plugin {
                 String code = e instanceof ApiException ? "API_" + ((ApiException) e).getStatusCode() : "FAILED";
                 call.reject(e.getMessage() != null ? e.getMessage() : "구글 계정 연결에 실패했습니다", code);
             });
+    }
+
+    /**
+     * 구글 Play 서비스가 기억해 둔 액세스 토큰을 버린다 (v0.34.1).
+     * Google Cloud의 Android 클라이언트를 바꾸면(다른 프로젝트로 옮기기 등) 예전 토큰은 드라이브가 거절(401)하는데,
+     * 버리지 않으면 authorize가 같은 토큰을 계속 돌려줘 연결이 되지 않았다.
+     */
+    @PluginMethod
+    public void clearToken(PluginCall call) {
+        String token = call.getString("token", "");
+        if (token == null || token.isEmpty()) {
+            call.resolve();
+            return;
+        }
+        new Thread(() -> {
+            try {
+                GoogleAuthUtil.clearToken(getContext(), token);
+            } catch (Exception e) {
+                // 이미 없는 토큰이어도 괜찮다
+            }
+            call.resolve();
+        }).start();
     }
 
     private void resolveToken(PluginCall call, AuthorizationResult auth) {

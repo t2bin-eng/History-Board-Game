@@ -10,6 +10,8 @@ export const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.appdata";
 
 interface GoogleDrivePlugin {
   authorize(options: { interactive: boolean }): Promise<{ accessToken: string }>;
+  /** 0.34.1부터: 구글 Play 서비스가 기억해 둔 토큰을 버린다 (다음 authorize가 새 토큰을 받게) */
+  clearToken?(options: { token: string }): Promise<void>;
 }
 
 const NativeDrive = registerPlugin<GoogleDrivePlugin>("GoogleDrive");
@@ -33,14 +35,26 @@ export async function getAccessToken(interactive: boolean): Promise<string> {
   return token;
 }
 
-export function invalidateToken() {
+/**
+ * 토큰을 버린다. 안드로이드 앱은 구글 Play 서비스가 기억해 둔 토큰도 버린다 (v0.34.1):
+ * 그러지 않으면 Google Cloud 클라이언트를 바꾼(다른 프로젝트로 옮긴) 뒤에도 거절되는 옛 토큰을 계속 받아 401이 이어졌다
+ */
+export async function invalidateToken(bad?: string): Promise<void> {
+  const token = bad ?? cached?.token;
   cached = null;
+  if (isNativeApp && token) {
+    try {
+      await NativeDrive.clearToken?.({ token });
+    } catch {
+      // 옛 앱(0.34.0 이하 네이티브)은 이 기능이 없다
+    }
+  }
 }
 
 /** 이 앱에 준 드라이브 권한을 거둔다 */
 export async function revokeAccess(): Promise<void> {
   const token = cached?.token;
-  cached = null;
+  await invalidateToken(token);
   if (!token) return;
   try {
     await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`, { method: "POST" });

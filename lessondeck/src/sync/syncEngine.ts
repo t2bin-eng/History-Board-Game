@@ -5,7 +5,7 @@ import { db, getMeta, setMeta, type DocRecord, type Manifest, type SyncRecord } 
 import { deleteDoc, getAsset, getDoc, hasAsset, listDocs, loadInk, onDocChange, writeDoc } from "../store/docStore";
 import { hasOrganization, libraryKey, parseLibrary } from "../store/folders";
 import { docFolder, loadLibrary, mergeRemoteLibrary, onLibraryChange, placeDoc } from "../store/library";
-import { AuthRequiredError, driveAvailability, getAccessToken, revokeAccess } from "./auth";
+import { AuthRequiredError, driveAvailability, getAccessToken, invalidateToken, revokeAccess } from "./auth";
 import { aboutEmail, createFile, deleteFile, downloadFile, listAppFiles, updateFile, type DriveFile } from "./drive";
 
 // 구글 드라이브 백업·동기화
@@ -99,7 +99,16 @@ export async function connectDrive(): Promise<void> {
   setState({ phase: "syncing", message: "구글 계정 연결 중…" });
   try {
     await getAccessToken(true);
-    const email = await aboutEmail();
+    let email: string | undefined;
+    try {
+      email = await aboutEmail();
+    } catch {
+      // 옛 토큰이 거절됐거나(Google Cloud 클라이언트를 옮긴 뒤 등) 새 클라이언트에 동의가 필요하면:
+      // 토큰을 (안드로이드가 기억한 것까지) 버리고 동의 화면부터 한 번 더 (v0.34.1)
+      await invalidateToken();
+      await getAccessToken(true);
+      email = await aboutEmail();
+    }
     await setMeta("drive", { connected: true, email } satisfies DriveMeta);
     connected = true;
     setState({ phase: "idle", email, message: undefined });

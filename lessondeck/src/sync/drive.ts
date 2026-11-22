@@ -30,7 +30,8 @@ async function request(url: string, init: RequestInit = {}, retried = false): Pr
   const token = await getAccessToken(false);
   const res = await fetch(url, { ...init, headers: { ...(init.headers as Record<string, string>), Authorization: `Bearer ${token}` } });
   if (res.status === 401 && !retried) {
-    invalidateToken();
+    // 거절된 토큰은 안드로이드가 기억한 것까지 버리고 새로 받아 한 번 더 (v0.34.1)
+    await invalidateToken(token);
     return request(url, init, true);
   }
   if (!res.ok) throw new DriveError(await errorMessage(res), res.status);
