@@ -7,6 +7,7 @@ import { hasOrganization, libraryKey, parseLibrary } from "../store/folders";
 import { docFolder, loadLibrary, mergeRemoteLibrary, onLibraryChange, placeDoc } from "../store/library";
 import { AuthRequiredError, driveAvailability, getAccessToken, invalidateToken, revokeAccess } from "./auth";
 import { aboutEmail, createFile, deleteFile, downloadFile, listAppFiles, updateFile, type DriveFile } from "./drive";
+import { tokenClient } from "./tokenInfo";
 
 // 구글 드라이브 백업·동기화
 // 드라이브 앱 전용 숨김 폴더에 문서마다
@@ -22,12 +23,23 @@ export interface SyncState {
   email?: string;
   lastSyncAt?: number;
   message?: string;
+  /** 연결된 Google Cloud 프로젝트 번호 (동기화 창의 연결 정보, v0.34.2) */
+  project?: string;
+  /** 마지막 동기화를 마쳤을 때 드라이브에 있는 문서 수 */
+  remoteDocs?: number;
 }
 
 interface DriveMeta {
   connected: boolean;
   email?: string;
   lastSyncAt?: number;
+  /** 토큰을 준 OAuth 클라이언트의 Google Cloud 프로젝트 번호 (v0.34.2, SPEC 5장 "연결된 프로젝트 기억") */
+  project?: string;
+}
+
+async function saveDriveMeta(patch: Partial<DriveMeta>) {
+  const prev = (await getMeta<DriveMeta>("drive")) ?? { connected: false };
+  await setMeta("drive", { ...prev, ...patch } satisfies DriveMeta);
 }
 
 /** 드라이브의 폴더 정리 파일과 마지막으로 맞춘 상태 */
@@ -89,7 +101,7 @@ export async function initSync(): Promise<void> {
     return;
   }
   connected = true;
-  setState({ phase: "idle", email: meta.email, lastSyncAt: meta.lastSyncAt, message: undefined });
+  setState({ phase: "idle", email: meta.email, lastSyncAt: meta.lastSyncAt, project: meta.project, message: undefined });
   startAuto();
   scheduleSync(1500);
 }
@@ -109,7 +121,7 @@ export async function connectDrive(): Promise<void> {
       await getAccessToken(true);
       email = await aboutEmail();
     }
-    await setMeta("drive", { connected: true, email } satisfies DriveMeta);
+    await saveDriveMeta({ connected: true, email });
     connected = true;
     setState({ phase: "idle", email, message: undefined });
     startAuto();
@@ -130,7 +142,7 @@ export async function disconnectDrive(): Promise<void> {
   await d.clear("tombstones");
   await setMeta("librarySync", null);
   await setMeta("drive", { connected: false } satisfies DriveMeta);
-  setState({ phase: "off", email: undefined, lastSyncAt: undefined, message: undefined });
+  setState({ phase: "off", email: undefined, lastSyncAt: undefined, message: undefined, project: undefined, remoteDocs: undefined });
 }
 
 // ── 자동 동기화 ──────────────────────────────────────────
@@ -201,6 +213,8 @@ interface Remote {
   docs: Map<string, DriveFile>;
   assets: Map<string, DriveFile>;
   library: DriveFile[];
+  /** 이번 동기화가 끝났을 때 드라이브에 있는 문서 (연결 정보의 "백업 문서 N개") */
+  backed: Set<string>;
 }
 
 const assetKey = (docId: string, assetId: string) => `${docId}/${assetId}`;
@@ -223,7 +237,11 @@ async function runSync(): Promise<void> {
 
   const errors: string[] = [];
   try {
-    const remote = indexRemote(await listAppFiles());
+    const files = await listAppFiles();
+    const remote = indexRemote(files);
+    // 목록을 받은 토큰(401이면 그사이 새로 받은 것)이 어느 프로젝트 것인지 — 다른 숨김 폴더면 동기화 기록부터 비운다
+    const project = await checkProject(await getAccessToken(false));
+    if (project === "changed" || (project === "unknown" && (await syncedElsewhere(files)))) await resetSyncRecords();
     const d = await db();
 
     // 1) 이 기기에서 지운 문서 → 드라이브에서도 삭제
@@ -236,6 +254,7 @@ async function runSync(): Promise<void> {
       remote.docs.delete(t.docId);
       await d.delete("tombstones", t.docId);
     }
+    for (const id of remote.docs.keys()) remote.backed.add(id);
 
     // 2) 폴더 정리 (문서보다 먼저: 충돌 사본을 원래 문서의 지금 폴더에 두려고)
     let libraryFiles: DriveFile[] | null = null;
@@ -269,6 +288,8 @@ async function runSync(): Promise<void> {
       }
     }
 
+    setState({ remoteDocs: remote.backed.size });
+
     // 5) 충돌 사본을 폴더에 두는 등 문서를 맞추며 정리가 바뀌었으면 바로 올린다
     if (libraryFiles && libraryKey(await loadLibrary()) !== libraryBefore) {
       try {
@@ -280,6 +301,11 @@ async function runSync(): Promise<void> {
     }
   } catch (err) {
     console.error(err);
+    if (err instanceof AuthRequiredError) {
+      // 드라이브가 토큰을 거절했고(401) 새 토큰도 동의 없이는 못 받음 (클라이언트를 옮긴 뒤 등) → "다시 연결" 단추 (v0.34.2)
+      setState({ phase: "needs-auth", message: "구글 계정을 다시 연결해 주세요" });
+      return;
+    }
     errors.push(err instanceof Error ? err.message : String(err));
   }
 
@@ -287,9 +313,46 @@ async function runSync(): Promise<void> {
   if (errors.length) {
     setState({ phase: "error", message: errors[0], lastSyncAt: state.lastSyncAt });
   } else {
-    await setMeta("drive", { connected: true, email: state.email, lastSyncAt } satisfies DriveMeta);
+    // 동기화하는 사이에 연결을 끊었으면 연결 정보를 되살리지 않는다
+    if (connected) await saveDriveMeta({ connected: true, email: state.email, lastSyncAt });
     setState({ phase: "idle", message: undefined, lastSyncAt });
   }
+}
+
+/**
+ * 연결된 Google Cloud 프로젝트 확인 (v0.34.2, SPEC 5장 "연결된 프로젝트 기억").
+ * 숨김 폴더는 프로젝트마다 따로라, 프로젝트가 바뀌면 예전 폴더에서 맞춘 기록이 "드라이브에서 지워짐"으로 보여
+ * 이 기기 문서를 지우게 된다. "same" 기억한 프로젝트 그대로 · "changed" 바뀜 ·
+ * "unknown" 프로젝트를 알아내지 못했거나 처음 기억함(0.34.1 이하에서 올라옴 — 기록이 어느 폴더 것인지 모름)
+ */
+async function checkProject(token: string): Promise<"same" | "changed" | "unknown"> {
+  const client = await tokenClient(token);
+  if (!client) return "unknown";
+  setState({ project: client.project });
+  const meta = await getMeta<DriveMeta>("drive");
+  if (meta?.project === client.project) return "same";
+  await saveDriveMeta({ project: client.project });
+  if (!meta?.project) return "unknown";
+  console.warn(`드라이브 연결 프로젝트가 바뀜: ${meta.project} → ${client.project}`);
+  return "changed";
+}
+
+/**
+ * 프로젝트로 확인하지 못했을 때의 안전망: 이 기기가 맞춘 문서 파일이 드라이브 목록에 하나도 없으면 다른 숨김 폴더로 본다.
+ * (같은 폴더라면 적어도 하나는 남아 있다. 다른 기기에서 문서를 모두 지웠을 때도 이렇게 보이지만, 그때는 이 기기 문서가 다시 올라갈 뿐 잃는 것은 없다)
+ */
+async function syncedElsewhere(files: DriveFile[]): Promise<boolean> {
+  const synced = (await (await db()).getAll("sync")).filter((r) => r.docFileId);
+  if (!synced.length) return false;
+  const ids = new Set(files.map((f) => f.id));
+  return !synced.some((r) => ids.has(r.docFileId!));
+}
+
+/** 다른 숨김 폴더: 맞춘 기록을 비우고 처음 연결처럼 맞춘다 (이 기기 문서는 그 폴더로 올라가고 그 폴더 문서는 받아 온다) */
+async function resetSyncRecords() {
+  console.warn("드라이브 숨김 폴더가 바뀜: 동기화 기록을 비우고 처음 연결처럼 맞춥니다");
+  await (await db()).clear("sync");
+  await setMeta("librarySync", null);
 }
 
 function indexRemote(files: DriveFile[]): Remote {
@@ -307,7 +370,7 @@ function indexRemote(files: DriveFile[]): Remote {
       library.push(f);
     }
   }
-  return { docs, assets, library };
+  return { docs, assets, library, backed: new Set() };
 }
 
 async function syncDoc(doc: DocRecord, st: SyncRecord | undefined, remote: Remote) {
@@ -397,6 +460,7 @@ async function upload(docBefore: DocRecord, st: SyncRecord | undefined, remote: 
     ? await updateFile(st.docFileId, meta, data)
     : await createFile({ ...meta, name: `doc-${doc.id}.json.gz`, mimeType: "application/gzip" }, data);
   await putSync({ docId: doc.id, docFileId, remoteUpdatedAt: updatedAt, syncedLocalUpdatedAt: updatedAt, assetFiles });
+  remote.backed.add(doc.id);
 }
 
 /** 받아서 쓴 문서 id (이 기기에서 그사이 고쳐 건너뛰었으면 undefined) */

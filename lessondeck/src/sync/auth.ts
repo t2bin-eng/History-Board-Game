@@ -53,7 +53,16 @@ export async function invalidateToken(bad?: string): Promise<void> {
 
 /** 이 앱에 준 드라이브 권한을 거둔다 */
 export async function revokeAccess(): Promise<void> {
-  const token = cached?.token;
+  let token = cached?.token;
+  if (!token && isNativeApp) {
+    // 아직 토큰을 받지 않았어도 Play 서비스가 기억한 것을 받아 거두고 버린다 (v0.34.2):
+    // 그래야 다시 연결할 때 옛 토큰(옛 프로젝트 것일 수 있음)이 아닌 새 토큰을 받는다
+    try {
+      token = (await NativeDrive.authorize({ interactive: false })).accessToken;
+    } catch {
+      // 권한이 없거나 오프라인이면 거둘 토큰도 없다
+    }
+  }
   await invalidateToken(token);
   if (!token) return;
   try {

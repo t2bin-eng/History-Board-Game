@@ -3,8 +3,9 @@ import { useEffect } from "react";
 import { connectDrive, disconnectDrive, syncNow, useSyncState, type SyncState } from "../sync/syncEngine";
 import { relativeTime } from "./HomeScreen";
 
-/** 저장소에 고정한 디버그 서명 키의 SHA-1 (Google Cloud의 Android OAuth 클라이언트에 등록) */
-const SIGNING_SHA1 = "F8:DD:CE:A1:7A:85:04:B6:35:69:A9:5D:CC:66:A2:D5:88:20:08:A8";
+/** 서명 키의 SHA-1 (Google Cloud의 Android OAuth 클라이언트에 등록): 배포용(릴리스 APK, v0.34부터)과 저장소의 디버그 키(직접 빌드한 시험용) */
+const RELEASE_SHA1 = "2C:3A:A2:2F:F8:1B:D9:71:03:A5:5F:14:D0:60:E7:8D:98:92:CB:4D";
+const DEBUG_SHA1 = "F8:DD:CE:A1:7A:85:04:B6:35:69:A9:5D:CC:66:A2:D5:88:20:08:A8";
 const PACKAGE_NAME = "kr.lessondeck.app";
 
 /** 상단 바의 동기화 상태 버튼 */
@@ -82,6 +83,22 @@ export function SyncPanel({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
+        {connected && (s.remoteDocs !== undefined || s.project) && (
+          // 연결 정보 (v0.34.2): 같은 계정인데 문서가 오지 않으면 다른 기기와 프로젝트 번호를 견줘 본다
+          <p className="sync-info">
+            {s.remoteDocs !== undefined && (
+              <span>
+                드라이브 백업 문서 <b>{s.remoteDocs}</b>개
+              </span>
+            )}
+            {s.project && (
+              <span>
+                Google Cloud 프로젝트 <b>{s.project}</b>
+              </span>
+            )}
+          </p>
+        )}
+
         <div className="sync-actions">
           {!connected && s.phase !== "unavailable" && (
             <button className="primary" onClick={() => connectDrive()}>
@@ -142,7 +159,11 @@ export function SyncPanel({ onClose }: { onClose: () => void }) {
               <br />
               패키지 이름: <code>{PACKAGE_NAME}</code>
               <br />
-              SHA-1: <code className="wrap">{SIGNING_SHA1}</code>
+              SHA-1(배포용 APK): <code className="wrap">{RELEASE_SHA1}</code>
+              <br />
+              직접 빌드한 시험용 APK도 쓰면 같은 패키지로 하나 더: <code className="wrap">{DEBUG_SHA1}</code>
+              <br />
+              클라이언트는 모두 <b>한 프로젝트</b>에 만듭니다. 백업은 프로젝트마다 따로라, 다른 프로젝트에 만들면 빈 백업을 봅니다.
             </li>
             <li>앱 업데이트 없이 바로 "구글 계정 연결"을 누르면 됩니다.</li>
           </ol>

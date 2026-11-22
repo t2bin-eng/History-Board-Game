@@ -1915,6 +1915,20 @@ button.doc-title:hover {
   word-break: break-all;
 }
 
+.sync-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 10px 2px 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.sync-info b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
 .sync-actions {
   display: flex;
   flex-wrap: wrap;
