@@ -113,6 +113,7 @@ import { pageBaseImage, pageFullImage, snapshotPage, thumbTarget, type PageImage
 import { ERASER_LEVELS } from "./ink/palette";
 import { ERASER_TARGETS, eraserTakes, loadEraserTarget, saveEraserTarget, type EraserTarget } from "./ink/eraser";
 import { loadPresets, savePresets } from "./ink/presets";
+import { openUpdateDialog } from "./lib/appUpdate";
 import { loadPenButton, PEN_BUTTON_ACTIONS, savePenButton, type PenButtonAction } from "./ink/penButton";
 import type { InkTool, PenPreset, Stroke, Tool } from "./ink/types";
 import { safeFileName, shareOrDownload } from "./lib/files";
@@ -2110,7 +2111,9 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
           </IconButton>
           <button className="doc-title" title="이름 바꾸기" onClick={rename}>
             {doc.title}
-            <span className="phase-chip">v{__APP_VERSION__}</span>
+            <button className="phase-chip version-btn" title="업데이트 확인" onClick={openUpdateDialog}>
+              v{__APP_VERSION__}
+            </button>
           </button>
         </div>
         <div className="topbar-right">

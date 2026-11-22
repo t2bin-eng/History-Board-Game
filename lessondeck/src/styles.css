@@ -5096,3 +5096,87 @@ body:has(.select-bar) .toast {
     padding: 0 10px;
   }
 }
+
+/* ── 업데이트 (v0.34) ───────────────── */
+button.version-btn {
+  background: transparent;
+  font-family: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}
+
+.update-dialog .update-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.update-ok {
+  color: #7ad69a;
+}
+
+.update-ver {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #263238;
+  color: #8fdcef;
+  font-weight: 700;
+}
+
+.update-ver.new {
+  background: #1d3b2a;
+  color: #9ff0bd;
+}
+
+.update-notes {
+  max-height: 240px;
+  overflow-y: auto;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #222;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: keep-all;
+}
+
+.update-progress {
+  position: relative;
+  margin-top: 14px;
+  height: 30px;
+  border-radius: 8px;
+  background: #222;
+  overflow: hidden;
+}
+
+.update-progress > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--accent);
+  opacity: 0.45;
+  transition: width 0.2s ease;
+}
+
+.update-progress > small {
+  position: relative;
+  display: block;
+  line-height: 30px;
+  text-align: center;
+  color: var(--text);
+}
+
+.update-hint {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #2a2618;
+  font-size: 14px;
+}
+
+.update-error {
+  margin-top: 6px;
+  color: #ffb4ab;
+}

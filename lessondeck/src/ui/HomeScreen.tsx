@@ -35,6 +35,7 @@ import { ContextMenu, type MenuGroups } from "./ContextMenu";
 import { CoverDialog, DocCover } from "./DocCover";
 import { DeleteDialog, FolderIcon, MoveDialog, NameDialog } from "./FolderDialogs";
 import { itemKey, useCardDrag, type CardItem } from "./useCardDrag";
+import { openUpdateDialog } from "../lib/appUpdate";
 
 interface Props {
   onOpen: (docId: string) => void;
@@ -380,7 +381,10 @@ export function HomeScreen({ onOpen, headerExtra }: Props) {
       <header className="topbar">
         <div className="topbar-left">
           <div className="home-brand">
-            레슨덱 <span className="phase-chip">v{__APP_VERSION__}</span>
+            레슨덱{" "}
+            <button className="phase-chip version-btn" title="업데이트 확인" onClick={openUpdateDialog}>
+              v{__APP_VERSION__}
+            </button>
           </div>
         </div>
         <div className="topbar-right">{headerExtra}</div>

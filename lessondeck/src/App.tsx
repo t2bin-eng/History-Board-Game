@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AI_DOC_ID, openAiScratch, releaseAiScratch, type AiRequest } from "./doc/aiScratch";
 import type { DocState } from "./doc/types";
 import { Editor } from "./Editor";
-import { showToast } from "./lib/platform";
+import { autoCheckDue, checkForUpdate, isSkipped, onOpenUpdateDialog, openUpdateDialog } from "./lib/appUpdate";
+import { isNativeApp, showToast } from "./lib/platform";
 import { clearRenderCache } from "./pdf/renderCache";
 import { clearThumbnails } from "./pdf/thumbnails";
 import { getMeta, setMeta } from "./store/db";
@@ -11,6 +12,7 @@ import { initSync } from "./sync/syncEngine";
 import { HomeScreen } from "./ui/HomeScreen";
 import { SyncButton, SyncPanel } from "./ui/SyncPanel";
 import { Toaster } from "./ui/Toaster";
+import { UpdateDialog } from "./ui/UpdateDialog";
 
 type Route =
   | { screen: "loading" }
@@ -21,6 +23,8 @@ type Route =
 export default function App() {
   const [route, setRoute] = useState<Route>({ screen: "loading" });
   const [syncOpen, setSyncOpen] = useState(false);
+  /** 업데이트 창 (v0.34): 버전 표시·새 버전 알림에서 */
+  const [updateOpen, setUpdateOpen] = useState(false);
   const editorDoc = useRef<DocState | null>(null);
   const routeRef = useRef(route);
   routeRef.current = route;
@@ -66,6 +70,24 @@ export default function App() {
     void initSync();
     getMeta<string | null>("lastDocId").then((id) => (id ? open(id) : setRoute({ screen: "home" })));
   }, [open]);
+
+  // 앱 안 업데이트 (v0.34): 버전 표시를 누르면 창, 안드로이드 앱은 켤 때 6시간에 한 번 새 버전을 확인해 알린다
+  useEffect(() => onOpenUpdateDialog(() => setUpdateOpen(true)), []);
+  useEffect(() => {
+    if (!isNativeApp || !autoCheckDue()) return;
+    const t = window.setTimeout(() => {
+      checkForUpdate()
+        .then((r) => {
+          if (r.newer && r.latest && !isSkipped(r.latest.version)) {
+            showToast(`새 버전 v${r.latest.version}이 있습니다`, { label: "업데이트", run: openUpdateDialog });
+          }
+        })
+        .catch(() => {
+          // 인터넷이 없거나 확인 횟수 제한: 다음에 다시
+        });
+    }, 4000);
+    return () => clearTimeout(t);
+  }, []);
 
   // 다른 기기에서 고친 내용을 받았거나 지웠으면, 열려 있는 문서를 다시 연다
   useEffect(
@@ -134,6 +156,7 @@ export default function App() {
         />
       )}
       {syncOpen && <SyncPanel onClose={() => setSyncOpen(false)} />}
+      {updateOpen && <UpdateDialog onClose={() => setUpdateOpen(false)} />}
       <Toaster />
     </>
   );

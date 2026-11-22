@@ -1,6 +1,9 @@
 name: LessonDeck APK
 
-# lessondeck/ 이 바뀌면 안드로이드 APK(디버그 서명)를 빌드해 아티팩트로 올린다.
+# lessondeck/ 이 바뀌면 안드로이드 APK를 빌드해 아티팩트로 올린다.
+# 배포용 비밀 키(비밀값 LESSONDECK_KEYSTORE_B64·LESSONDECK_KEYSTORE_PASSWORD)가 있으면 그 키로 서명한 release APK를 만들고,
+# 그 버전(package.json)의 GitHub 릴리스 v<버전>이 없으면 lessondeck.apk를 붙여 올린다 → 앱 안 업데이트·처음 설치 링크 (SPEC 5장).
+# 비밀값이 없으면(포크 등) 예전처럼 디버그 서명 APK만 아티팩트로.
 on:
   push:
     paths:
@@ -9,7 +12,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  # 릴리스 만들기
+  contents: write
 
 concurrency:
   group: lessondeck-apk-${{ github.ref }}
@@ -56,22 +60,46 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
+      # 배포용 비밀 키: 비밀값이 있으면 키 파일로 풀어 두고 gradle에 알린다 (키 내용은 기록에 나오지 않음)
+      - name: Prepare signing key
+        id: key
+        env:
+          KEYSTORE_B64: ${{ secrets.LESSONDECK_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.LESSONDECK_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ] && [ -n "$KEYSTORE_PASSWORD" ]; then
+            echo "$KEYSTORE_B64" | tr -d ' \r\n' | base64 -d > "$RUNNER_TEMP/lessondeck-release.p12"
+            echo "LESSONDECK_KEYSTORE=$RUNNER_TEMP/lessondeck-release.p12" >> "$GITHUB_ENV"
+            echo "LESSONDECK_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+            echo "배포용 키로 서명합니다"
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "비밀값이 없어 디버그 키로 서명합니다 (릴리스는 올리지 않음)"
+          fi
+
       - name: Build APK
         working-directory: lessondeck/android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: ./gradlew ${{ steps.key.outputs.signed == 'true' && 'assembleRelease' || 'assembleDebug' }} --no-daemon --stacktrace
 
       - name: Rename APK
         id: apk
         run: |
+          if [ "${{ steps.key.outputs.signed }}" = "true" ]; then
+            dir=android/app/build/outputs/apk/release; src=app-release.apk
+          else
+            dir=android/app/build/outputs/apk/debug; src=app-debug.apk
+          fi
           name="lessondeck-${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}.apk"
-          mv android/app/build/outputs/apk/debug/app-debug.apk "android/app/build/outputs/apk/debug/$name"
+          mv "$dir/$src" "$dir/$name"
           echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "path=$dir/$name" >> "$GITHUB_OUTPUT"
 
       # 실제 APK의 서명 인증서 지문 (Google Cloud Android OAuth 클라이언트의 SHA-1과 같아야 한다)
       - name: Print signing certificate
         run: |
           apksigner="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner"
-          "$apksigner" verify --print-certs "android/app/build/outputs/apk/debug/${{ steps.apk.outputs.name }}" | tee cert.txt
+          "$apksigner" verify --print-certs "${{ steps.apk.outputs.path }}" | tee cert.txt
           sha1=$(grep -m1 "SHA-1 digest" cert.txt | awk '{print toupper($NF)}' | sed 's/../&:/g; s/:$//')
           echo "SHA-1: $sha1"
           echo "### APK 서명 SHA-1: \`$sha1\`" >> "$GITHUB_STEP_SUMMARY"
@@ -79,6 +107,24 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.apk.outputs.name }}
-          path: lessondeck/android/app/build/outputs/apk/debug/${{ steps.apk.outputs.name }}
+          path: lessondeck/${{ steps.apk.outputs.path }}
           if-no-files-found: error
           retention-days: 30
+
+      # 배포용 키로 서명했고 이 버전의 릴리스가 아직 없으면 올린다 (앱 안 업데이트가 읽는 곳)
+      - name: Publish release
+        if: steps.key.outputs.signed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          tag="v$version"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "릴리스 $tag 이(가) 이미 있어 올리지 않습니다"
+            exit 0
+          fi
+          cp "${{ steps.apk.outputs.path }}" lessondeck.apk
+          # 릴리스 설명: 이 커밋 메시지 (꼬리 표시 줄 뺌)
+          git log -1 --format=%B | grep -v -E '^(Co-Authored-By|Claude-Session):' > notes.md
+          gh release create "$tag" lessondeck.apk --title "레슨덱 $version" --notes-file notes.md --target "$GITHUB_SHA"
+          echo "### 릴리스 $tag 올림 — https://github.com/${GITHUB_REPOSITORY}/releases/tag/$tag" >> "$GITHUB_STEP_SUMMARY"

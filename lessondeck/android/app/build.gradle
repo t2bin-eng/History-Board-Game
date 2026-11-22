@@ -9,7 +9,7 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         // GitHub Actions 빌드 번호를 versionCode로 써서 새 APK를 기존 앱 위에 덮어 설치할 수 있게 한다
         versionCode((System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInteger())
-        versionName "0.33.1"
+        versionName "0.34.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -26,6 +26,17 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        // 배포용 비밀 키 (v0.34, SPEC 5장 "앱 배포·업데이트"). 키 파일·비밀번호는 저장소에 없다:
+        // CI가 GitHub 비밀값으로 키 파일을 만들고 이 환경 변수로 알려 준다. 없으면 release 빌드는 서명하지 않는다
+        if (System.getenv("LESSONDECK_KEYSTORE")) {
+            release {
+                storeFile file(System.getenv("LESSONDECK_KEYSTORE"))
+                storeType "pkcs12"
+                storePassword System.getenv("LESSONDECK_KEYSTORE_PASSWORD")
+                keyAlias "lessondeck"
+                keyPassword System.getenv("LESSONDECK_KEYSTORE_PASSWORD")
+            }
+        }
     }
     buildTypes {
         debug {
@@ -34,6 +45,9 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (System.getenv("LESSONDECK_KEYSTORE")) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }
