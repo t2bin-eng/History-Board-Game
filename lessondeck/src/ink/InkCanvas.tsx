@@ -9,6 +9,7 @@ import { recognizeShape, type ShapeGuess } from "./shapeRecognize";
 import { curveSpec, defaultShape, dragShape, lineSpec, makeShapeStroke, type ShapeTool } from "./shapes";
 import { eraserTakes, type EraserTarget } from "./eraser";
 import { keepPoint, SMOOTH_V2, type Dropped } from "./smoothing";
+import type { PenButtonAction } from "./penButton";
 import type { InkPoint, ShapeSpec, Stroke, Tool } from "./types";
 
 interface Props {
@@ -22,6 +23,13 @@ interface Props {
   eraserSize: number;
   /** 지우개가 지울 것 (v0.32): 전부 · 펜 필기만 · 형광펜만 */
   eraserTarget?: EraserTarget;
+  /** 지금 펜 바 펜의 설정 (v0.33): 형광펜 곧게 긋기 · 펜 고른 굵기 */
+  straightLine?: boolean;
+  fixedWidth?: boolean;
+  /** S펜 버튼을 누른 채 쓸 때 할 일 (v0.33, 없으면 지우개) */
+  penButton?: PenButtonAction;
+  /** penButton이 highlighter일 때 쓸 형광펜 (펜 바에서 마지막으로 고른 것) */
+  buttonHighlighter?: { color: string; width: number; straight?: boolean };
   /** 꺼져 있으면 손가락 터치는 필기하지 않는다 (손바닥 오인식 방지) */
   fingerDraw: boolean;
   /** 진행 중인 획 캔버스에 desynchronized(저지연) 컨텍스트를 쓴다. 바꾸려면 컴포넌트를 다시 만들어야 한다. */
@@ -43,7 +51,12 @@ interface Gesture {
   pointerId: number;
   /** 펜·마우스·손 (inputState.pointerKind) */
   pointerType: PointerKind;
-  mode: "draw" | "erase";
+  /** laser (v0.33): 레이저 펜 — 그리기만 하고 저장하지 않는다 */
+  mode: "draw" | "erase" | "laser";
+  /** 레이저 펜 자국 (mode laser) */
+  laser: Laser | null;
+  /** 곧게 긋는 형광펜 (v0.33): 댄 곳부터 늘 직선, 뗀 뒤 고르지 않음 */
+  autoStraight: boolean;
   rect: DOMRect;
   stroke: Stroke | null;
   working: Stroke[];
@@ -69,6 +82,16 @@ interface Gesture {
   drag: { kind: Exclude<ShapeTool, "auto">; start: [number, number]; moved: boolean } | null;
 }
 
+/** 레이저 펜 자국: 페이지 px 점들, 뗀 시각 (그리는 중이면 0) */
+interface Laser {
+  pts: [number, number][];
+  end: number;
+}
+
+/** 레이저 펜: 뗀 뒤 이만큼 그대로 있다가 이만큼 동안 사라진다 */
+const LASER_HOLD_MS = 700;
+const LASER_FADE_MS = 500;
+
 interface Box {
   x0: number;
   y0: number;
@@ -90,6 +113,9 @@ const HOLD_KEEP = 16;
 export function InkCanvas(props: Props) {
   const baseRef = useRef<HTMLCanvasElement>(null);
   const liveRef = useRef<HTMLCanvasElement>(null);
+  /** 레이저 펜 층 (v0.33): 맨 위, 누름은 받지 않음 */
+  const laserRef = useRef<HTMLCanvasElement>(null);
+  const clearLaserDotRef = useRef<() => void>(() => {});
   const hlGroupRef = useRef<HTMLDivElement>(null);
   const hlRef = useRef<HTMLCanvasElement>(null);
   const hlLiveRef = useRef<HTMLCanvasElement>(null);
@@ -113,7 +139,7 @@ export function InkCanvas(props: Props) {
       if (pixels > MAX_INK_PIXELS) scale *= Math.sqrt(MAX_INK_PIXELS / pixels);
       const w = Math.max(1, Math.round(page.width * scale));
       const h = Math.max(1, Math.round(page.height * scale));
-      for (const c of [ls.base, live, ls.hl, ls.hlLive]) {
+      for (const c of [ls.base, live, ls.hl, ls.hlLive, laserRef.current!]) {
         c.width = w;
         c.height = h;
         c.style.width = `${page.width}px`;
@@ -128,6 +154,11 @@ export function InkCanvas(props: Props) {
     }
     showHighlights(ls);
   }, [props.page, props.strokes, props.zoom]);
+
+  // 레이저 펜이 아닌 도구로 바꾸면 띄워 둔 레이저 점을 지운다 (v0.33)
+  useEffect(() => {
+    if (props.tool !== "laser") clearLaserDotRef.current();
+  }, [props.tool]);
 
   // 조작 모드로 바뀌면 남아 있던 지우개 표시 등을 지운다
   useEffect(() => {
@@ -153,6 +184,54 @@ export function InkCanvas(props: Props) {
     let hover: { x: number; y: number } | null = null;
     /** 길게 누르기로 메뉴가 열린 포인터: 뗄 때까지 획을 시작하지 않는다 */
     let ignored: number | null = null;
+
+    // ── 레이저 펜 (v0.33): 맨 위 층에 그리고, 뗀 뒤 잠깐 있다가 사라진다. 저장하지 않는다 ──
+    const lasers: Laser[] = [];
+    /** 펜을 띄운 채 가리키는 자리 (레이저 포인터 점) */
+    let laserDot: { x: number; y: number } | null = null;
+    let laserRaf = 0;
+    const buttonAction = () => propsRef.current.penButton ?? "eraser";
+    const paintLasers = () => {
+      laserRaf = 0;
+      const c = laserRef.current;
+      if (!c) return;
+      const ctx = c.getContext("2d")!;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, c.width, c.height);
+      const s = scale();
+      const z = propsRef.current.zoom || 1;
+      const now = performance.now();
+      ctx.setTransform(s, 0, 0, s, 0, 0);
+      for (let i = lasers.length - 1; i >= 0; i--) {
+        const l = lasers[i];
+        let alpha = 1;
+        if (l.end) {
+          const t = now - l.end - LASER_HOLD_MS;
+          if (t >= LASER_FADE_MS) {
+            lasers.splice(i, 1);
+            continue;
+          }
+          if (t > 0) alpha = 1 - t / LASER_FADE_MS;
+        }
+        paintLaser(ctx, l.pts, z, alpha);
+      }
+      if (laserDot) paintLaser(ctx, [[laserDot.x, laserDot.y]], z, 1);
+      // 사라지는 중인 자국이 있으면 다음 화면에서 또
+      if (lasers.length) laserRaf = requestAnimationFrame(paintLasers);
+    };
+    const kickLaser = () => {
+      if (!laserRaf) laserRaf = requestAnimationFrame(paintLasers);
+    };
+    const endLaser = (g: Gesture) => {
+      if (g.laser && !g.laser.end) g.laser.end = performance.now();
+      kickLaser();
+    };
+    // 다른 도구로 바꾸면 레이저 점을 지운다 (아래 도구 effect가 부른다)
+    clearLaserDotRef.current = () => {
+      if (!laserDot) return;
+      laserDot = null;
+      kickLaser();
+    };
 
     const page = () => propsRef.current.page;
     const scale = () => sizeRef.current.scale;
@@ -283,7 +362,8 @@ export function InkCanvas(props: Props) {
     };
 
     const begin = (e: PointerEvent) => {
-      const { tool, color, width } = propsRef.current;
+      const props0 = propsRef.current;
+      const { tool } = props0;
       e.preventDefault();
       try {
         live.setPointerCapture(e.pointerId);
@@ -291,13 +371,27 @@ export function InkCanvas(props: Props) {
         // 이미 끝난 포인터면 캡처할 수 없다
       }
       const rect = live.getBoundingClientRect();
-      // 사이드 버튼을 누르고 있으면 도구와 상관없이 지우개
-      // (안드로이드 앱: 펜이 닿는 순간 버튼이 눌려 있었는지 앱에 물어 획 전체를 정한다. 중간에 버튼을 떼도 지우개)
-      const mode = tool === "eraser" || penStrokeErasing(e) ? "erase" : "draw";
+      // 사이드 버튼을 누르고 있으면 도구와 상관없이 버튼 동작(기본 지우개, v0.33부터 레이저 펜·형광펜도)
+      // (안드로이드 앱: 펜이 닿는 순간 버튼이 눌려 있었는지 앱에 물어 획 전체를 정한다. 중간에 버튼을 떼도 그대로)
+      const button = penStrokeErasing(e) ? (props0.penButton ?? "eraser") : null;
+      const mode = tool === "eraser" || button === "eraser" ? "erase" : tool === "laser" || button === "laser" ? "laser" : "draw";
+      // 그릴 펜: 버튼 형광펜이면 그 형광펜, 아니면 지금 펜 바 펜
+      const hlButton = button === "highlighter" ? props0.buttonHighlighter : undefined;
+      const style = hlButton
+        ? { tool: "highlighter" as const, color: hlButton.color, width: hlButton.width, straight: !!hlButton.straight, fixed: false }
+        : {
+            tool: tool === "highlighter" ? ("highlighter" as const) : ("pen" as const),
+            color: props0.color,
+            width: props0.width,
+            straight: tool === "highlighter" && !!props0.straightLine,
+            fixed: tool === "pen" && !!props0.fixedWidth,
+          };
       gesture = {
         pointerId: e.pointerId,
         pointerType: pointerKind(e),
         mode,
+        laser: null,
+        autoStraight: false,
         rect,
         stroke: null,
         working: renderedRef.current.slice(),
@@ -319,22 +413,40 @@ export function InkCanvas(props: Props) {
         drawEraserCursor(x, y);
         return;
       }
+      // 펜을 대면 띄워 두었을 때의 레이저 점은 지운다 (닿은 자국만)
+      laserDot = null;
+      if (mode === "laser") {
+        clearLive();
+        const { x, y } = toPagePx(e, rect);
+        gesture.laser = { pts: [[x, y]], end: 0 };
+        lasers.push(gesture.laser);
+        kickLaser();
+        return;
+      }
       gesture.stroke = {
         id: newId(),
-        tool: tool === "highlighter" ? "highlighter" : "pen",
-        color,
-        width,
+        tool: style.tool,
+        color: style.color,
+        width: style.width,
         points: [toPoint(e, rect)],
         simulatePressure: e.pointerType !== "pen",
         // v0.32: 떨림을 거른 점 → 그릴 때 끝 다듬기
         smooth: SMOOTH_V2,
+        // v0.33: 필압을 쓰지 않는 펜
+        ...(style.fixed ? { fixedWidth: true as const } : {}),
       };
-      const shapeTool = propsRef.current.shapeTool;
+      const shapeTool = props0.shapeTool;
       if (shapeTool && shapeTool !== "auto") {
         // 도형 모드: 펜을 댄 곳에서부터 끌어 그린다 (움직이기 전에는 그리지 않음)
         const { x, y } = toPagePx(e, rect);
         gesture.drag = { kind: shapeTool, start: [x, y], moved: false };
         return;
+      }
+      if (style.straight) {
+        // 곧게 긋는 형광펜 (v0.33): 댄 곳에서 지금 자리까지 늘 직선 (움직이면 아래 직선 따라오기)
+        const { x, y } = toPagePx(e, rect);
+        gesture.straight = { start: [x, y] };
+        gesture.autoStraight = true;
       }
       renderLive(gesture.stroke, []);
       armHold(gesture);
@@ -429,12 +541,18 @@ export function InkCanvas(props: Props) {
           return;
         }
         // 지우개 상태에서 펜을 띄운 채 움직이면 지우개 크기를 미리 보여 준다
-        const erasing = propsRef.current.tool === "eraser" || isSideButtonDown();
+        const erasing = propsRef.current.tool === "eraser" || (isSideButtonDown() && buttonAction() === "eraser");
         const rect = live.getBoundingClientRect();
         const { x, y } = toPagePx(e, rect);
         hover = { x, y };
         if (erasing) drawEraserCursor(x, y);
         else if (liveBox) clearLive();
+        // 레이저 펜: 펜을 띄운 채(PC는 마우스) 움직이면 그 자리에 빨간 점 (레이저 포인터처럼)
+        const laserHover = propsRef.current.tool === "laser" || (kind === "pen" && isSideButtonDown() && buttonAction() === "laser");
+        if (laserHover || laserDot) {
+          laserDot = laserHover ? { x, y } : null;
+          kickLaser();
+        }
         return;
       }
       if (e.pointerId !== gesture.pointerId) return;
@@ -450,6 +568,14 @@ export function InkCanvas(props: Props) {
         eraseAt(events, gesture);
         const { x, y } = toPagePx(e, gesture.rect);
         drawEraserCursor(x, y);
+        return;
+      }
+      if (gesture.mode === "laser") {
+        for (const ev of events) {
+          const { x, y } = toPagePx(ev, gesture.rect);
+          gesture.laser?.pts.push([x, y]);
+        }
+        kickLaser();
         return;
       }
       const stroke = gesture.stroke!;
@@ -520,8 +646,14 @@ export function InkCanvas(props: Props) {
         if (g.erased) propsRef.current.onCommit(g.working);
         return;
       }
+      if (g.mode === "laser") {
+        endLaser(g);
+        return;
+      }
       if (cancelled && g.pointerType === "touch") return;
       let stroke = g.stroke!;
+      // 곧게 긋는 형광펜: 움직이지 않았거나(톡) 너무 짧으면 남기지 않는다
+      if (g.autoStraight && (!stroke.shape || stroke.shape.w * page().width < 3)) return;
       // 떨림으로 거른 마지막 자리는 남긴다 (획이 펜을 뗀 자리까지 오도록)
       if (g.pending && !stroke.shape) stroke.points.push(g.pending);
       const p0 = page();
@@ -556,11 +688,13 @@ export function InkCanvas(props: Props) {
       const next = [...renderedRef.current, stroke];
       renderedRef.current = next;
       propsRef.current.onCommit(next);
-      if (stroke.shape) propsRef.current.onShapeDrawn?.(stroke.id);
+      // 멈춰서 된 도형·직선은 바로 골라 고칠 수 있게 (곧게 긋는 형광펜의 밑줄은 고르지 않음)
+      if (stroke.shape && !g.autoStraight) propsRef.current.onShapeDrawn?.(stroke.id);
     };
 
     const cancelGesture = () => {
       if (gesture) clearTimeout(gesture.holdTimer);
+      if (gesture?.mode === "laser") endLaser(gesture);
       gesture = null;
       clearLive();
       redraw(ls, renderedRef.current, page(), scale());
@@ -582,7 +716,7 @@ export function InkCanvas(props: Props) {
       if (!gesture) return;
       clearTimeout(gesture.holdTimer);
       ignored = gesture.pointerId;
-      if (gesture.mode === "draw") cancelGesture();
+      if (gesture.mode === "draw" || gesture.mode === "laser") cancelGesture();
       else {
         const g = gesture;
         gesture = null;
@@ -596,6 +730,10 @@ export function InkCanvas(props: Props) {
     const onLeave = (e: PointerEvent) => {
       if (!gesture && liveBox) clearLive();
       hover = null;
+      if (laserDot) {
+        laserDot = null;
+        kickLaser();
+      }
       if (e.pointerType === "pen") recordPointer(e);
     };
     const onContextMenu = (e: Event) => e.preventDefault();
@@ -613,8 +751,13 @@ export function InkCanvas(props: Props) {
     // 사이드 버튼을 누르거나 떼는 순간 지우개 표시를 바로 바꾼다
     const offSide = onSideButtonChange((down) => {
       if (gesture) return;
-      if (down && hover) drawEraserCursor(hover.x, hover.y);
+      const action = buttonAction();
+      if (down && hover && action === "eraser") drawEraserCursor(hover.x, hover.y);
       else if (!down && propsRef.current.tool !== "eraser" && liveBox) clearLive();
+      if (action === "laser" && propsRef.current.tool !== "laser") {
+        laserDot = down && hover ? { ...hover } : null;
+        kickLaser();
+      }
     });
 
     live.addEventListener("pointerdown", onDown, { passive: false });
@@ -632,6 +775,7 @@ export function InkCanvas(props: Props) {
       window.removeEventListener("lessondeck:longpress", onLongPress);
       offSide();
       offPalm();
+      cancelAnimationFrame(laserRaf);
       live.removeEventListener("pointerdown", onDown);
       live.removeEventListener("pointermove", onMove);
       live.removeEventListener("pointerup", onUp);
@@ -650,6 +794,7 @@ export function InkCanvas(props: Props) {
       </div>
       <canvas ref={baseRef} className="ink-canvas" />
       <canvas ref={liveRef} className="ink-canvas ink-live" />
+      <canvas ref={laserRef} className="ink-canvas ink-laser" />
     </div>
   );
 }
@@ -663,6 +808,39 @@ interface Layers {
   hlLive: HTMLCanvasElement;
   /** 형광펜 두 겹의 묶음 (곱하기로 섞음) */
   group: HTMLDivElement;
+}
+
+/**
+ * 레이저 펜 자국 하나 (페이지 px, ctx 변환은 페이지 px → 캔버스 px). 확대해도 화면에서 같은 굵기로 보이게 zoom으로 나눈다.
+ * 바깥 빨간 빛 → 빨간 선 → 가운데 밝은 심. 점 하나면 동그라미
+ */
+function paintLaser(ctx: CanvasRenderingContext2D, pts: [number, number][], zoom: number, alpha: number) {
+  if (!pts.length) return;
+  const trace = () => {
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    if (pts.length === 1) ctx.lineTo(pts[0][0] + 0.01, pts[0][1]);
+    for (let i = 1; i < pts.length - 1; i++) {
+      const [x, y] = pts[i];
+      const [nx, ny] = pts[i + 1];
+      ctx.quadraticCurveTo(x, y, (x + nx) / 2, (y + ny) / 2);
+    }
+    if (pts.length > 1) ctx.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+  };
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  for (const [w, color] of [
+    [13, `rgba(255, 40, 40, ${0.25 * alpha})`],
+    [5.5, `rgba(255, 36, 36, ${0.95 * alpha})`],
+    [1.6, `rgba(255, 185, 185, ${0.9 * alpha})`],
+  ] as const) {
+    trace();
+    ctx.lineWidth = w / zoom;
+    ctx.strokeStyle = color;
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 /** 무언가 그려져 있는 캔버스. 형광펜이 없는 페이지는 형광펜 캔버스를 건드리지 않아 큰 캔버스 메모리를 쓰지 않는다 */

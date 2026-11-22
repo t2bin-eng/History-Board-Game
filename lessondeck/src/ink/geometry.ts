@@ -22,6 +22,7 @@ export function strokeOptions(
   simulatePressure: boolean,
   last: boolean,
   smoothed = false,
+  fixedWidth = false,
 ): StrokeOptions {
   if (tool === "highlighter") {
     return {
@@ -35,11 +36,12 @@ export function strokeOptions(
   }
   return {
     size: sizePx,
-    thinning: 0.6,
+    // 고른 굵기(v0.33): 필압·속도로 굵기가 바뀌지 않게
+    thinning: fixedWidth ? 0 : 0.6,
     smoothing: 0.55,
     // streamline이 클수록 획이 펜 끝을 늦게 따라온다. 지연 체감을 줄이려고 낮게 둔다.
     streamline: smoothed ? STREAMLINE_V2 : 0.32,
-    simulatePressure,
+    simulatePressure: fixedWidth ? false : simulatePressure,
     last,
   };
 }
@@ -80,7 +82,7 @@ export function strokeToSvgPath(stroke: Stroke, page: PageSize, last = true, ext
   let pts = toPagePx(extra.length ? stroke.points.concat(extra) : stroke.points, page);
   // v0.32 획: 앞뒤 점으로 다듬는다 (끝 점은 그대로 — 쓰는 동안 끝 몇 점만 다시 다듬어짐)
   if (smoothed) pts = smoothPoints(pts);
-  const outline = getStroke(pts, strokeOptions(stroke.tool, unitsToPx(stroke.width, page), !!stroke.simulatePressure, last, smoothed));
+  const outline = getStroke(pts, strokeOptions(stroke.tool, unitsToPx(stroke.width, page), !!stroke.simulatePressure, last, smoothed, !!stroke.fixedWidth));
   return outlineToSvgPath(outline);
 }
 

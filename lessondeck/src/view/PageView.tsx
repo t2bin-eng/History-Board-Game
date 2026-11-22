@@ -14,6 +14,7 @@ import { PageNav } from "./PageNav";
 import { useViewportGestures } from "./useViewportGestures";
 import { onPalm, palmActive, penStrokeErasing, pointerKind } from "../lib/inputState";
 import type { EraserTarget } from "../ink/eraser";
+import type { PenButtonAction } from "../ink/penButton";
 import { WebStage } from "./WebStage";
 
 interface Props {
@@ -26,6 +27,12 @@ interface Props {
   eraserSize: number;
   /** 지우개가 지울 것 (v0.32) */
   eraserTarget?: EraserTarget;
+  /** 펜 바 펜 설정 (v0.33): 형광펜 곧게 긋기 · 펜 고른 굵기 */
+  straightLine?: boolean;
+  fixedWidth?: boolean;
+  /** S펜 버튼 동작 (v0.33) */
+  penButton?: PenButtonAction;
+  buttonHighlighter?: { color: string; width: number; straight?: boolean };
   fingerDraw: boolean;
   lowLatency: boolean;
   /** 도형 보정·필기 보정 (InkCanvas) */
@@ -333,6 +340,10 @@ export function PageView(props: Props) {
             width={props.width}
             eraserSize={props.eraserSize}
             eraserTarget={props.eraserTarget}
+            straightLine={props.straightLine}
+            fixedWidth={props.fixedWidth}
+            penButton={props.penButton}
+            buttonHighlighter={props.buttonHighlighter}
             fingerDraw={props.fingerDraw}
             lowLatency={props.lowLatency}
             straighten={props.straighten}

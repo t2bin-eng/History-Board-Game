@@ -2,6 +2,7 @@ import { Check, Trash2 } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { RICH_COLORS, RICH_HIGHLIGHTERS } from "../doc/swatches";
 import { ERASER_TARGETS, type EraserTarget } from "../ink/eraser";
+import { PEN_BUTTON_ACTIONS, type PenButtonAction } from "../ink/penButton";
 import { ERASER_LEVELS, HIGHLIGHTER_ALPHA, WIDTH_LEVELS } from "../ink/palette";
 import type { PenPreset } from "../ink/types";
 
@@ -18,6 +19,8 @@ type Props =
       onChange: (patch: Partial<PenPreset>) => void;
       /** 도형 보정·필기 보정 켜고 끄기 (기기 설정) */
       correction: { straighten: boolean; beautify: boolean; onStraighten: (on: boolean) => void; onBeautify: (on: boolean) => void };
+      /** S펜 버튼을 누른 채 쓸 때 (v0.33, 기기 설정) */
+      penButton?: { action: PenButtonAction; onChange: (a: PenButtonAction) => void };
       onClose: () => void;
     }
   | {
@@ -115,12 +118,38 @@ export function ToolSettings(props: Props) {
               </button>
             ))}
           </div>
+          {/* 이 펜의 설정 (v0.33): 형광펜 곧게 긋기 · 펜 필압 */}
+          <div className="ts-row ts-toggles" aria-label="이 펜">
+            {props.preset.tool === "highlighter" ? (
+              <Toggle on={!!props.preset.straight} onChange={(on) => props.onChange({ straight: on })} label="곧게 긋기" hint="늘 곧은 밑줄" />
+            ) : (
+              <Toggle on={!props.preset.fixedWidth} onChange={(on) => props.onChange({ fixedWidth: !on })} label="필압" hint={props.preset.fixedWidth ? "고른 굵기" : "누르는 힘으로 굵기"} />
+            )}
+          </div>
           <div className="ts-row ts-toggles" aria-label="보정">
             <Toggle on={props.correction.straighten} onChange={props.correction.onStraighten} label="도형 보정" hint="멈추면 도형·직선" />
             {props.preset.tool === "pen" && (
               <Toggle on={props.correction.beautify} onChange={props.correction.onBeautify} label="필기 보정" hint="글씨를 반듯하게" />
             )}
           </div>
+          {props.penButton && (
+            <>
+              <div className="ts-label">S펜 버튼을 누른 채 쓰면</div>
+              <div className="ts-row ts-targets" role="radiogroup" aria-label="S펜 버튼">
+                {PEN_BUTTON_ACTIONS.map((a) => (
+                  <button
+                    key={a.id}
+                    role="radio"
+                    aria-checked={props.penButton!.action === a.id}
+                    className={`ts-target${props.penButton!.action === a.id ? " active" : ""}`}
+                    onClick={() => props.penButton!.onChange(a.id)}
+                  >
+                    {a.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </>
       ) : (
         <>

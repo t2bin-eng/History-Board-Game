@@ -110,8 +110,10 @@ import { parseYouTube } from "./doc/youtube";
 import { applyInk, type InkAction, type InkBook } from "./ink/history";
 import { docThumbPage, setDocThumbPage, useLibraryView } from "./store/library";
 import { pageBaseImage, pageFullImage, snapshotPage, thumbTarget, type PageImage } from "./view/pageSnapshot";
-import { DEFAULT_PRESETS, ERASER_LEVELS } from "./ink/palette";
+import { ERASER_LEVELS } from "./ink/palette";
 import { ERASER_TARGETS, eraserTakes, loadEraserTarget, saveEraserTarget, type EraserTarget } from "./ink/eraser";
+import { loadPresets, savePresets } from "./ink/presets";
+import { loadPenButton, PEN_BUTTON_ACTIONS, savePenButton, type PenButtonAction } from "./ink/penButton";
 import type { InkTool, PenPreset, Stroke, Tool } from "./ink/types";
 import { safeFileName, shareOrDownload } from "./lib/files";
 import { onPenDown, onSideButtonChange, palmActive, penButtonRecently, pointerKind } from "./lib/inputState";
@@ -228,14 +230,26 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
   const currentIdRef = useRef(currentId);
   currentIdRef.current = currentId;
 
-  const [presets, setPresets] = useState<PenPreset[]>(DEFAULT_PRESETS);
-  const [activePresetId, setActivePresetId] = useState(DEFAULT_PRESETS[1].id);
-  const [lastByTool, setLastByTool] = useState<Record<InkTool, string>>({
-    pen: DEFAULT_PRESETS[1].id,
-    highlighter: DEFAULT_PRESETS[0].id,
-  });
+  /** 펜 바의 펜들 (v0.33부터 기기에 기억) */
+  const [presets, setPresets] = useState<PenPreset[]>(loadPresets);
+  const firstOf = (t: InkTool) => (presets.find((p) => p.tool === t) ?? presets[0]).id;
+  const [activePresetId, setActivePresetId] = useState(() => firstOf("pen"));
+  const [lastByTool, setLastByTool] = useState<Record<InkTool, string>>(() => ({
+    pen: firstOf("pen"),
+    highlighter: firstOf("highlighter"),
+  }));
+  useEffect(() => savePresets(presets), [presets]);
   const [tool, setTool] = useState<Tool>("pen");
-  const [sideEraser, setSideEraser] = useState(false);
+  /** S펜 버튼을 누르고 있는지 (inputState) */
+  const [sideDown, setSideDown] = useState(false);
+  /** S펜 버튼을 누른 채 쓸 때 할 일 (v0.33): 지우개 · 레이저 펜 · 형광펜 — 기기에 기억 */
+  const [penButton, setPenButtonState] = useState<PenButtonAction>(loadPenButton);
+  const setPenButton = useCallback((a: PenButtonAction) => {
+    setPenButtonState(a);
+    savePenButton(a);
+  }, []);
+  /** 버튼 동작이 지우개일 때만 버튼을 누르는 동안 지우개 표시 */
+  const sideEraser = sideDown && penButton === "eraser";
   const [eraserSize, setEraserSize] = useState(ERASER_LEVELS[1]);
   /** 지우개가 지울 것 (v0.32): 전부 · 펜만 · 형광펜만 — 기기에 기억 */
   const [eraserTarget, setEraserTargetState] = useState<EraserTarget>(loadEraserTarget);
@@ -362,6 +376,11 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
   // 도형을 끄는 동안은 원래 획을 빼고 그린다 (고치는 화면이 바뀐 모양을 보여 준다)
   const canvasStrokes = useMemo(() => (shapeDraft ? strokes.filter((s) => s.id !== shapeDraft.id) : strokes), [strokes, shapeDraft]);
   const erasing = tool === "eraser" || sideEraser;
+  /** S펜 버튼 형광펜(v0.33)으로 쓸 형광펜: 펜 바에서 마지막으로 고른 것 */
+  const buttonHighlighter = useMemo(() => {
+    const h = presets.find((p) => p.id === lastByTool.highlighter) ?? presets.find((p) => p.tool === "highlighter");
+    return h ? { color: h.color, width: h.width, straight: !!h.straight } : undefined;
+  }, [presets, lastByTool.highlighter]);
   const onInteractive = isInteractivePage(currentPage);
 
   useEffect(() => {
@@ -776,7 +795,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
   const enterShapeMode = (kind: ShapeTool) => {
     setPopover(null);
     if (textMode) leaveTextMode();
-    if (tool === "eraser") setTool(activePreset.tool);
+    if (tool === "eraser" || tool === "laser") setTool(activePreset.tool);
     if (onInteractive) setWebMode("ink");
     setShapeTool(kind);
     showToast(
@@ -829,7 +848,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
   }, []);
 
   // S펜 사이드 버튼을 누르는 동안 툴바의 지우개를 켠다
-  useEffect(() => onSideButtonChange(setSideEraser), []);
+  useEffect(() => onSideButtonChange(setSideDown), []);
   // 펜 모드 (오픈소스 화이트보드 Excalidraw·tldraw와 같은 방식): 손가락 필기를 켜 둔 채 S펜을 쓰면 손가락 필기를 끈다.
   // S펜이 있으면 손은 넘기기·확대에만 쓰여 손가락·손바닥이 글씨를 쓰는 일이 없다. 끈 뒤 ✋로 다시 켜면 이번 실행 동안은 그대로 둔다.
   const fingerDrawRef = useRef(fingerDraw);
@@ -1830,7 +1849,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
     setPopover({ kind: "preset", id, left: rect.right + 10, top: Math.max(8, rect.top - 20) });
   };
 
-  const onToolButton = (t: Tool, e: MouseEvent<HTMLButtonElement>) => {
+  const onToolButton = (t: InkTool | "eraser", e: MouseEvent<HTMLButtonElement>) => {
     // 도형 모드에서 펜·형광펜·지우개를 누르면 도형 모드를 끝내고 그 도구로
     if (shapeTool) {
       setShapeTool(null);
@@ -1868,6 +1887,34 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
 
   const patchPreset = (id: string, patch: Partial<PenPreset>) => {
     setPresets((list) => list.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+  };
+
+  /** 레이저 펜 (v0.33, 펜 바): 그은 자국은 잠깐 뒤 사라짐. 다시 누르면 쓰던 펜으로 */
+  const toggleLaser = () => {
+    if (tool === "laser") {
+      selectPreset(activePresetId);
+      return;
+    }
+    setShapeTool(null);
+    leaveTextMode();
+    setTool("laser");
+    setPopover(null);
+    if (onInteractive) setWebMode("ink");
+    showToast("레이저 펜: 그은 자국은 잠깐 뒤 사라집니다 (저장 안 함). 펜을 띄우면 빨간 점");
+  };
+
+  /** 베일 그리기 (v0.28, v0.33부터 펜 바): 끌어서 가릴 곳을 덮는다. 다시 누르면 끝 */
+  const toggleVeilMode = () => {
+    if (textMode && veilMode) {
+      leaveTextMode();
+      return;
+    }
+    setPopover(null);
+    setSelectedBox(null);
+    setEditingBox(null);
+    setTextMode(true);
+    setVeilMode(true);
+    showToast("가릴 곳을 끌어서 베일을 씌우세요. 강의 모드에서 누르면 걷힙니다");
   };
 
   const closePopover = useCallback(() => setPopover(null), []);
@@ -2163,25 +2210,6 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
         >
           <Type size={23} />
         </IconButton>
-        <IconButton
-          label="베일 (가리기)"
-          active={textMode && veilMode}
-          disabled={!currentPage}
-          onClick={() => {
-            if (textMode && veilMode) {
-              leaveTextMode();
-              return;
-            }
-            setPopover(null);
-            setSelectedBox(null);
-            setEditingBox(null);
-            setTextMode(true);
-            setVeilMode(true);
-            showToast("가릴 곳을 끌어서 베일을 씌우세요. 강의 모드에서 누르면 걷힙니다");
-          }}
-        >
-          <Blinds size={23} />
-        </IconButton>
         {!aiMode && (
           <IconButton label="링크 만들기" disabled={!currentPage} onClick={() => createLinkBox()}>
             <Link2 size={23} />
@@ -2285,6 +2313,10 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
           width={activePreset.width}
           eraserSize={eraserSize}
           eraserTarget={eraserTarget}
+          straightLine={activePreset.tool === "highlighter" && !!activePreset.straight}
+          fixedWidth={activePreset.tool === "pen" && !!activePreset.fixedWidth}
+          penButton={penButton}
+          buttonHighlighter={buttonHighlighter}
           fingerDraw={fingerDraw}
           lowLatency={lowLatency}
           straighten={straighten}
@@ -2522,9 +2554,13 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
           {paletteOpen && (
             <PenPalette
               presets={presets}
-              activeId={erasing || textMode ? null : activePresetId}
+              activeId={erasing || textMode || tool === "laser" ? null : activePresetId}
               onSelect={selectPreset}
               onOpenSettings={openPresetSettings}
+              laserActive={tool === "laser" && !textMode}
+              onLaser={toggleLaser}
+              veilActive={textMode && veilMode}
+              onVeil={currentPage ? toggleVeilMode : undefined}
               onHide={() => {
                 setPaletteOpen(false);
                 setPopover(null);
@@ -2545,6 +2581,10 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
           anchor={popover}
           preset={popoverPreset}
           onChange={(patch) => patchPreset(popoverPreset.id, patch)}
+          penButton={{ action: penButton, onChange: (a) => {
+            setPenButton(a);
+            showToast(`S펜 버튼을 누른 채 쓰면: ${PEN_BUTTON_ACTIONS.find((x) => x.id === a)?.label}`);
+          } }}
           correction={{
             straighten,
             beautify,
