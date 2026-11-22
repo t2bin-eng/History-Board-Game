@@ -1,6 +1,7 @@
 import { Check, Trash2 } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { RICH_COLORS, RICH_HIGHLIGHTERS } from "../doc/swatches";
+import { ERASER_TARGETS, type EraserTarget } from "../ink/eraser";
 import { ERASER_LEVELS, HIGHLIGHTER_ALPHA, WIDTH_LEVELS } from "../ink/palette";
 import type { PenPreset } from "../ink/types";
 
@@ -24,6 +25,9 @@ type Props =
       anchor: Anchor;
       eraserSize: number;
       onEraserSize: (size: number) => void;
+      /** 지울 것 (v0.32): 전부 · 펜만 · 형광펜만 */
+      eraserTarget: EraserTarget;
+      onEraserTarget: (target: EraserTarget) => void;
       onClearPage: () => void;
       onClose: () => void;
     };
@@ -135,8 +139,21 @@ export function ToolSettings(props: Props) {
               </button>
             ))}
           </div>
+          <div className="ts-row ts-targets" role="radiogroup" aria-label="지울 것">
+            {ERASER_TARGETS.map((t) => (
+              <button
+                key={t.id}
+                role="radio"
+                aria-checked={props.eraserTarget === t.id}
+                className={`ts-target${props.eraserTarget === t.id ? " active" : ""}`}
+                onClick={() => props.onEraserTarget(t.id)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
           <button className="ts-danger" onClick={props.onClearPage}>
-            <Trash2 size={16} /> 필기 지우기
+            <Trash2 size={16} /> {ERASER_TARGETS.find((t) => t.id === props.eraserTarget)?.clearLabel ?? "필기 지우기"}
           </button>
         </>
       )}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { averagePressure, beautifyStroke, linePoints, pathLengthPx, snapLineEnd } from "./beautify";
+import { averagePressure, beautifyStroke, lineSnapDeg, linePoints, pathLengthPx, snapLineEnd } from "./beautify";
 import type { InkPoint } from "./types";
 
 const PAGE = { width: 1000, height: 1000 };
@@ -16,6 +16,30 @@ describe("직선 보정", () => {
     const d = snapLineEnd(0, 0, 100, 97);
     expect(d.x).toBeCloseTo(d.y, 6);
     expect(snapLineEnd(0, 0, 100, 30)).toEqual({ x: 100, y: 30 });
+  });
+
+  it("길이에 따라 붙는 각도 (v0.32): 짧은 선은 10°까지, 페이지만 한 선은 1°", () => {
+    expect(lineSnapDeg(0, 1000)).toBe(10);
+    expect(lineSnapDeg(500, 1000)).toBeCloseTo(5.5, 6);
+    expect(lineSnapDeg(1000, 1000)).toBe(1);
+    expect(lineSnapDeg(3000, 1000)).toBe(1);
+    // 짧은 선(100px)이 8° 기울면 수평으로
+    const deg8 = (8 * Math.PI) / 180;
+    const short = snapLineEnd(0, 0, 100 * Math.cos(deg8), 100 * Math.sin(deg8), 1000);
+    expect(short.y).toBeCloseTo(0, 6);
+    // 긴 선(800px)이 같은 8°면 그대로, 2°도 그대로(허용 2.8° 안이면 붙음)
+    const long = snapLineEnd(0, 0, 800 * Math.cos(deg8), 800 * Math.sin(deg8), 1000);
+    expect(long.y).toBeGreaterThan(100);
+    const deg2 = (2 * Math.PI) / 180;
+    expect(snapLineEnd(0, 0, 800 * Math.cos(deg2), 800 * Math.sin(deg2), 1000).y).toBeCloseTo(0, 6);
+    const deg4 = (4 * Math.PI) / 180;
+    expect(snapLineEnd(0, 0, 800 * Math.cos(deg4), 800 * Math.sin(deg4), 1000).y).toBeGreaterThan(50);
+    // 대각선은 4°까지만: 짧은 선 45°+6° → 그대로, 45°+3° → 45°
+    const d51 = (51 * Math.PI) / 180;
+    expect(snapLineEnd(0, 0, 100 * Math.cos(d51), 100 * Math.sin(d51), 1000).x).toBeCloseTo(100 * Math.cos(d51), 6);
+    const d48 = (48 * Math.PI) / 180;
+    const diag = snapLineEnd(0, 0, 100 * Math.cos(d48), 100 * Math.sin(d48), 1000);
+    expect(diag.x).toBeCloseTo(diag.y, 6);
   });
 
   it("직선은 고른 간격, 필압 하나", () => {

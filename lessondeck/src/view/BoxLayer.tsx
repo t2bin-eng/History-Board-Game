@@ -48,7 +48,7 @@ import type { BoxAnim, BoxArrow, BoxBorder, BoxEmphasis, BoxLink, Page, TextBox 
 import type { PageSize } from "../ink/geometry";
 import { boxRectPx } from "./boxGeometry";
 import { measureFor, useFontsVersion } from "./textMeasure";
-import { pointerKind } from "../lib/inputState";
+import { palmActive, pointerKind } from "../lib/inputState";
 
 interface Props {
   page: Page;
@@ -301,6 +301,8 @@ export function BoxLayer(props: Props) {
       const t = tap;
       tap = null;
       if (!t || t.id !== e.pointerId || Math.hypot(e.clientX - t.x, e.clientY - t.y) > TAP_SLOP || performance.now() - t.t > TAP_MS) return;
+      // 손바닥(v0.32) 끝이 스친 것은 톡이 아니다
+      if (pointerKind(e) === "touch" && palmActive()) return;
       const target = e.target as Element | null;
       // 쪽지·베일·단추·팝업 그림·넘기기 바 같은 것을 누른 것은 빼고
       if (target?.closest?.(".tb-note, .tb-veil, .tb-refold, .popup-icon, .popup-backdrop, .popup-frame, .spotlight-tools") || (target?.closest?.("[data-no-gesture]") && !target.closest(".text-box"))) return;

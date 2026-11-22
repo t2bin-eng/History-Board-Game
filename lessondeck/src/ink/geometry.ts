@@ -1,5 +1,6 @@
 import { getStroke, type StrokeOptions } from "perfect-freehand";
 import { hasShape, shapeDistance, shapeStrokePath } from "./shapes";
+import { SMOOTH_V2, smoothPoints } from "./smoothing";
 import { PAGE_UNITS, type InkPoint, type InkTool, type Stroke } from "./types";
 
 export interface PageSize {
@@ -12,18 +13,22 @@ export function unitsToPx(units: number, page: PageSize): number {
   return (units * page.width) / PAGE_UNITS;
 }
 
+/** smooth: 2 획(v0.32)은 점을 미리 다듬어 두므로 streamline(펜 끝을 늦게 따라감)을 낮게 */
+const STREAMLINE_V2 = 0.12;
+
 export function strokeOptions(
   tool: InkTool,
   sizePx: number,
   simulatePressure: boolean,
   last: boolean,
+  smoothed = false,
 ): StrokeOptions {
   if (tool === "highlighter") {
     return {
       size: sizePx,
       thinning: 0,
       smoothing: 0.5,
-      streamline: 0.3,
+      streamline: smoothed ? STREAMLINE_V2 : 0.3,
       simulatePressure: false,
       last,
     };
@@ -33,7 +38,7 @@ export function strokeOptions(
     thinning: 0.6,
     smoothing: 0.55,
     // streamline이 클수록 획이 펜 끝을 늦게 따라온다. 지연 체감을 줄이려고 낮게 둔다.
-    streamline: 0.32,
+    streamline: smoothed ? STREAMLINE_V2 : 0.32,
     simulatePressure,
     last,
   };
@@ -71,8 +76,11 @@ function avg(a: number, b: number): string {
 /** 획 하나의 외곽선 path (CSS 픽셀 기준) */
 export function strokeToSvgPath(stroke: Stroke, page: PageSize, last = true, extra: InkPoint[] = []): string {
   if (hasShape(stroke)) return shapeStrokePath(stroke, page);
-  const pts = toPagePx(extra.length ? stroke.points.concat(extra) : stroke.points, page);
-  const outline = getStroke(pts, strokeOptions(stroke.tool, unitsToPx(stroke.width, page), !!stroke.simulatePressure, last));
+  const smoothed = stroke.smooth === SMOOTH_V2;
+  let pts = toPagePx(extra.length ? stroke.points.concat(extra) : stroke.points, page);
+  // v0.32 획: 앞뒤 점으로 다듬는다 (끝 점은 그대로 — 쓰는 동안 끝 몇 점만 다시 다듬어짐)
+  if (smoothed) pts = smoothPoints(pts);
+  const outline = getStroke(pts, strokeOptions(stroke.tool, unitsToPx(stroke.width, page), !!stroke.simulatePressure, last, smoothed));
   return outlineToSvgPath(outline);
 }
 

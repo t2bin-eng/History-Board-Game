@@ -3,6 +3,7 @@
 // 겹치는 곳에 구멍이 생기지 않고, 화살표처럼 떨어진 선도 한 번에 채운다.
 
 import { headParts, trimEnd, trimStart } from "./arrowHeads";
+import { snapLineEnd } from "./beautify";
 import { PAGE_UNITS, type InkPoint, type InkTool, type ShapeKind, type ShapeSpec, type Stroke } from "./types";
 
 type P = [number, number];
@@ -59,11 +60,9 @@ const REGULAR_ASPECT: Record<Exclude<ShapeKind, "polygon">, number> = {
  */
 export function dragShape(kind: Exclude<ShapeKind, "polygon">, start: P, end: P, page: Size): ShapeSpec {
   if (isLineShape(kind)) {
-    const len = Math.hypot(end[0] - start[0], end[1] - start[1]);
-    const deg = (Math.atan2(end[1] - start[1], end[0] - start[0]) * 180) / Math.PI;
-    const near = Math.round(deg / 45) * 45;
-    const t = ((Math.abs(deg - near) <= 4 ? near : deg) * Math.PI) / 180;
-    return lineSpec(kind, start, [start[0] + Math.cos(t) * len, start[1] + Math.sin(t) * len], page);
+    // 가로·세로·45° 근처면 붙음: 짧은 선은 너그럽게, 긴 선은 엄격하게 (v0.32, beautify.snapLineEnd)
+    const e = snapLineEnd(start[0], start[1], end[0], end[1], page.width);
+    return lineSpec(kind, start, [e.x, e.y], page);
   }
   const dx = end[0] - start[0];
   const dy = end[1] - start[1];

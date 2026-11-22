@@ -74,7 +74,7 @@ export function DebugPanel({ lowLatency, onLowLatency, pdfRenderMs, onClose }: P
     {
       label: "손바닥을 대고 써도 오인식 없는가",
       ok: manual.palm,
-      hint: `펜 쓰는 중 무시한 터치 ${s.rejectedTouches}회`,
+      hint: `펜 쓰는 중·손바닥 무시한 터치 ${s.rejectedTouches}회 · 손바닥 판정 ${s.palms}회 · 가장 큰 손 접촉 ${Math.round(s.maxTouchSize)}px`,
       manual: "palm",
     },
     {
@@ -105,6 +105,7 @@ export function DebugPanel({ lowLatency, onLowLatency, pdfRenderMs, onClose }: P
       `- 저지연 캔버스: ${lowLatency ? "켬" : "끔"} · 입력 지연 ${s.inputDelayMs.toFixed(1)}ms · 획 렌더 ${s.renderMs.toFixed(2)}ms · move ${s.moveEventsPerSec}회/초 · 점 ${s.pointsPerSec}개/초`,
       ...checklist.map((c) => `- [${c.ok ? "x" : " "}] ${c.label} (${c.hint})`),
       `- 마지막 펜/손 판정: ${s.lastJudgement || "-"}`,
+      `- 마지막 손바닥 판정: ${s.lastPalm || "-"}`,
       "- 최근 입력:",
       ...s.log.map((l) => `  - ${l}`),
     ];
@@ -126,6 +127,9 @@ export function DebugPanel({ lowLatency, onLowLatency, pdfRenderMs, onClose }: P
       eraserTipSeen: false,
       penHoverSeen: false,
       rejectedTouches: 0,
+      palms: 0,
+      lastPalm: "",
+      maxTouchSize: 0,
       strokesDrawn: 0,
       log: [],
     });
@@ -153,6 +157,8 @@ export function DebugPanel({ lowLatency, onLowLatency, pdfRenderMs, onClose }: P
         <dd className="mono">{last ? last.pointerType || "(알 수 없음)" : "-"}</dd>
         <dt>펜/손 판정</dt>
         <dd className="mono">{s.lastJudgement || "-"}</dd>
+        <dt>손바닥 판정</dt>
+        <dd className="mono">{s.lastPalm || "-"}</dd>
         <dt>pressure</dt>
         <dd>
           <span className="mono">{last ? last.pressure.toFixed(3) : "-"}</span>

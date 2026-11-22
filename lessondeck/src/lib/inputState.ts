@@ -9,6 +9,17 @@ import { isNativeApp } from "./platform";
 
 /** 펜 사용 직후 이 시간 동안은 터치를 손바닥으로 본다 */
 const PALM_GUARD_MS = 800;
+/**
+ * 손바닥 (v0.32): 손가락 접촉(PointerEvent width·height = 안드로이드 touchMajor·Minor)의 긴 쪽이 이만큼(CSS px) 넘으면 손바닥
+ * (갤럭시탭 배율 2에서 약 12mm, 손가락 끝은 이보다 작다). 입력 디버그 "가장 큰 손 접촉"으로 맞춘다
+ */
+const PALM_SIZE_CSS = 64;
+/** 짧은 쪽도 알면 이만큼 넘어야 손바닥 (눕힌 손가락은 길쭉하고 손바닥은 넓다) */
+const PALM_MINOR_CSS = 32;
+/** 손가락이 이만큼 넘게 한꺼번에 닿으면 손을 올려놓은 것 (레슨덱은 세 손가락 동작이 없다) */
+const PALM_TOUCHES = 3;
+/** 손바닥을 뗀 뒤에도 이 시간 동안은 손바닥으로 본다 (떨어지며 남는 손끝 접촉) */
+const PALM_GRACE_MS = 300;
 
 let lastPenTime = -Infinity;
 let sideButton = false;
@@ -17,6 +28,10 @@ let lastSideUp = -Infinity;
 /** 안드로이드 앱이 S펜 버튼 상태를 직접 알려 주는지 (lessondecksidebutton 이벤트, PenInput.java) */
 let nativeSide = false;
 const touches = new Set<number>();
+/** 손바닥으로 판정한 포인터 (뗄 때까지) */
+const palms = new Set<number>();
+let palmUntil = -Infinity;
+const palmListeners = new Set<() => void>();
 const listeners = new Set<(down: boolean) => void>();
 const penDownListeners = new Set<() => void>();
 
@@ -50,22 +65,24 @@ function kindByType(type: string): PointerKind {
  *    안드로이드의 답(stylus / finger)이 가장 확실하다. 손가락이 펜으로 오거나 펜이 손가락으로 와도 바로잡는다.
  * 2) 앱이 모르면(브라우저 등) pointerType, 단 펜이라도 접촉이 굵으면(손가락 크기) 손으로 본다.
  */
-function classify(e: PointerEvent): { kind: PointerKind; why: string } {
+function classify(e: PointerEvent): { kind: PointerKind; why: string; nativeSizeCss?: number } {
   if (e.pointerType === "mouse") return { kind: "mouse", why: "마우스" };
   const pen = nativePen();
   if (pen?.toolAt) {
     let answer = "";
+    const dpr = window.devicePixelRatio || 1;
     try {
-      const dpr = window.devicePixelRatio || 1;
       answer = String(pen.toolAt(e.clientX * dpr, e.clientY * dpr));
     } catch {
       answer = "";
     }
     const [tool, ...rest] = answer.split(" ");
     const size = rest[rest.length - 1] ?? "";
+    // 앱이 알려 준 접촉 크기(화면 px) → CSS px (손바닥 판정에 함께 씀, v0.32)
+    const nativeSizeCss = Number(size) / dpr || 0;
     if (tool === "stylus") return { kind: "pen", why: `앱: S펜 (접촉 ${size}px)` };
-    if (tool === "finger") return { kind: "touch", why: `앱: 손가락 (접촉 ${size}px)` };
-    if (tool === "other") return { kind: "touch", why: `앱: 기타 도구 ${rest[0]} (접촉 ${size}px)` };
+    if (tool === "finger") return { kind: "touch", why: `앱: 손가락 (접촉 ${size}px)`, nativeSizeCss };
+    if (tool === "other") return { kind: "touch", why: `앱: 기타 도구 ${rest[0]} (접촉 ${size}px)`, nativeSizeCss };
   }
   const size = Math.max(e.width || 0, e.height || 0);
   if (e.pointerType === "pen" && size >= FINGER_SIZE_CSS) return { kind: "touch", why: `펜으로 왔지만 굵음 ${size.toFixed(0)}px → 손` };
@@ -81,6 +98,34 @@ export function onPenDown(fn: () => void): () => void {
 
 export function penRecentlyActive(): boolean {
   return performance.now() - lastPenTime < PALM_GUARD_MS;
+}
+
+/**
+ * 손바닥이 닿아 있는지 (v0.32, 뗀 뒤 PALM_GRACE_MS까지). 이동안은 손가락 넘기기·확대·탭·길게 누르기·손가락 필기를 하지 않는다.
+ * 삼성노트처럼 손바닥이 닿으면 그 손이 떨어질 때까지 모든 손가락 동작을 멈춘다
+ */
+export function palmActive(): boolean {
+  return palms.size > 0 || performance.now() < palmUntil;
+}
+
+/** 손바닥으로 판정되는 순간 (하던 손가락 동작을 멈추라고) */
+export function onPalm(fn: () => void): () => void {
+  palmListeners.add(fn);
+  return () => palmListeners.delete(fn);
+}
+
+function markPalm(ids: Iterable<number>, why: string) {
+  let added = false;
+  for (const id of ids) {
+    if (palms.has(id)) continue;
+    palms.add(id);
+    added = true;
+  }
+  if (!added) return;
+  debugStats.palms++;
+  debugStats.lastPalm = why;
+  pushLog(`손바닥 ${why}`);
+  for (const fn of palmListeners) fn();
 }
 
 /** 지금 화면에 닿아 있는 손가락 수 */
@@ -167,11 +212,13 @@ function setSide(down: boolean) {
 }
 
 function track(e: PointerEvent) {
+  let nativeSize = 0;
   if (e.type === "pointerdown") {
-    const { kind, why } = classify(e);
+    const { kind, why, nativeSizeCss } = classify(e);
     const entry = { kind };
     kinds.set(e.pointerId, entry);
     debugStats.lastJudgement = why;
+    nativeSize = nativeSizeCss ?? 0;
     pushLog(`판정 ${why}`);
     if (kind === "pen") for (const fn of penDownListeners) fn();
   }
@@ -186,9 +233,17 @@ function track(e: PointerEvent) {
   if (kind === "touch") {
     if (e.type === "pointerdown") {
       // 첫 손가락인데 남은 손가락이 있으면 그 뗌을 놓친 것이다 (남겨 두면 한 손가락도 두 손가락으로 센다)
-      if (e.isPrimary) touches.clear();
+      if (e.isPrimary) {
+        touches.clear();
+        palms.clear();
+      }
       touches.add(e.pointerId);
-    } else if (e.type === "pointerup" || e.type === "pointercancel") touches.delete(e.pointerId);
+    } else if (e.type === "pointerup" || e.type === "pointercancel") {
+      touches.delete(e.pointerId);
+      if (palms.delete(e.pointerId) && palms.size === 0) palmUntil = performance.now() + PALM_GRACE_MS;
+      return;
+    }
+    checkPalm(e, nativeSize);
     return;
   }
   if (kind === "pen") lastPenTime = performance.now();
@@ -198,6 +253,18 @@ function track(e: PointerEvent) {
     return;
   }
   setSide(hasSideButton(e));
+}
+
+/** 손가락 접촉(닿음·움직임)마다: 접촉이 크거나 손가락이 셋 넘게 닿았으면 손바닥 */
+function checkPalm(e: PointerEvent, nativeSizeCss = 0) {
+  const w = e.width || 0;
+  const h = e.height || 0;
+  const size = Math.max(w, h, nativeSizeCss);
+  if (size > debugStats.maxTouchSize) debugStats.maxTouchSize = size;
+  // 짧은 쪽: 두 값을 다 주는 웹뷰면 작은 쪽, 하나만 알면(앱 크기) 따지지 않는다
+  const minor = w > 1 && h > 1 ? Math.min(w, h) : Infinity;
+  if (size >= PALM_SIZE_CSS && minor >= PALM_MINOR_CSS) markPalm([e.pointerId], `접촉 ${Math.round(w)}×${Math.round(h)}px${nativeSizeCss ? ` (앱 ${Math.round(nativeSizeCss)}px)` : ""}`);
+  else if (e.type === "pointerdown" && touches.size >= PALM_TOUCHES) markPalm(touches, `손가락 ${touches.size}개`);
 }
 
 function leave(e: PointerEvent) {

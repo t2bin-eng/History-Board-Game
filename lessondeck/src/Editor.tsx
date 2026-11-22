@@ -111,9 +111,10 @@ import { applyInk, type InkAction, type InkBook } from "./ink/history";
 import { docThumbPage, setDocThumbPage, useLibraryView } from "./store/library";
 import { pageBaseImage, pageFullImage, snapshotPage, thumbTarget, type PageImage } from "./view/pageSnapshot";
 import { DEFAULT_PRESETS, ERASER_LEVELS } from "./ink/palette";
+import { ERASER_TARGETS, eraserTakes, loadEraserTarget, saveEraserTarget, type EraserTarget } from "./ink/eraser";
 import type { InkTool, PenPreset, Stroke, Tool } from "./ink/types";
 import { safeFileName, shareOrDownload } from "./lib/files";
-import { onPenDown, onSideButtonChange, penButtonRecently, pointerKind } from "./lib/inputState";
+import { onPenDown, onSideButtonChange, palmActive, penButtonRecently, pointerKind } from "./lib/inputState";
 import { hasShape, SHAPE_NAMES, shapeAt, withShape, type ShapeTool } from "./ink/shapes";
 import { ShapePicker } from "./ui/ShapePicker";
 import { followDetour, stepSkipping, type Detour } from "./doc/detours";
@@ -236,6 +237,13 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
   const [tool, setTool] = useState<Tool>("pen");
   const [sideEraser, setSideEraser] = useState(false);
   const [eraserSize, setEraserSize] = useState(ERASER_LEVELS[1]);
+  /** 지우개가 지울 것 (v0.32): 전부 · 펜만 · 형광펜만 — 기기에 기억 */
+  const [eraserTarget, setEraserTargetState] = useState<EraserTarget>(loadEraserTarget);
+  const setEraserTarget = useCallback((t: EraserTarget) => {
+    setEraserTargetState(t);
+    saveEraserTarget(t);
+  }, []);
+  const eraserTargetLabel = ERASER_TARGETS.find((t) => t.id === eraserTarget)?.label ?? "전부";
   const [popover, setPopover] = useState<Popover>(null);
   const [addMenu, setAddMenu] = useState<{ index: number; left: number; top: number } | null>(null);
   /** 웹앱·동영상 페이지: 조작 ↔ 판서. 다른 페이지로 넘어가면 조작으로 돌아간다. */
@@ -807,7 +815,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
     const onUp = (e: PointerEvent) => {
       const t = tap;
       tap = null;
-      if (!t || t.id !== e.pointerId || shapeTapOff.current) return;
+      if (!t || t.id !== e.pointerId || shapeTapOff.current || palmActive()) return;
       if (performance.now() - t.t > 350 || Math.hypot(e.clientX - t.x, e.clientY - t.y) > 10) return;
       const s = shapeAtClientRef.current(e.clientX, e.clientY);
       if (s) setSelectedShape(s.id);
@@ -2130,7 +2138,11 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
           <Highlighter size={24} />
           {tool === "highlighter" && <span className="tool-color-dot" style={{ background: activePreset.color }} />}
         </IconButton>
-        <IconButton label={sideEraser ? "지우개 (사이드 버튼)" : "지우개"} active={erasing && !textMode} onClick={(e) => onToolButton("eraser", e)}>
+        <IconButton
+          label={`${sideEraser ? "지우개 (사이드 버튼)" : "지우개"}${eraserTarget === "all" ? "" : ` · ${eraserTargetLabel}`}`}
+          active={erasing && !textMode}
+          onClick={(e) => onToolButton("eraser", e)}
+        >
           <Eraser size={24} />
           {sideEraser && <span className="side-badge" aria-hidden="true" />}
         </IconButton>
@@ -2272,6 +2284,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
           color={activePreset.color}
           width={activePreset.width}
           eraserSize={eraserSize}
+          eraserTarget={eraserTarget}
           fingerDraw={fingerDraw}
           lowLatency={lowLatency}
           straighten={straighten}
@@ -2566,8 +2579,15 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
           anchor={popover}
           eraserSize={eraserSize}
           onEraserSize={setEraserSize}
+          eraserTarget={eraserTarget}
+          onEraserTarget={setEraserTarget}
           onClearPage={() => {
-            inkAction({ type: "clear" });
+            // 지울 것을 골라 두었으면 그것만 (펜만·형광펜만)
+            if (eraserTarget === "all") inkAction({ type: "clear" });
+            else {
+              const rest = strokes.filter((s) => !eraserTakes(eraserTarget, s));
+              if (rest.length !== strokes.length) inkAction({ type: "commit", strokes: rest });
+            }
             setPopover(null);
           }}
           onClose={closePopover}

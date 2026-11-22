@@ -18,6 +18,8 @@ export interface Stroke {
   simulatePressure?: boolean;
   /** 도형 획 (v0.18): 이 모양에서 다시 만든 선으로 그린다. points에는 그 선의 꼭짓점 */
   shape?: ShapeSpec;
+  /** 2 (v0.32): 떨림을 거른 점 — 그릴 때 앞뒤 점으로 고르게 다듬고(끝으로 갈수록 덜) streamline을 낮춘다. 없으면 0.31까지 방식 */
+  smooth?: 2;
 }
 
 /** 화살촉 모양 (v0.30): 열린 V · 채운 삼각형 · 동그라미 · 마름모 · 가로 막대 · 없음 */

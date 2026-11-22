@@ -1,12 +1,14 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { debugStats, recordPointer, recordRender } from "../lib/debugStore";
-import { activeTouchCount, isSideButtonDown, onSideButtonChange, penRecentlyActive, penStrokeErasing, penTouching, pointerKind, type PointerKind } from "../lib/inputState";
+import { activeTouchCount, isSideButtonDown, onPalm, onSideButtonChange, palmActive, penRecentlyActive, penStrokeErasing, penTouching, pointerKind, type PointerKind } from "../lib/inputState";
 import { beautifyStroke, pathLengthPx, snapLineEnd } from "./beautify";
 import { strokeHitsCircle, unitsToPx, type PageSize } from "./geometry";
 import { fillStroke, HIGHLIGHT_LAYER_STYLE, isHighlighter } from "./inkPaint";
 import { recognizeCurve } from "./curveFit";
 import { recognizeShape, type ShapeGuess } from "./shapeRecognize";
 import { curveSpec, defaultShape, dragShape, lineSpec, makeShapeStroke, type ShapeTool } from "./shapes";
+import { eraserTakes, type EraserTarget } from "./eraser";
+import { keepPoint, SMOOTH_V2, type Dropped } from "./smoothing";
 import type { InkPoint, ShapeSpec, Stroke, Tool } from "./types";
 
 interface Props {
@@ -18,6 +20,8 @@ interface Props {
   color: string;
   width: number;
   eraserSize: number;
+  /** 지우개가 지울 것 (v0.32): 전부 · 펜 필기만 · 형광펜만 */
+  eraserTarget?: EraserTarget;
   /** 꺼져 있으면 손가락 터치는 필기하지 않는다 (손바닥 오인식 방지) */
   fingerDraw: boolean;
   /** 진행 중인 획 캔버스에 desynchronized(저지연) 컨텍스트를 쓴다. 바꾸려면 컴포넌트를 다시 만들어야 한다. */
@@ -53,6 +57,12 @@ interface Gesture {
   holdTimer: number;
   /** 직선이 된 뒤의 시작점 (페이지 px). 떼기 전까지 끝점이 펜을 따라온다 */
   straight: { start: [number, number] } | null;
+  /** 직선이 된 자리(화면 px): 펜이 여기서 HOLD_KEEP 안에 있는 동안은 끝점을 붙잡아 둔다 (뗄 때 미끄러져도 그대로, v0.32) */
+  lineLock: { x: number; y: number } | null;
+  /** 떨림으로 거른 마지막 점 (v0.32): 화면에는 끝으로 그리고, 뗄 때 남긴다 */
+  pending: InkPoint | null;
+  /** 마지막으로 남긴 점 뒤로 거른 점 중 가장 멀리 간 것 (화면 px, smoothing.keepPoint) */
+  dropped: Dropped | null;
   /** 닫힌 도형·화살표가 된 뒤 (그대로 둔다) */
   shaped: boolean;
   /** 도형 모드로 끌어 그리는 중: 고른 도형과 펜을 댄 곳 (페이지 px) */
@@ -68,9 +78,11 @@ interface Box {
 
 /** 필기 캔버스 한 장의 픽셀 수 상한 (확대 시 메모리 보호) */
 const MAX_INK_PIXELS = 8_000_000;
-/** 도형 보정: 이만큼 멈추면 도형·직선 (떨림은 HOLD_SLOP px까지 멈춘 것으로) */
+/** 도형 보정: 이만큼 멈추면 도형·직선 (떨림은 HOLD_SLOP px까지 멈춘 것으로, v0.32에서 4 → 8: 삼성노트와 같은 8dp) */
 const HOLD_MS = 500;
-const HOLD_SLOP = 4;
+const HOLD_SLOP = 8;
+/** 직선이 된 뒤 이만큼(px) 안의 떨림은 끝점을 움직이지 않는다 (멈춤 판정 뒤에는 두 배까지 봐줌) */
+const HOLD_KEEP = 16;
 
 // 두 겹 캔버스: 아래는 확정된 획, 위는 지금 그리는 획.
 // 획이 진행되는 동안에는 위 캔버스만 다시 그리고, 펜을 떼면 아래 캔버스에 합성한다 (SPEC R1).
@@ -236,8 +248,9 @@ export function InkCanvas(props: Props) {
       const p = page();
       const r = unitsToPx(propsRef.current.eraserSize, p);
       let changed = false;
+      const target = propsRef.current.eraserTarget ?? "all";
       const hitAt = (x: number, y: number) => {
-        const next = g.working.filter((st) => !strokeHitsCircle(st, x, y, r, p));
+        const next = g.working.filter((st) => !(eraserTakes(target, st) && strokeHitsCircle(st, x, y, r, p)));
         if (next.length !== g.working.length) {
           g.working = next;
           changed = true;
@@ -293,6 +306,9 @@ export function InkCanvas(props: Props) {
         holdAt: { x: e.clientX, y: e.clientY },
         holdTimer: 0,
         straight: null,
+        lineLock: null,
+        pending: null,
+        dropped: null,
         shaped: false,
         drag: null,
         lastErase: null,
@@ -310,6 +326,8 @@ export function InkCanvas(props: Props) {
         width,
         points: [toPoint(e, rect)],
         simulatePressure: e.pointerType !== "pen",
+        // v0.32: 떨림을 거른 점 → 그릴 때 끝 다듬기
+        smooth: SMOOTH_V2,
       };
       const shapeTool = propsRef.current.shapeTool;
       if (shapeTool && shapeTool !== "auto") {
@@ -347,6 +365,7 @@ export function InkCanvas(props: Props) {
         g.stroke = makeShapeStroke(stroke.id, curveSpec(curve.kind, curve.a, curve.b, curve.c1, curve.c2, p), stroke, p);
       } else {
         g.straight = { start: px[0] };
+        g.lineLock = { x: g.holdAt.x, y: g.holdAt.y };
         g.stroke = lineStroke(g, px[px.length - 1]);
       }
       navigator.vibrate?.(10);
@@ -357,7 +376,7 @@ export function InkCanvas(props: Props) {
     const lineStroke = (g: Gesture, end: [number, number]): Stroke => {
       const p = page();
       const [sx, sy] = g.straight!.start;
-      const e = snapLineEnd(sx, sy, end[0], end[1]);
+      const e = snapLineEnd(sx, sy, end[0], end[1], p.width);
       return makeShapeStroke(g.stroke!.id, lineSpec("line", [sx, sy], [e.x, e.y], p), g.stroke!, p);
     };
 
@@ -380,8 +399,8 @@ export function InkCanvas(props: Props) {
         }
       }
       if (pointerKind(e) === "touch") {
-        // 펜을 쓰는 중에 닿은 터치는 손바닥 (손가락 필기를 꺼 두었으면 넘기기·확대용이라 여기서는 무시)
-        if (penRecentlyActive()) {
+        // 펜을 쓰는 중에 닿은 터치, 손바닥이 닿아 있는 동안의 터치는 손바닥 (손가락 필기를 꺼 두었으면 넘기기·확대용이라 여기서는 무시)
+        if (penRecentlyActive() || palmActive()) {
           debugStats.rejectedTouches++;
           return;
         }
@@ -451,21 +470,39 @@ export function InkCanvas(props: Props) {
         armHold(gesture);
       }
       if (gesture.straight) {
+        // 직선이 된 자리에서 HOLD_KEEP 안의 떨림(뗄 때 미끄러짐)은 무시, 벗어나면 그때부터 끝점이 따라온다
+        const lock = gesture.lineLock;
+        if (lock) {
+          if (Math.hypot(e.clientX - lock.x, e.clientY - lock.y) <= HOLD_KEEP) return;
+          gesture.lineLock = null;
+        }
         // 직선이 된 뒤: 떼기 전까지 끝점(각도·길이)이 따라온다
         const { x, y } = toPagePx(e, gesture.rect);
         gesture.stroke = lineStroke(gesture, [x, y]);
         renderLive(gesture.stroke, []);
         return;
       }
+      const r = gesture.rect;
+      const onScreen = (q: InkPoint) => ({ x: q[0] * r.width, y: q[1] * r.height });
       for (const ev of events) {
-        const pt = toPoint(ev, gesture.rect, stroke.points[stroke.points.length - 1]);
-        const last = stroke.points[stroke.points.length - 1];
-        if (Math.abs(pt[0] - last[0]) < 1e-4 && Math.abs(pt[1] - last[1]) < 1e-4) continue;
+        const pt = toPoint(ev, r, stroke.points[stroke.points.length - 1]);
+        const n = stroke.points.length;
+        const last = stroke.points[n - 1];
+        if (stroke.smooth === SMOOTH_V2) {
+          // 떨림 거르기 (v0.32): 마지막으로 남긴 점에서 화면 1px 안이면 버림 (30° 넘게 꺾이면 남김)
+          const judged = keepPoint(n > 1 ? onScreen(stroke.points[n - 2]) : null, onScreen(last), onScreen(pt), gesture.dropped);
+          gesture.dropped = judged.dropped;
+          if (!judged.keep) {
+            gesture.pending = pt;
+            continue;
+          }
+          gesture.pending = null;
+        } else if (Math.abs(pt[0] - last[0]) < 1e-4 && Math.abs(pt[1] - last[1]) < 1e-4) continue;
         stroke.points.push(pt);
       }
-      // 예측 좌표는 화면에만 잠깐 그리고 저장하지 않는다
-      const extra = predicted.map((ev) => toPoint(ev, gesture!.rect, stroke.points[stroke.points.length - 1]));
-      renderLive(stroke, extra);
+      // 예측 좌표는 화면에만 잠깐 그리고 저장하지 않는다. 거른 마지막 점은 끝으로 그려 펜 끝과 떨어지지 않게
+      const extra = predicted.map((ev) => toPoint(ev, r, stroke.points[stroke.points.length - 1]));
+      renderLive(stroke, gesture.pending ? [gesture.pending, ...extra] : extra);
     };
 
     const finish = (e: PointerEvent, cancelled: boolean) => {
@@ -485,6 +522,8 @@ export function InkCanvas(props: Props) {
       }
       if (cancelled && g.pointerType === "touch") return;
       let stroke = g.stroke!;
+      // 떨림으로 거른 마지막 자리는 남긴다 (획이 펜을 뗀 자리까지 오도록)
+      if (g.pending && !stroke.shape) stroke.points.push(g.pending);
       const p0 = page();
       if (g.drag) {
         if (cancelled) return;
@@ -503,6 +542,8 @@ export function InkCanvas(props: Props) {
       // 필기 보정: 펜 획(형광펜·도형 제외)을 반듯하게
       if (propsRef.current.beautify && !stroke.shape && stroke.tool === "pen") {
         stroke.points = beautifyStroke(stroke.points, page(), unitsToPx(stroke.width, page()));
+        // 다듬은 점은 고른 간격으로 다시 찍은 것이라 예전 방식으로 그린다 (SPEC 5장)
+        delete stroke.smooth;
       }
       const s = scale();
       const target = isHighlighter(stroke) ? ls.hl : ls.base;
@@ -562,6 +603,13 @@ export function InkCanvas(props: Props) {
     const onAnyDown = (e: PointerEvent) => {
       if (gesture?.pointerType === "touch" && pointerKind(e) === "touch" && e.pointerId !== gesture.pointerId) cancelGesture();
     };
+    // 손바닥으로 판정되면 (v0.32) 쓰던 손가락 획을 버린다
+    const offPalm = onPalm(() => {
+      if (gesture?.pointerType === "touch") {
+        debugStats.rejectedTouches++;
+        cancelGesture();
+      }
+    });
     // 사이드 버튼을 누르거나 떼는 순간 지우개 표시를 바로 바꾼다
     const offSide = onSideButtonChange((down) => {
       if (gesture) return;
@@ -583,6 +631,7 @@ export function InkCanvas(props: Props) {
       window.removeEventListener("pointerdown", onAnyDown, true);
       window.removeEventListener("lessondeck:longpress", onLongPress);
       offSide();
+      offPalm();
       live.removeEventListener("pointerdown", onDown);
       live.removeEventListener("pointermove", onMove);
       live.removeEventListener("pointerup", onUp);

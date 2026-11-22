@@ -30,12 +30,31 @@ export function pathLengthPx(points: InkPoint[], page: PageSize): number {
 
 // ── 직선 보정 ─────────────────────────────────────────────
 
-/** 끝점을 시작점 기준 수평·수직·45°에 가까우면(±snapDeg) 붙인다 (길이는 그대로). 화면 px */
-export function snapLineEnd(sx: number, sy: number, ex: number, ey: number, snapDeg = 4): { x: number; y: number } {
+/**
+ * 직선이 수평·수직에 붙는 각도 (v0.32): 짧은 선은 너그럽게(10°), 길수록 엄격하게(페이지 가로만 한 선은 1°).
+ * 긴 선은 조금만 기울어도 눈에 띄고, 짧은 선은 손으로 반듯하게 긋기 어렵다 (삼성노트 직선 맞춤과 같은 생각)
+ */
+export function lineSnapDeg(len: number, ref: number): number {
+  const r = ref > 0 ? Math.min(1, len / ref) : 0;
+  return Math.max(1, 10 - 9 * r);
+}
+
+/** 45° 대각선에 붙는 각도: 수평·수직보다 좁게 (4°까지) */
+export function diagonalSnapDeg(len: number, ref: number): number {
+  return Math.min(4, lineSnapDeg(len, ref));
+}
+
+/**
+ * 끝점을 시작점 기준 수평·수직·45°에 가까우면 붙인다 (길이는 그대로). 화면 px.
+ * ref(페이지 가로 px)를 주면 길이에 따라 붙는 각도가 바뀐다(v0.32, lineSnapDeg), 없으면 ±4°
+ */
+export function snapLineEnd(sx: number, sy: number, ex: number, ey: number, ref?: number): { x: number; y: number } {
   const len = Math.hypot(ex - sx, ey - sy);
   if (len < 1) return { x: ex, y: ey };
   const deg = (Math.atan2(ey - sy, ex - sx) * 180) / Math.PI;
   const near = Math.round(deg / 45) * 45;
+  const axis = Math.round(near / 90) * 90 === near;
+  const snapDeg = ref ? (axis ? lineSnapDeg(len, ref) : diagonalSnapDeg(len, ref)) : 4;
   if (Math.abs(deg - near) > snapDeg) return { x: ex, y: ey };
   const t = (near * Math.PI) / 180;
   return { x: sx + Math.cos(t) * len, y: sy + Math.sin(t) * len };
@@ -45,7 +64,7 @@ export function snapLineEnd(sx: number, sy: number, ex: number, ey: number, snap
 export function linePoints(start: InkPoint, end: InkPoint, pressure: number, page: PageSize, snap = true): InkPoint[] {
   const sx = start[0] * page.width;
   const sy = start[1] * page.height;
-  const e = snap ? snapLineEnd(sx, sy, end[0] * page.width, end[1] * page.height) : { x: end[0] * page.width, y: end[1] * page.height };
+  const e = snap ? snapLineEnd(sx, sy, end[0] * page.width, end[1] * page.height, page.width) : { x: end[0] * page.width, y: end[1] * page.height };
   const len = Math.hypot(e.x - sx, e.y - sy);
   const n = Math.max(2, Math.ceil(len / 3) + 1);
   const out: P[] = [];

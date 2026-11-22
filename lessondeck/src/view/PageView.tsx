@@ -12,7 +12,8 @@ import type { Stroke, Tool } from "../ink/types";
 import { PdfPageView } from "../pdf/PdfPageView";
 import { PageNav } from "./PageNav";
 import { useViewportGestures } from "./useViewportGestures";
-import { penStrokeErasing, pointerKind } from "../lib/inputState";
+import { onPalm, palmActive, penStrokeErasing, pointerKind } from "../lib/inputState";
+import type { EraserTarget } from "../ink/eraser";
 import { WebStage } from "./WebStage";
 
 interface Props {
@@ -23,6 +24,8 @@ interface Props {
   color: string;
   width: number;
   eraserSize: number;
+  /** 지우개가 지울 것 (v0.32) */
+  eraserTarget?: EraserTarget;
   fingerDraw: boolean;
   lowLatency: boolean;
   /** 도형 보정·필기 보정 (InkCanvas) */
@@ -139,6 +142,12 @@ export function PageView(props: Props) {
     };
     const onDown = (e: PointerEvent) => {
       const kind = pointerKind(e);
+      // 손바닥이 닿아 있는 동안(v0.32)의 손가락은 톡·길게 누르기가 아니다
+      if (kind === "touch" && palmActive()) {
+        if (press?.type === "touch") cancel();
+        tap = null;
+        return;
+      }
       tap =
         kind === "touch" && !tap
           ? { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now(), onInk: !!(e.target as Element).closest?.(".ink-live") }
@@ -204,6 +213,11 @@ export function PageView(props: Props) {
       if (!longPressRef.current || !eligible(target)) return;
       longPressRef.current({ clientX: e.clientX, clientY: e.clientY, pointerType: "mouse", target });
     };
+    // 손바닥으로 판정되면 (v0.32) 손가락 길게 누르기·톡을 버린다 (펜 길게 누르기는 그대로)
+    const offPalm = onPalm(() => {
+      if (press?.type === "touch") cancel();
+      tap = null;
+    });
     area.addEventListener("pointerdown", onDown, true);
     area.addEventListener("pointermove", onMove, true);
     area.addEventListener("pointerup", onUp, true);
@@ -211,6 +225,7 @@ export function PageView(props: Props) {
     area.addEventListener("click", onClick, true);
     area.addEventListener("contextmenu", onContextMenu);
     return () => {
+      offPalm();
       cancel();
       area.removeEventListener("pointerdown", onDown, true);
       area.removeEventListener("pointermove", onMove, true);
@@ -317,6 +332,7 @@ export function PageView(props: Props) {
             color={props.color}
             width={props.width}
             eraserSize={props.eraserSize}
+            eraserTarget={props.eraserTarget}
             fingerDraw={props.fingerDraw}
             lowLatency={props.lowLatency}
             straighten={props.straighten}

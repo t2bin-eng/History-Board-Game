@@ -30,6 +30,11 @@ export interface DebugStats {
   lastJudgement: string;
   /** 펜을 쓰는 중(또는 직후) 손바닥으로 보고 무시한 터치 수 */
   rejectedTouches: number;
+  /** 손바닥으로 판정한 수와 마지막 판정 까닭 (v0.32, inputState 손바닥) */
+  palms: number;
+  lastPalm: string;
+  /** 지금까지 본 손가락 접촉 중 가장 큰 것 (CSS px, 손바닥 기준 맞추기용) */
+  maxTouchSize: number;
   strokesDrawn: number;
   /** 최근 1초간 pointermove 이벤트 수 / 좌표 점 수 */
   moveEventsPerSec: number;
@@ -54,6 +59,9 @@ export const debugStats: DebugStats = {
   penHoverSeen: false,
   lastJudgement: "",
   rejectedTouches: 0,
+  palms: 0,
+  lastPalm: "",
+  maxTouchSize: 0,
   strokesDrawn: 0,
   moveEventsPerSec: 0,
   pointsPerSec: 0,

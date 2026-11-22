@@ -1135,6 +1135,24 @@ button {
   border: 1.5px solid #ccc;
 }
 
+/* 지울 것 (v0.32): 전부 · 펜만 · 형광펜만 */
+.ts-target {
+  flex: 1;
+  height: 38px;
+  border: 1px solid #3b3b3b;
+  border-radius: 10px;
+  background: #262626;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ts-target.active {
+  border-color: var(--accent);
+  background: #263238;
+  color: var(--text);
+}
+
 .ts-danger {
   display: flex;
   align-items: center;

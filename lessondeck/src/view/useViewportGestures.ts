@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, type RefObject } from "react";
-import { penRecentlyActive, pointerKind } from "../lib/inputState";
+import { onPalm, palmActive, penRecentlyActive, pointerKind } from "../lib/inputState";
 import { clampView, identity, zoomAt, type Size, type View } from "./viewport";
 
 interface Options {
@@ -34,7 +34,7 @@ const DOUBLE_TAP_MS = 320;
 // - 두 손가락: 확대·축소와 이동
 // - 한 손가락: 확대 상태면 이동, 아니면 좌우로 쓸어 페이지 넘김
 // - 두 번 탭: 확대 ↔ 원래 크기
-// 펜을 쓰는 중이거나 막 쓴 직후의 터치는 손바닥으로 보고 무시한다.
+// 펜을 쓰는 중이거나 막 쓴 직후의 터치, 손바닥이 닿아 있는 동안(v0.32)의 터치는 손바닥으로 보고 무시한다.
 export function useViewportGestures(opts: Options) {
   const optsRef = useRef(opts);
   optsRef.current = opts;
@@ -112,7 +112,7 @@ export function useViewportGestures(opts: Options) {
       }
       // 첫 손가락이 팔레트·패널 위면 제스처가 아니다. 이미 페이지 위에 손가락이 있으면 두 번째 손가락은 어디든 인정
       if (pointers.size === 0 && (e.target as Element).closest?.("[data-no-gesture]")) return;
-      if (penRecentlyActive()) return;
+      if (penRecentlyActive() || palmActive()) return;
       if (pointers.size === 0) {
         areaRect = area.getBoundingClientRect();
         zoomAtStart = view.current.z;
@@ -198,6 +198,12 @@ export function useViewportGestures(opts: Options) {
       endGesture();
     };
 
+    // 손바닥으로 판정되면 (v0.32) 하던 넘기기·확대·이동을 그 자리에서 멈춘다 (탭·쓸어 넘기기도 없음)
+    const offPalm = onPalm(() => {
+      if (!pointers.size) return;
+      pointers.clear();
+      endGesture();
+    });
     const up = (e: PointerEvent) => onUp(e, false);
     const cancel = (e: PointerEvent) => onUp(e, true);
     area.addEventListener("pointerdown", onDown);
@@ -205,6 +211,7 @@ export function useViewportGestures(opts: Options) {
     area.addEventListener("pointerup", up);
     area.addEventListener("pointercancel", cancel);
     return () => {
+      offPalm();
       area.removeEventListener("pointerdown", onDown);
       area.removeEventListener("pointermove", onMove);
       area.removeEventListener("pointerup", up);

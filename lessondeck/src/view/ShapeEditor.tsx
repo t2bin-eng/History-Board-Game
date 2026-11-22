@@ -90,7 +90,7 @@ export function ShapeEditor({ stroke, size, onLive, onChange, onDuplicate, onDel
     } else if (gesture.kind === "end") {
       const ends = lineEnds(s0, size);
       const fixed = ends[1 - gesture.end];
-      const e2 = snapLineEnd(fixed[0], fixed[1], p[0], p[1]);
+      const e2 = snapLineEnd(fixed[0], fixed[1], p[0], p[1], size.width);
       const moved: Pt = [e2.x, e2.y];
       if (Math.hypot(moved[0] - fixed[0], moved[1] - fixed[1]) < MIN_PX) return;
       const [a, b] = gesture.end === 1 ? [fixed, moved] : [moved, fixed];
