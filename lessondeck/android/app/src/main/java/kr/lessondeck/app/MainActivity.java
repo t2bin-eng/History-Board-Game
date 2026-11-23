@@ -58,6 +58,8 @@ public class MainActivity extends BridgeActivity {
         if (getBridge() != null) getBridge().getWebView().getLocationInWindow(webViewAt);
         MotionEvent clean = PenInput.normalizeTouch(ev, webViewAt[0], webViewAt[1]);
         showSideButton(PenInput.buttonDown);
+        // 웹뷰가 이 접촉을 받기 전에 알린다 (펜이 닿는 순간 필기층이 받게)
+        showPenNear();
         if (clean == null) return super.dispatchTouchEvent(ev);
         try {
             return super.dispatchTouchEvent(clean);
@@ -74,6 +76,7 @@ public class MainActivity extends BridgeActivity {
     public boolean dispatchGenericMotionEvent(MotionEvent ev) {
         PenInput.trackHover(ev);
         showSideButton(PenInput.buttonDown);
+        showPenNear();
         if (PenInput.swallowHover(ev)) return true;
         MotionEvent clean = PenInput.cleanHover(ev);
         if (clean == null) return super.dispatchGenericMotionEvent(ev);
@@ -100,6 +103,16 @@ public class MainActivity extends BridgeActivity {
                 );
         }
         return super.dispatchKeyEvent(ev);
+    }
+
+    /**
+     * S펜이 화면 가까이 왔거나(띄움·닿음) 멀어지면 웹 화면에 알린다 (v0.35, PenInput "가까이 있는지").
+     * 웹 페이지 판서 모드는 이걸 보고 펜이 멀 때 필기층을 비켜 손가락이 웹앱을 바로 조작하게 한다.
+     */
+    private void showPenNear() {
+        Boolean near = PenInput.takeNearChange();
+        if (near == null || getBridge() == null) return;
+        getBridge().triggerWindowJSEvent("lessondeckpen", "{\"near\":" + near + "}");
     }
 
     private void showSideButton(boolean down) {

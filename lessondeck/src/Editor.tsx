@@ -125,7 +125,7 @@ import { addArrow, flipArrow, moveArrowEnd, patchArrow, removeArrow, type ArrowT
 import { cleanFormat, type BoxFormat } from "./doc/boxFonts";
 import { josa } from "./lib/josa";
 import { ShapeEditor } from "./view/ShapeEditor";
-import { isNativeApp, showToast } from "./lib/platform";
+import { fingerOperatesWeb, isNativeApp, showToast } from "./lib/platform";
 import { AI_APPS, captureShownPage, lastAiApp, rememberAiApp, shareToAi, type AiAppId } from "./lib/aiShare";
 import { AI_SHOT_ID, type AiRequest } from "./doc/aiScratch";
 import { AiBar, AiIcon } from "./ui/AiBar";
@@ -261,10 +261,16 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
   const eraserTargetLabel = ERASER_TARGETS.find((t) => t.id === eraserTarget)?.label ?? "전부";
   const [popover, setPopover] = useState<Popover>(null);
   const [addMenu, setAddMenu] = useState<{ index: number; left: number; top: number } | null>(null);
-  /** 웹앱·동영상 페이지: 조작 ↔ 판서. 다른 페이지로 넘어가면 조작으로 돌아간다. */
-  const [webMode, setWebMode] = useState<"interact" | "ink">("interact");
-
   const [fingerDraw, setFingerDraw] = usePersistentFlag("lessondeck.fingerDraw", false);
+  /** 웹 페이지 판서 모드에서 펜은 판서, 손가락은 웹앱 조작 (v0.35, 안드로이드 앱 · 손가락 필기 끔) */
+  const fingerWeb = fingerOperatesWeb && !fingerDraw;
+  const fingerWebRef = useRef(fingerWeb);
+  fingerWebRef.current = fingerWeb;
+  /**
+   * 웹앱·동영상 페이지: 조작 ↔ 판서. 펜은 판서·손가락은 조작이 되는 앱(v0.35)은 판서 모드로 열고 다른 페이지로 넘어가도 고른 모드 그대로,
+   * 그 밖에는 조작 모드로 열고 다른 페이지로 넘어가면 조작으로 돌아간다.
+   */
+  const [webMode, setWebMode] = useState<"interact" | "ink">(() => (fingerWeb ? "ink" : "interact"));
   const [lowLatency, setLowLatency] = usePersistentFlag("lessondeck.lowLatency", true);
   /** 도형 보정(긋다 멈추면 도형·직선)·필기 보정(뗄 때 글씨를 반듯하게) */
   const [straighten, setStraighten] = usePersistentFlag("lessondeck.straighten", true);
@@ -511,11 +517,14 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
     }
   };
 
+  /** 웹 페이지를 넣었을 때 알림에 붙이는 모드 안내 */
+  const webModeHint = () => (fingerWeb && webMode === "ink" ? "펜은 판서 · 손가락은 조작" : "조작 모드");
+
   const insertHtml = async (file: File, index: number) => {
     const asset = loadHtmlAsset(await file.arrayBuffer(), file.name);
     await storeAsset(doc.id, asset.id, new Blob([asset.html], { type: "text/html;charset=utf-8" }));
     addAssetAndPages(asset, index, [{ id: newPageId(), kind: "html", asset: asset.id, aspect: "16:9" }]);
-    showToast(asset.warnings.length ? `${asset.name}: ${asset.warnings[0]}` : `${asset.name} 페이지를 넣었습니다 (조작 모드)`);
+    showToast(asset.warnings.length ? `${asset.name}: ${asset.warnings[0]}` : `${asset.name} 페이지를 넣었습니다 (${webModeHint()})`);
   };
 
   /** 이미지·동영상 여러 개를 한 장씩 페이지로 */
@@ -591,8 +600,10 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
     setCurrentId(next);
   }, []);
 
-  // 다른 페이지로 넘어가면 웹앱·동영상 페이지는 다시 조작 모드로
-  useEffect(() => setWebMode("interact"), [currentId]);
+  // 다른 페이지로 넘어가면 웹앱·동영상 페이지는 다시 조작 모드로 (펜은 판서·손가락은 조작이면 고른 모드 그대로, v0.35)
+  useEffect(() => {
+    if (!fingerWebRef.current) setWebMode("interact");
+  }, [currentId]);
   // 페이지를 넘기면 고른 상자·스티커를 놓는다
   useEffect(() => {
     setSelectedBox(null);
@@ -714,7 +725,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
     const yt = parseYouTube(text);
     if (yt) {
       addAssetAndPages(null, index, [{ id: newPageId(), kind: "youtube", ...yt, aspect: "16:9" }]);
-      showToast("유튜브 동영상을 넣었습니다. 조작 모드에서 재생하세요.");
+      showToast(fingerWeb && webMode === "ink" ? "유튜브 동영상을 넣었습니다. 손가락으로 재생하세요." : "유튜브 동영상을 넣었습니다. 조작 모드에서 재생하세요.");
       return null;
     }
     if (kind === "youtube") return "유튜브 영상 링크를 확인해 주세요";

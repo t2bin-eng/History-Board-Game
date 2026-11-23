@@ -13,6 +13,8 @@ import { PdfPageView } from "../pdf/PdfPageView";
 import { PageNav } from "./PageNav";
 import { useViewportGestures } from "./useViewportGestures";
 import { onPalm, palmActive, penStrokeErasing, pointerKind } from "../lib/inputState";
+import { usePenNear } from "../lib/penNear";
+import { fingerOperatesWeb } from "../lib/platform";
 import type { EraserTarget } from "../ink/eraser";
 import type { PenButtonAction } from "../ink/penButton";
 import { WebStage } from "./WebStage";
@@ -99,6 +101,10 @@ export function PageView(props: Props) {
   // 웹앱·동영상 페이지: 판서/조작 모드가 있고, 넘겼다 돌아와도 상태가 유지된다
   const web = isInteractivePage(page);
   const inkActive = !props.inkOff && (!web || props.webMode === "ink");
+  // 펜은 판서, 손가락은 조작 (v0.35, 안드로이드 앱): 웹 페이지 판서 모드에서 S펜이 멀면 필기층을 비켜 손가락이 웹앱으로 바로 간다
+  const fingerToWeb = web && inkActive && props.webMode === "ink" && !props.fingerDraw && fingerOperatesWeb;
+  const penIsNear = usePenNear(fingerToWeb);
+  const passFingers = fingerToWeb && !penIsNear;
 
   useLayoutEffect(() => {
     const el = areaRef.current!;
@@ -121,7 +127,8 @@ export function PageView(props: Props) {
   const penLongPressRef = useRef(props.penLongPress ?? true);
   penLongPressRef.current = props.penLongPress ?? true;
   const fingerTapRef = useRef<(() => void) | undefined>(undefined);
-  fingerTapRef.current = web && props.webMode === "ink" && !props.fingerDraw ? props.onFingerTapWeb : undefined;
+  // 손가락이 웹앱으로 가는 앱(v0.35)에서는 모드를 바꾸지 않는다
+  fingerTapRef.current = web && props.webMode === "ink" && !props.fingerDraw && !fingerOperatesWeb ? props.onFingerTapWeb : undefined;
   useEffect(() => {
     const area = areaRef.current!;
     let press: { id: number; x: number; y: number; type: string; target: Element; timer: number; ringTimer: number } | null = null;
@@ -349,6 +356,7 @@ export function PageView(props: Props) {
             straighten={props.straighten}
             beautify={props.beautify}
             active={inkActive}
+            passFingers={passFingers}
             onCommit={props.onCommit}
             onShapeDrawn={props.onShapeDrawn}
             shapeTool={props.shapeTool}
@@ -357,7 +365,7 @@ export function PageView(props: Props) {
           {web && (
             <div className="web-mode-chip" aria-hidden="true">
               {props.webMode === "ink" ? <PenLine size={13} /> : <MousePointer2 size={13} />}
-              {props.webMode === "ink" ? "판서 모드" : "조작 모드"}
+              {props.webMode !== "ink" ? "조작 모드" : fingerToWeb ? "펜 판서 · 손 조작" : "판서 모드"}
             </div>
           )}
         </div>

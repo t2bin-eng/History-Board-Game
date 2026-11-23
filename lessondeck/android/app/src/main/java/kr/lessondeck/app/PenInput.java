@@ -141,9 +141,16 @@ final class PenInput {
         int samsung = samsungToStandard(ev, stylus);
         int action = samsung >= 0 ? samsung : ev.getAction();
         track(ev, action, offsetX, offsetY);
-        if (stylus < 0 && samsung < 0) return null;
         int masked = action & MotionEvent.ACTION_MASK;
         int index = (action & MotionEvent.ACTION_POINTER_INDEX_MASK) >> MotionEvent.ACTION_POINTER_INDEX_SHIFT;
+        if (stylus >= 0 || samsung >= 0) {
+            // 펜이 닿아 있는지 (v0.35): 펜을 떼거나 취소되면 끝
+            touching = !(masked == MotionEvent.ACTION_UP || masked == MotionEvent.ACTION_CANCEL || (masked == MotionEvent.ACTION_POINTER_UP && index == stylus));
+        } else if (masked == MotionEvent.ACTION_DOWN) {
+            // 손가락만으로 시작한 접촉: 펜은 닿아 있지 않다
+            touching = false;
+        }
+        if (stylus < 0 && samsung < 0) return null;
         boolean pressed = samsung >= 0 || (ev.getButtonState() & PEN_BUTTONS) != 0;
         boolean stylusDown = masked == MotionEvent.ACTION_DOWN || (masked == MotionEvent.ACTION_POINTER_DOWN && index == stylus);
         if (stylusDown) strokeErase = pressed;
@@ -256,8 +263,30 @@ final class PenInput {
     /** 펜을 띄운 채(호버) 버튼을 누르고 뗌 → 버튼 상태만 기억 */
     static void trackHover(MotionEvent ev) {
         if (stylusIndex(ev) < 0) return;
+        // 펜이 화면 위에 떠 있는지 (v0.35): 띄움 끝(HOVER_EXIT)이 아니면 떠 있다 (버튼 누름·뗌도 띄운 채 온다)
+        hovering = ev.getActionMasked() != MotionEvent.ACTION_HOVER_EXIT;
         buttonDown = ev.getActionMasked() != MotionEvent.ACTION_HOVER_EXIT && (ev.getButtonState() & PEN_BUTTONS) != 0;
         lastInfo = "hover a=" + ev.getAction() + " b=" + ev.getButtonState();
+    }
+
+    // ── S펜이 가까이 있는지 (v0.35, SPEC 6장 "펜은 판서, 손가락은 조작") ──
+    // 웹 페이지 판서 모드에서 펜이 가까우면 필기층이 입력을 받고, 멀면 필기층을 비켜 손가락이 웹앱(iframe)으로 바로 가게 한다.
+    // 가까움 = 펜이 떠 있거나(호버) 닿아 있음. 펜을 댈 때 안드로이드는 "띄움 끝"을 먼저 보내고 곧 "닿음"을 보내므로
+    // 잠깐 "멂"이 되는데, 웹 화면이 0.4초 동안은 가까운 것으로 본다(penNear.ts).
+
+    /** S펜이 화면 위에 떠 있음 */
+    private static volatile boolean hovering = false;
+    /** S펜이 화면에 닿아 있음 */
+    private static volatile boolean touching = false;
+    /** 웹 화면에 마지막으로 알린 가까움 */
+    private static boolean nearShown = false;
+
+    /** 가까움이 바뀌었으면 새 값, 아니면 null. MainActivity가 웹 화면에 lessondeckpen 이벤트로 알린다 (메인 스레드에서만 부름) */
+    static Boolean takeNearChange() {
+        boolean near = hovering || touching;
+        if (near == nearShown) return null;
+        nearShown = near;
+        return near;
     }
 
     /** 펜이 화면에 정말 닿아 있는지 (막 뗀 것도 잠깐은 닿은 것으로: 톡 친 펜은 웹 화면이 묻기 전에 떼어져 있을 수 있다) */

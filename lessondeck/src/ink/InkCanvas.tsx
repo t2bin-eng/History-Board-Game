@@ -36,6 +36,8 @@ interface Props {
   lowLatency: boolean;
   /** false면 필기층을 통과시킨다 (HTML 페이지 조작 모드: 필기는 보이지만 터치·펜은 웹앱으로) */
   active: boolean;
+  /** 판서는 그대로 두고 필기층만 잠깐 비킨다 (v0.35 웹 페이지 판서 모드에서 S펜이 멀 때: 손가락이 웹앱으로 바로 간다) */
+  passFingers?: boolean;
   /** 도형 보정: 긋다가 떼지 않고 멈추면 도형(원·사각형 등)이나 직선, 직선은 떼기 전까지 끝점 조절 */
   straighten?: boolean;
   /** 필기 보정: 펜 획을 뗄 때 반듯하게 다듬는다 */
@@ -787,7 +789,7 @@ export function InkCanvas(props: Props) {
   }, []);
 
   return (
-    <div className={`ink-layer${props.active ? "" : " passthrough"}`}>
+    <div className={`ink-layer${props.active && !props.passFingers ? "" : " passthrough"}`}>
       <div ref={hlGroupRef} className="ink-hl" style={HIGHLIGHT_LAYER_STYLE}>
         <canvas ref={hlRef} className="ink-canvas" />
         <canvas ref={hlLiveRef} className="ink-canvas" />
