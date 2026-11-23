@@ -224,5 +224,35 @@ export function useViewportGestures(opts: Options) {
     optsRef.current.onZoomEnd(1);
   }, [setView]);
 
-  return { resetZoom };
+  /**
+   * HTML 페이지 웹앱 위의 두 손가락 (v0.38): 액자 안 터치는 위 제스처에 오지 않아 안내 스크립트가 알려 준다(frameInput.ts).
+   * a, b는 앱 화면 좌표. 두 손가락 확대와 같게: 거리 비율로 확대, 가운데가 움직인 만큼 이동
+   */
+  const ext = useRef<{ m: Pt; d: number; view: View; z0: number } | null>(null);
+  const externalPinch = useCallback(
+    (phase: "start" | "move" | "end", a?: Pt, b?: Pt) => {
+      const area = optsRef.current.areaRef.current;
+      if (phase === "end" || !a || !b || !area) {
+        const e = ext.current;
+        ext.current = null;
+        if (e && view.current.z !== e.z0) optsRef.current.onZoomEnd(view.current.z);
+        return;
+      }
+      const r = area.getBoundingClientRect();
+      const la = { x: a.x - r.left, y: a.y - r.top };
+      const lb = { x: b.x - r.left, y: b.y - r.top };
+      const d = Math.hypot(la.x - lb.x, la.y - lb.y) || 1;
+      const m = { x: (la.x + lb.x) / 2, y: (la.y + lb.y) / 2 };
+      if (phase === "start" || !ext.current) {
+        ext.current = { m, d, view: view.current, z0: view.current.z };
+        return;
+      }
+      const s = ext.current;
+      const { page, area: areaSize } = optsRef.current;
+      setView(zoomAt(s.view, s.m, m, s.view.z * (d / s.d), page, areaSize));
+    },
+    [setView],
+  );
+
+  return { resetZoom, externalPinch };
 }

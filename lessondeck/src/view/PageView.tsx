@@ -16,6 +16,7 @@ import { onPalm, palmActive, penStrokeErasing, pointerKind } from "../lib/inputS
 import { usePenNear } from "../lib/penNear";
 import { shiftedView } from "../ink/shift";
 import { useWebScroll, type WebScroll } from "./webScroll";
+import { onFramePinch } from "./frameInput";
 import { fingerOperatesWeb } from "../lib/platform";
 import type { EraserTarget } from "../ink/eraser";
 import type { PenButtonAction } from "../ink/penButton";
@@ -276,7 +277,7 @@ export function PageView(props: Props) {
   }, []);
 
   const { onNavigate } = props;
-  useViewportGestures({
+  const { externalPinch } = useViewportGestures({
     areaRef,
     pageRef,
     page: size,
@@ -288,6 +289,17 @@ export function PageView(props: Props) {
     onSwipe: onNavigate,
     onZoomEnd,
   });
+
+  // HTML 페이지 웹앱 위의 두 손가락 → 페이지 확대·축소 (v0.38: 액자 안 터치라 안내 스크립트가 알려 준다)
+  const pageIdRef = useRef(page?.id);
+  pageIdRef.current = page?.id;
+  useEffect(
+    () =>
+      onFramePinch((p) => {
+        if (p.pageId === pageIdRef.current) externalPinch(p.phase, p.a, p.b);
+      }),
+    [externalPinch],
+  );
 
   // 앞뒤(숨긴 쪽 제외) PDF 쪽을 미리 그려 둔다
   const prefetch = useMemo(() => {

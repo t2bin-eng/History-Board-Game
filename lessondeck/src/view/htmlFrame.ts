@@ -8,6 +8,8 @@
 // 페이지 스크립트가 먼저 처리했으면(preventDefault) 건드리지 않는다. 새 창(target=_blank) 링크는 그대로.
 // 또 (v0.36) 문서가 스크롤될 때마다 그 위치를 앱에 알린다 — 필기·형광펜이 웹앱 글자를 따라 움직이게
 // (SPEC 5장 "HTML 페이지 필기는 웹앱 문서에 붙는다"). 액자는 sandbox라 앱이 직접 읽을 수 없다.
+// 또 (v0.38) 웹앱 위의 두 손가락(앱이 페이지를 확대·축소하게)과, 앱이 부탁하면(스포트라이트) 펜·손가락 자리를 알린다 (view/frameInput.ts).
+// 두 손가락으로 확대하는 동안에는 웹앱이 스크롤하지 않게 막는다.
 
 const GUARD = `<script data-lessondeck-guard>(function(){
 var app;try{app=new URL(document.baseURI).origin}catch(e){return}
@@ -37,6 +39,22 @@ window.addEventListener("scroll",rep,{passive:true});
 window.addEventListener("resize",function(){sx=-1;rep()});
 window.addEventListener("load",rep);
 rep();
+function post(m){try{parent.postMessage(m,"*")}catch(x){}}
+var track=false;
+window.addEventListener("message",function(e){if(e.source===parent&&e.data&&e.data.lessondeck==="track")track=!!e.data.on});
+post({lessondeck:"hello"});
+function pt(e){if(track)post({lessondeck:"pointer",s:[e.screenX,e.screenY,e.clientX,e.clientY]})}
+window.addEventListener("pointermove",pt,{capture:true,passive:true});
+window.addEventListener("pointerdown",pt,{capture:true,passive:true});
+var pz=0;
+function two(ph,e){var a=e.touches[0],b=e.touches[1];
+post({lessondeck:"pinch",phase:ph,a:[a.screenX,a.screenY,a.clientX,a.clientY],b:[b.screenX,b.screenY,b.clientX,b.clientY],r:Math.max(a.radiusX||0,a.radiusY||0,b.radiusX||0,b.radiusY||0)})}
+function stop(){if(pz){pz=0;post({lessondeck:"pinch",phase:"end"})}}
+document.addEventListener("touchstart",function(e){var n=e.touches.length;if(n===2){pz=1;e.preventDefault();two("start",e)}else if(n>2)stop()},{capture:true,passive:false});
+document.addEventListener("touchmove",function(e){if(pz&&e.touches.length>=2){e.preventDefault();two("move",e)}},{capture:true,passive:false});
+function te(e){if(e.touches.length<2)stop()}
+document.addEventListener("touchend",te,true);
+document.addEventListener("touchcancel",te,true);
 })();</script>`;
 
 /** 문서 맨 앞(머리 안)에 안내 스크립트를 넣는다. <!DOCTYPE> 앞에 넣으면 호환 모드가 되므로 그 뒤에 */

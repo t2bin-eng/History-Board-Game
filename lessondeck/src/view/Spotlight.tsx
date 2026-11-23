@@ -1,7 +1,9 @@
 import { useEffect, useRef, type CSSProperties } from "react";
+import { onFramePointer, setFrameTracking } from "./frameInput";
 
 // 스포트라이트 (v0.28, SPEC 6장 "강의 모드"): 화면을 어둡게 하고 S펜(띄운 채 움직여도)·손가락·마우스가 있는 곳만 동그랗게 밝힌다.
 // 누름은 모두 지나간다(그 밑에서 그대로 판서·넘기기). 넘기기 바는 위에 남는다.
+// HTML 페이지 웹앱 위(액자 안)의 펜·손가락은 앱에 오지 않으므로 켜져 있는 동안 액자 안내 스크립트가 알려 준다 (v0.38).
 
 export function Spotlight({ radius }: { radius: number }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -25,11 +27,19 @@ export function Spotlight({ radius }: { radius: number }) {
       if (!raf) raf = requestAnimationFrame(apply);
     };
     apply();
+    setFrameTracking(true);
+    const offFrame = onFramePointer((p) => {
+      x = p.x;
+      y = p.y;
+      if (!raf) raf = requestAnimationFrame(apply);
+    });
     const opts = { capture: true, passive: true } as const;
     window.addEventListener("pointermove", move, opts);
     window.addEventListener("pointerdown", move, opts);
     window.addEventListener("resize", apply);
     return () => {
+      offFrame();
+      setFrameTracking(false);
       cancelAnimationFrame(raf);
       window.removeEventListener("pointermove", move, opts);
       window.removeEventListener("pointerdown", move, opts);
