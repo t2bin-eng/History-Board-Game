@@ -119,6 +119,7 @@ import type { InkTool, PenPreset, Stroke, Tool } from "./ink/types";
 import { safeFileName, shareOrDownload } from "./lib/files";
 import { onPenDown, onSideButtonChange, palmActive, penButtonRecently, pointerKind } from "./lib/inputState";
 import { hasShape, SHAPE_NAMES, shapeAt, withShape, type ShapeTool } from "./ink/shapes";
+import { shiftStroke } from "./ink/shift";
 import { ShapePicker } from "./ui/ShapePicker";
 import { followDetour, stepSkipping, type Detour } from "./doc/detours";
 import { addArrow, flipArrow, moveArrowEnd, patchArrow, removeArrow, type ArrowTarget } from "./doc/arrows";
@@ -768,6 +769,19 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
   }, []);
   const onCommit = useCallback((next: Stroke[]) => inkAction({ type: "commit", strokes: next }), [inkAction]);
 
+  /**
+   * HTML 페이지 웹앱이 스크롤된 만큼 (v0.36): 획은 웹앱 문서 좌표로 저장하고 화면에는 이만큼 옮겨 그린다(PageView).
+   * 스크롤할 때마다 편집 화면 전체를 다시 그리지 않도록 ref로 둔다
+   */
+  const inkShiftRef = useRef<{ pageId: string; x: number; y: number }>({ pageId: "", x: 0, y: 0 });
+  const inkShift = () => (inkShiftRef.current.pageId === currentIdRef.current ? inkShiftRef.current : { x: 0, y: 0 });
+  const onInkShift = useCallback((pageId: string, scroll: { x: number; y: number }) => {
+    const prev = inkShiftRef.current;
+    inkShiftRef.current = { pageId, x: scroll.x, y: scroll.y };
+    // 고른 도형의 손잡이가 웹앱과 함께 움직이지 않으므로 스크롤되면 놓는다
+    if (prev.pageId === pageId && (prev.x !== scroll.x || prev.y !== scroll.y)) setSelectedShape(null);
+  }, []);
+
   // ── 도형 ───────────────────────────────────────────────
   /** 화면의 페이지: 확대돼 있어도 페이지 px로 바꾸려고 (rect는 화면, size는 페이지 px) */
   const pageGeometry = () => {
@@ -780,7 +794,9 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
     const g = pageGeometry();
     if (!g || !g.rect.width) return null;
     const k = g.size.width / g.rect.width;
-    return shapeAt(strokesRef.current, (clientX - g.rect.left) * k, (clientY - g.rect.top) * k, g.size, 14 * k);
+    // 웹앱이 스크롤된 HTML 페이지(v0.36): 화면 좌표 + 스크롤 = 저장된 문서 좌표
+    const sh = inkShift();
+    return shapeAt(strokesRef.current, (clientX - g.rect.left) * k + sh.x * g.size.width, (clientY - g.rect.top) * k + sh.y * g.size.height, g.size, 14 * k);
   };
   const replaceStroke = (next: Stroke) => inkAction({ type: "commit", strokes: strokesRef.current.map((s) => (s.id === next.id ? next : s)) });
   const deleteShape = (id: string) => {
@@ -942,14 +958,20 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
     try {
       await flushManifest();
       let base: PageImage | null = null;
+      let shown = inkRef.current[page.id]?.present ?? [];
       // 웹·동영상 페이지: 앱에서는 보이는 그대로 찍는다 (웹 버전은 썸네일과 같은 대체 그림)
       if (isInteractivePage(page)) base = await captureShownPage();
+      if (base) {
+        // 보이는 화면을 찍었으면 스크롤된 HTML 페이지의 획도 화면 좌표로 (v0.36)
+        const sh = inkShift();
+        shown = shown.map((s) => shiftStroke(s, -sh.x, -sh.y));
+      }
       if (!base) base = await pageBaseImage(page, docRef.current);
       if (!base) {
         showToast("이 페이지를 그림으로 만들지 못했습니다");
         return;
       }
-      onAi({ base, page, strokes: inkRef.current[page.id]?.present ?? [], ink: inkRef.current, lecture });
+      onAi({ base, page, strokes: shown, ink: inkRef.current, lecture });
     } catch (err) {
       console.error(err);
       showToast("AI 창을 열지 못했습니다");
@@ -2345,6 +2367,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
           webReloads={webReloads}
           onLongPress={onLongPress}
           penLongPress={!erasing}
+          onInkShift={onInkShift}
           onFingerTapWeb={() => {
             setWebMode("interact");
             showToast("조작 모드로 바꿨습니다. 웹 페이지를 다시 눌러 주세요 (S펜은 판서)");
@@ -2471,15 +2494,18 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
                   );
                 })()}
                 {(() => {
-                  const s = selectedShape ? strokes.find((x) => x.id === selectedShape) : undefined;
-                  if (!s || !hasShape(s)) return null;
+                  const saved = selectedShape ? strokes.find((x) => x.id === selectedShape) : undefined;
+                  if (!saved || !hasShape(saved)) return null;
+                  // HTML 페이지가 스크롤돼 있으면 화면 좌표로 옮겨 고치고, 저장할 때 되돌린다 (v0.36)
+                  const sh = inkShift();
+                  const s = shiftStroke(saved, -sh.x, -sh.y);
                   return (
                     <ShapeEditor
                       key={s.id}
                       stroke={s}
                       size={size}
                       onLive={setShapeDraft}
-                      onChange={replaceStroke}
+                      onChange={(next) => replaceStroke(shiftStroke(next, sh.x, sh.y))}
                       onDuplicate={() => duplicateShape(s.id)}
                       onDelete={() => deleteShape(s.id)}
                       onDone={() => setSelectedShape(null)}

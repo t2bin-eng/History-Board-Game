@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { keepPoint, smoothPoints } from "./smoothing";
+import { capPrediction, keepPoint, smoothPoints } from "./smoothing";
 import { strokeToSvgPath } from "./geometry";
 import type { InkPoint, Stroke } from "./types";
 
@@ -138,5 +138,29 @@ describe("smooth: 2 획 그리기", () => {
     const legacy = strokeToSvgPath(base, page);
     expect(strokeToSvgPath({ ...base }, page)).toBe(legacy);
     expect(strokeToSvgPath({ ...base, smooth: 2 }, page)).not.toBe(legacy);
+  });
+});
+
+describe("capPrediction (v0.36 예측 줄이기)", () => {
+  const page = { width: 1000, height: 500 };
+  it("마지막 점에서 maxPx까지만, 넘는 점부터 버림", () => {
+    const last: [number, number, number] = [0.1, 0.1, 0.5];
+    const pred: [number, number, number][] = [
+      [0.105, 0.1, 0.5], // 5px
+      [0.11, 0.1, 0.5], // 10px
+      [0.115, 0.1, 0.5], // 15px
+    ];
+    expect(capPrediction(last, pred, page, 12)).toEqual(pred.slice(0, 2));
+    expect(capPrediction(last, pred, page, 100)).toEqual(pred);
+    expect(capPrediction(last, pred, page, 3)).toEqual([]);
+  });
+  it("세로는 페이지 높이로 잰다", () => {
+    // y 0.02 = 10px (높이 500)
+    expect(capPrediction([0.5, 0.5, 0.5], [[0.5, 0.52, 0.5]], page, 12)).toHaveLength(1);
+    expect(capPrediction([0.5, 0.5, 0.5], [[0.5, 0.54, 0.5]], page, 12)).toHaveLength(0);
+  });
+  it("마지막 점이 없거나 예측이 없으면 빈 배열", () => {
+    expect(capPrediction(undefined, [[0.1, 0.1, 0.5]], page, 12)).toEqual([]);
+    expect(capPrediction([0.1, 0.1, 0.5], [], page, 12)).toEqual([]);
   });
 });

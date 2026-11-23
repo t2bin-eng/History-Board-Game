@@ -23,3 +23,11 @@ describe("HTML 페이지 안내 스크립트 (v0.33.1)", () => {
     expect(guardHtml(html).replace(/<script data-lessondeck-guard>[\s\S]*?<\/script>/, "")).toBe(html);
   });
 });
+
+describe("HTML 페이지 스크롤 알림 (v0.36)", () => {
+  it("안내 스크립트가 스크롤 위치를 앱에 알린다", () => {
+    const out = guardHtml("<html><head></head><body></body></html>");
+    expect(out).toContain('lessondeck:"scroll"');
+    expect(out).toContain("parent.postMessage");
+  });
+});

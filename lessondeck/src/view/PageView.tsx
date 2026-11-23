@@ -14,6 +14,8 @@ import { PageNav } from "./PageNav";
 import { useViewportGestures } from "./useViewportGestures";
 import { onPalm, palmActive, penStrokeErasing, pointerKind } from "../lib/inputState";
 import { usePenNear } from "../lib/penNear";
+import { shiftedView } from "../ink/shift";
+import { useWebScroll, type WebScroll } from "./webScroll";
 import { fingerOperatesWeb } from "../lib/platform";
 import type { EraserTarget } from "../ink/eraser";
 import type { PenButtonAction } from "../ink/penButton";
@@ -43,6 +45,8 @@ interface Props {
   /** HTML·URL 페이지의 판서/조작 모드 (SPEC F6). 조작 모드면 터치·펜이 웹앱으로 간다. */
   webMode: "interact" | "ink";
   onCommit: (strokes: Stroke[]) => void;
+  /** HTML 페이지 웹앱이 스크롤돼 필기를 옮겨 그리는 만큼이 바뀌면 (v0.36: 도형 고르기·AI로 보내기가 화면 좌표를 맞추려고) */
+  onInkShift?: (pageId: string, scroll: WebScroll) => void;
   onNavigate: (delta: 1 | -1) => void;
   onPdfRendered?: (ms: number) => void;
   /** 강의 모드: 여백 없이 화면 가득 페이지를 키운다 */
@@ -105,6 +109,20 @@ export function PageView(props: Props) {
   const fingerToWeb = web && inkActive && props.webMode === "ink" && !props.fingerDraw && fingerOperatesWeb;
   const penIsNear = usePenNear(fingerToWeb);
   const passFingers = fingerToWeb && !penIsNear;
+
+  // HTML 페이지 필기는 웹앱 문서에 붙는다 (v0.36): 저장은 문서 좌표, 화면에는 웹앱이 스크롤된 만큼 옮겨 그린다
+  const scroll = useWebScroll(page?.kind === "html" ? page.id : null);
+  const view = useMemo(() => shiftedView(props.strokes, scroll.x, scroll.y), [props.strokes, scroll.x, scroll.y]);
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const commitRef = useRef(props.onCommit);
+  commitRef.current = props.onCommit;
+  const onCommit = useCallback((next: Stroke[]) => commitRef.current(viewRef.current.back(next)), []);
+  const inkShiftRef = useRef(props.onInkShift);
+  inkShiftRef.current = props.onInkShift;
+  useEffect(() => {
+    if (page) inkShiftRef.current?.(page.id, scroll);
+  }, [page?.id, scroll]);
 
   useLayoutEffect(() => {
     const el = areaRef.current!;
@@ -341,7 +359,7 @@ export function PageView(props: Props) {
             key={props.lowLatency ? "ll" : "std"}
             page={size}
             zoom={renderZoom}
-            strokes={props.strokes}
+            strokes={view.strokes}
             tool={props.tool}
             color={props.color}
             width={props.width}
@@ -357,7 +375,7 @@ export function PageView(props: Props) {
             beautify={props.beautify}
             active={inkActive}
             passFingers={passFingers}
-            onCommit={props.onCommit}
+            onCommit={onCommit}
             onShapeDrawn={props.onShapeDrawn}
             shapeTool={props.shapeTool}
           />

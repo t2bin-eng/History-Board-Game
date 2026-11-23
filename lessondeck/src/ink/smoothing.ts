@@ -148,3 +148,25 @@ function smoothValue(pts: InkPoint[], i: number, k: number): number {
   }
   return s / sw;
 }
+
+/**
+ * 예측 좌표 줄이기 (v0.36): 브라우저가 내다본 펜 끝(getPredictedEvents)을 마지막 실제 점에서 maxPx(페이지 CSS px)까지만.
+ * 빠르게 긋거나 화면이 바쁠 때 예측이 멀리 튀어, 그리는 동안 끝이 늘었다가 놓으면 줄어드는 것처럼 보였다.
+ */
+export function capPrediction(last: InkPoint | undefined, predicted: InkPoint[], page: { width: number; height: number }, maxPx: number): InkPoint[] {
+  if (!last || !predicted.length) return [];
+  const out: InkPoint[] = [];
+  let px = last[0] * page.width;
+  let py = last[1] * page.height;
+  let total = 0;
+  for (const p of predicted) {
+    const x = p[0] * page.width;
+    const y = p[1] * page.height;
+    total += Math.hypot(x - px, y - py);
+    if (total > maxPx) break;
+    out.push(p);
+    px = x;
+    py = y;
+  }
+  return out;
+}

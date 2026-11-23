@@ -8,7 +8,7 @@ import { recognizeCurve } from "./curveFit";
 import { recognizeShape, type ShapeGuess } from "./shapeRecognize";
 import { curveSpec, defaultShape, dragShape, lineSpec, makeShapeStroke, type ShapeTool } from "./shapes";
 import { eraserTakes, type EraserTarget } from "./eraser";
-import { keepPoint, SMOOTH_V2, type Dropped } from "./smoothing";
+import { capPrediction, keepPoint, SMOOTH_V2, type Dropped } from "./smoothing";
 import type { PenButtonAction } from "./penButton";
 import type { InkPoint, ShapeSpec, Stroke, Tool } from "./types";
 
@@ -90,6 +90,8 @@ interface Laser {
   end: number;
 }
 
+/** 펜 끝 예측을 그리는 최대 길이 (화면 px, v0.36) */
+const PREDICT_MAX_SCREEN_PX = 12;
 /** 레이저 펜: 뗀 뒤 이만큼 그대로 있다가 이만큼 동안 사라진다 */
 const LASER_HOLD_MS = 700;
 const LASER_FADE_MS = 500;
@@ -629,7 +631,11 @@ export function InkCanvas(props: Props) {
         stroke.points.push(pt);
       }
       // 예측 좌표는 화면에만 잠깐 그리고 저장하지 않는다. 거른 마지막 점은 끝으로 그려 펜 끝과 떨어지지 않게
-      const extra = predicted.map((ev) => toPoint(ev, r, stroke.points[stroke.points.length - 1]));
+      // 예측 (v0.36): 형광펜은 쓰지 않고(굵고 반투명해 끝이 늘었다 줄며 튀어 보였다), 펜은 화면 12px까지만
+      const lastPt = stroke.points[stroke.points.length - 1];
+      const extra = isHighlighter(stroke)
+        ? []
+        : capPrediction(lastPt, predicted.map((ev) => toPoint(ev, r, lastPt)), page(), PREDICT_MAX_SCREEN_PX / (propsRef.current.zoom || 1));
       renderLive(stroke, gesture.pending ? [gesture.pending, ...extra] : extra);
     };
 
