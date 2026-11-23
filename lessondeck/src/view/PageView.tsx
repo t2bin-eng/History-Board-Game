@@ -16,8 +16,8 @@ import { onPalm, palmActive, penStrokeErasing, pointerKind } from "../lib/inputS
 import { usePenNear } from "../lib/penNear";
 import { shiftedView } from "../ink/shift";
 import { useWebScroll, type WebScroll } from "./webScroll";
-import { onFramePinch } from "./frameInput";
-import { fingerOperatesWeb } from "../lib/platform";
+import { NATIVE_PAGE, onFramePinch, setNativePinchZone } from "./frameInput";
+import { fingerOperatesWeb, isNativeApp } from "../lib/platform";
 import type { EraserTarget } from "../ink/eraser";
 import type { PenButtonAction } from "../ink/penButton";
 import { WebStage } from "./WebStage";
@@ -296,10 +296,18 @@ export function PageView(props: Props) {
   useEffect(
     () =>
       onFramePinch((p) => {
-        if (p.pageId === pageIdRef.current) externalPinch(p.phase, p.a, p.b);
+        if (p.pageId === pageIdRef.current || p.pageId === NATIVE_PAGE) externalPinch(p.phase, p.a, p.b);
       }),
     [externalPinch],
   );
+  // 다른 사이트(웹 주소·유튜브) 페이지 (v0.39): 그 페이지 영역의 두 손가락은 안드로이드 앱이 가져가 알려 준다
+  const crossSite = isNativeApp && (page?.kind === "url" || page?.kind === "youtube");
+  useEffect(() => {
+    if (!crossSite) return;
+    const r = areaRef.current?.getBoundingClientRect();
+    setNativePinchZone(r ? { left: r.left, top: r.top, width: r.width, height: r.height } : null);
+    return () => setNativePinchZone(null);
+  }, [crossSite, area.width, area.height, props.lecture]);
 
   // 앞뒤(숨긴 쪽 제외) PDF 쪽을 미리 그려 둔다
   const prefetch = useMemo(() => {

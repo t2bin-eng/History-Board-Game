@@ -60,6 +60,11 @@ public class MainActivity extends BridgeActivity {
         showSideButton(PenInput.buttonDown);
         // 웹뷰가 이 접촉을 받기 전에 알린다 (펜이 닿는 순간 필기층이 받게)
         showPenNear();
+        // 다른 사이트 페이지 위 두 손가락은 앱이 가져가 페이지를 확대한다 (v0.39, WebGestures)
+        if (getBridge() != null && WebGestures.onTouch(ev, webViewAt[0], webViewAt[1], density(), gestureSink)) {
+            if (clean != null) clean.recycle();
+            return true;
+        }
         if (clean == null) return super.dispatchTouchEvent(ev);
         try {
             return super.dispatchTouchEvent(clean);
@@ -77,6 +82,10 @@ public class MainActivity extends BridgeActivity {
         PenInput.trackHover(ev);
         showSideButton(PenInput.buttonDown);
         showPenNear();
+        if (getBridge() != null) {
+            getBridge().getWebView().getLocationInWindow(webViewAt);
+            WebGestures.onHover(ev, webViewAt[0], webViewAt[1], density(), gestureSink);
+        }
         if (PenInput.swallowHover(ev)) return true;
         MotionEvent clean = PenInput.cleanHover(ev);
         if (clean == null) return super.dispatchGenericMotionEvent(ev);
@@ -103,6 +112,31 @@ public class MainActivity extends BridgeActivity {
                 );
         }
         return super.dispatchKeyEvent(ev);
+    }
+
+    /** CSS px 하나의 화면 px (웹뷰 viewport width=device-width라 dp와 같다) */
+    private float density() {
+        return getResources().getDisplayMetrics().density;
+    }
+
+    /** WebGestures가 웹 화면에 알리고, 사이트가 하던 접촉을 취소시키는 창구 */
+    private final WebGestures.Sink gestureSink = new WebGestures.Sink() {
+        @Override
+        public void send(String event, String json) {
+            if (getBridge() != null) getBridge().triggerWindowJSEvent(event, json);
+        }
+
+        @Override
+        public void cancelWebView(MotionEvent ev) {
+            MotionEvent cancel = MotionEvent.obtain(ev);
+            cancel.setAction(MotionEvent.ACTION_CANCEL);
+            superDispatchTouch(cancel);
+            cancel.recycle();
+        }
+    };
+
+    private boolean superDispatchTouch(MotionEvent ev) {
+        return super.dispatchTouchEvent(ev);
     }
 
     /**

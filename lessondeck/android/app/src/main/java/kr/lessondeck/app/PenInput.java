@@ -100,6 +100,18 @@ final class PenInput {
         public boolean stylusTouching() {
             return PenInput.stylusTouching();
         }
+
+        /** 0.39부터: 두 손가락을 앱이 받아 페이지를 확대할 구역 (웹뷰 CSS px, 다른 사이트 페이지일 때). 너비·높이 0이면 끔 */
+        @JavascriptInterface
+        public void pinchZone(float left, float top, float width, float height) {
+            WebGestures.setZone(left, top, width, height);
+        }
+
+        /** 0.39부터: 펜·손가락 자리를 알려 달라 (스포트라이트를 켠 동안) */
+        @JavascriptInterface
+        public void trackPointers(boolean on) {
+            WebGestures.trackPointers = on;
+        }
     }
 
     /**

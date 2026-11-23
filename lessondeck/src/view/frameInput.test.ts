@@ -29,3 +29,13 @@ describe("HTML 페이지 액자 안 손가락·펜 (v0.38)", () => {
     expect(out).toContain("preventDefault");
   });
 });
+
+describe("다른 사이트 페이지: 안드로이드가 보낸 두 손가락 (v0.39)", () => {
+  it("시작·움직임은 두 점(웹뷰 CSS px), 끝은 점 없이", async () => {
+    const { parseNativePinch } = await import("./frameInput");
+    expect(parseNativePinch({ phase: "start", ax: 100, ay: 200, bx: 300, by: 200 })).toEqual({ phase: "start", a: { x: 100, y: 200 }, b: { x: 300, y: 200 } });
+    expect(parseNativePinch({ phase: "end" })).toEqual({ phase: "end" });
+    expect(parseNativePinch({ phase: "move", ax: 1, ay: 2, bx: "3", by: 4 })).toBeNull();
+    expect(parseNativePinch({ phase: "zoom" })).toBeNull();
+  });
+});
