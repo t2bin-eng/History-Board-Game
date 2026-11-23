@@ -98,3 +98,30 @@ describe("필기 보정", () => {
     expect(last[1] * 1000).toBeCloseTo(100 + 39 * 1.2 + wobble(39) * 0.3, 0);
   });
 });
+
+describe("작은 글씨 (v0.37)", () => {
+  it("minSizePx보다 작은 획은 그대로 (같은 배열)", () => {
+    const small = Array.from({ length: 30 }, (_, i) => pt(100 + i * 0.6, 100 + wobble(i) * 0.3));
+    expect(beautifyStroke(small, PAGE, 2, { minSizePx: 24 })).toBe(small);
+    // 크면 다듬는다
+    const big = Array.from({ length: 30 }, (_, i) => pt(100 + i * 2, 100 + wobble(i) * 0.3));
+    expect(beautifyStroke(big, PAGE, 2, { minSizePx: 24 })).not.toBe(big);
+  });
+
+  it("작은 ㅇ(반지름 6·8·12px, 손떨림)도 각지지 않는다: 반지름이 쓴 것보다 고르고 크기 그대로", () => {
+    const radius = (pts: InkPoint[]) => pts.map(([x, y]) => Math.hypot(x * 1000 - 300, y * 1000 - 300));
+    const spread = (v: number[]) => Math.max(...v) - Math.min(...v);
+    for (const [r, n] of [[6, 60], [8, 70], [12, 90]] as const) {
+      const raw = Array.from({ length: n }, (_, i) => {
+        const t = (i / (n - 1)) * Math.PI * 2.1;
+        const rr = r + Math.sin(i * 1.3) * 0.3 + Math.sin(i * 0.37) * 0.3;
+        return pt(300 + Math.cos(t) * rr, 300 + Math.sin(t) * rr);
+      });
+      const out = beautifyStroke(raw, PAGE, 2);
+      // 0.36: 조금 더 휜 자리를 꺾인 곳으로 보고 그 사이를 직선으로 이어 다각형 → 반지름이 쓴 것보다 크게 들쭉날쭉 (r 12: 1.16 → 2.07)
+      expect(spread(radius(out))).toBeLessThan(spread(radius(raw)));
+      const mean = radius(out).reduce((sum, v) => sum + v, 0) / out.length;
+      expect(Math.abs(mean - r)).toBeLessThan(0.8);
+    }
+  });
+});

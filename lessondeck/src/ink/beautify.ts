@@ -119,7 +119,12 @@ function turn(a: P, b: P, c: P): number {
   return (Math.acos(cos) * 180) / Math.PI;
 }
 
-/** 꺾인 곳(threshold° 넘게) 위치: 처음·끝 포함, 가까운 것은 하나로 */
+/**
+ * 꺾인 곳(threshold° 넘게) 위치: 처음·끝 포함, 가까운 것은 하나로.
+ * 꺾임은 한 자리에 모여 있어야 한다 (v0.37): 꺾인 곳에서 k점 앞·뒤는 거의 곧아야 한다(그곳의 꺾임이 이 자리의 절반 이하).
+ * 원·곡선은 어디서나 비슷하게 휘므로 꺾인 곳이 아니다. 0.36까지는 ㅇ처럼 둥근 획에서 조금 더 휜 자리(손떨림)를 꺾인 곳으로 보고
+ * 그 사이를 직선으로 이어 ㅇ이 각지고 울퉁불퉁해졌다(작을수록 심함).
+ */
 function findCorners(pts: P[], k: number, threshold: number): number[] {
   const n = pts.length;
   const angle = new Array<number>(n).fill(0);
@@ -127,6 +132,7 @@ function findCorners(pts: P[], k: number, threshold: number): number[] {
   const out = [0];
   for (let i = k; i < n - k; i++) {
     if (angle[i] < threshold) continue;
+    if (Math.max(angle[i - k], angle[i + k]) > angle[i] * CORNER_SIDE) continue;
     let isMax = true;
     for (let j = Math.max(k, i - k); j <= Math.min(n - k - 1, i + k); j++) {
       if (angle[j] > angle[i] || (angle[j] === angle[i] && j < i)) {
@@ -152,7 +158,12 @@ function maxDeviation(pts: P[], a: number, b: number): number {
   return max;
 }
 
+/** 꺾인 곳: k점 앞·뒤의 꺾임이 이 자리의 이 배수를 넘으면 고르게 휜 곡선 (v0.37) */
+const CORNER_SIDE = 0.5;
+
 export interface BeautifyOptions {
+  /** 이보다 작은 획(가로·세로 중 긴 쪽, 페이지 px)은 다듬지 않는다 — 작은 글씨 (v0.37) */
+  minSizePx?: number;
   /** 거의 곧다고 볼 휨 (직선 길이 대비) */
   straightTolerance?: number;
   /** 수평·수직으로 맞출 기울기 (도) */
@@ -166,9 +177,23 @@ export interface BeautifyOptions {
  * 굽은 부분은 부드럽게, 필압은 고르게. 짧은 획은 그대로 돌려준다. widthPx는 펜 굵기(px).
  */
 export function beautifyStroke(points: InkPoint[], page: PageSize, widthPx: number, opts: BeautifyOptions = {}): InkPoint[] {
-  const { straightTolerance = 0.06, axisSnapDeg = 6, cornerDeg = 45 } = opts;
+  const { straightTolerance = 0.06, axisSnapDeg = 6, cornerDeg = 45, minSizePx = 0 } = opts;
   if (points.length < 4) return points;
   const raw = toPx(points, page);
+  // 작은 글씨(v0.37): 손떨림보다 글자 모양이 더 중요하다. 반듯하게 펴거나 고르게 다시 찍지 않는다
+  if (minSizePx > 0) {
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (const q of raw) {
+      x0 = Math.min(x0, q.x);
+      y0 = Math.min(y0, q.y);
+      x1 = Math.max(x1, q.x);
+      y1 = Math.max(y1, q.y);
+    }
+    if (Math.max(x1 - x0, y1 - y0) < minSizePx) return points;
+  }
   let len = 0;
   for (let i = 1; i < raw.length; i++) len += dist(raw[i - 1], raw[i]);
   if (len < Math.max(8, widthPx * 3)) return points;
@@ -200,7 +225,8 @@ export function beautifyStroke(points: InkPoint[], page: PageSize, widthPx: numb
     const endOrig = { x: pts[b].x + ox, y: pts[b].y + oy };
     const chord = dist(start, endOrig);
     const seg: P[] = [];
-    if (chord >= 4 && maxDeviation(pts, a, b) <= Math.max(widthPx * 0.8, chord * straightTolerance)) {
+    // 곧다고 볼 휨: 길이 대비 비율. 펜 굵기만큼의 휨은 긴 토막에서만 봐준다 (v0.37 — 짧은 토막에 굵기만큼 봐주면 작은 ㅇ의 호가 직선이 됐다)
+    if (chord >= 4 && maxDeviation(pts, a, b) <= Math.max(chord * straightTolerance, Math.min(widthPx * 0.8, chord * 0.03))) {
       // 곧은 부분: 직선, 수평·수직에 가까우면 맞추고 뒷부분도 같이 옮긴다
       let end = endOrig;
       if (chord >= Math.max(10, widthPx * 4)) {

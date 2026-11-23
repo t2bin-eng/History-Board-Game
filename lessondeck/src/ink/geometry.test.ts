@@ -95,3 +95,17 @@ describe("도형 획", () => {
     expect(paths[1][1][1]).toBeCloseTo(300, 3);
   });
 });
+
+describe("작은 글씨 그리기 (v0.37)", () => {
+  const page = { width: 1000, height: 1000 };
+  const xsOf = (d: string) => (d.match(/-?\d+(\.\d+)?/g) ?? []).map(Number).filter((_, i) => i % 2 === 0);
+  it("v0.32 획은 처음 굵기만큼의 점도 그린다: ㅐ의 짧은 삐침(4px)이 왼쪽 끝부터 보인다", () => {
+    const tick = Array.from({ length: 9 }, (_, i) => [(100 + i * 0.5) / 1000, 0.1, 0.5] as [number, number, number]);
+    const smooth = strokeToSvgPath({ id: "t", tool: "pen", color: "#000", width: 2, points: tick, smooth: 2 }, page);
+    const old = strokeToSvgPath({ id: "t", tool: "pen", color: "#000", width: 2, points: tick }, page);
+    // 외곽선이 시작점(x 100)을 감싼다 (반지름 약 1px 안쪽까지)
+    expect(Math.min(...xsOf(smooth))).toBeLessThan(100);
+    // 예전 방식(옛 획)은 그대로 두었다 — 같은 경로가 아니어도 시작은 감싼다
+    expect(old.length).toBeGreaterThan(0);
+  });
+});

@@ -1,4 +1,4 @@
-import { getStroke, type StrokeOptions } from "perfect-freehand";
+import { getStroke, getStrokeOutlinePoints, getStrokePoints, type StrokeOptions } from "perfect-freehand";
 import { hasShape, shapeDistance, shapeStrokePath } from "./shapes";
 import { SMOOTH_V2, smoothPoints } from "./smoothing";
 import { PAGE_UNITS, type InkPoint, type InkTool, type Stroke } from "./types";
@@ -12,6 +12,9 @@ export interface PageSize {
 export function unitsToPx(units: number, page: PageSize): number {
   return (units * page.width) / PAGE_UNITS;
 }
+
+/** getStrokePoints가 처음 이만큼(px)의 점을 건너뛴다 — 사실상 건너뛰지 않음 */
+const NO_MIN_LENGTH = 0.01;
 
 /** smooth: 2 획(v0.32)은 점을 미리 다듬어 두므로 streamline(펜 끝을 늦게 따라감)을 낮게 */
 const STREAMLINE_V2 = 0.12;
@@ -82,7 +85,10 @@ export function strokeToSvgPath(stroke: Stroke, page: PageSize, last = true, ext
   let pts = toPagePx(extra.length ? stroke.points.concat(extra) : stroke.points, page);
   // v0.32 획: 앞뒤 점으로 다듬는다 (끝 점은 그대로 — 쓰는 동안 끝 몇 점만 다시 다듬어짐)
   if (smoothed) pts = smoothPoints(pts);
-  const outline = getStroke(pts, strokeOptions(stroke.tool, unitsToPx(stroke.width, page), !!stroke.simulatePressure, last, smoothed, !!stroke.fixedWidth));
+  const opts = strokeOptions(stroke.tool, unitsToPx(stroke.width, page), !!stroke.simulatePressure, last, smoothed, !!stroke.fixedWidth);
+  // v0.32 획(떨림을 이미 거름)은 처음 굵기(size px)만큼의 점을 버리지 않는다 (v0.37): perfect-freehand는 획 처음 size px 안의 점을
+  // 건너뛰어 펜을 댈 때의 떨림을 숨기는데, 작은 글씨에서는 ㅐ·ㅔ의 짧은 삐침이나 ㅇ의 시작이 깎여 사라졌다
+  const outline = smoothed ? getStrokeOutlinePoints(getStrokePoints(pts, { ...opts, size: NO_MIN_LENGTH }), opts) : getStroke(pts, opts);
   return outlineToSvgPath(outline);
 }
 

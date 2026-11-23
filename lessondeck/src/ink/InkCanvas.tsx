@@ -90,6 +90,10 @@ interface Laser {
   end: number;
 }
 
+/** 이보다 작은 펜 획(가로·세로 중 긴 쪽, 화면 px)은 필기 보정으로 펴지 않는다 — 작은 글씨 (v0.37, 약 4~5mm) */
+const SMALL_WRITING_PX = 24;
+/** 이보다 작은 획은 멈춰도 도형·직선으로 바꾸지 않는다 (화면 px, v0.37, 약 5mm) */
+const SHAPE_MIN_PX = 28;
 /** 펜 끝 예측을 그리는 최대 길이 (화면 px, v0.36) */
 const PREDICT_MAX_SCREEN_PX = 12;
 /** 레이저 펜: 뗀 뒤 이만큼 그대로 있다가 이만큼 동안 사라진다 */
@@ -470,6 +474,11 @@ export function InkCanvas(props: Props) {
       // 짧은 획(점, 짧은 삐침)은 그대로
       if (pathLengthPx(stroke.points, p) < Math.max(24, unitsToPx(stroke.width, p) * 4)) return;
       const px = stroke.points.map(([x, y]): [number, number] => [x * p.width, y * p.height]);
+      // 글자만 한 획(화면 SHAPE_MIN_PX 안)은 천천히 써도 도형·직선으로 바꾸지 않는다 (v0.37: 작은 ㅇ이 원·직선이 되던 문제)
+      const xs = px.map((q) => q[0]);
+      const ys = px.map((q) => q[1]);
+      const zoom = propsRef.current.zoom || 1;
+      if (Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * zoom < SHAPE_MIN_PX) return;
       const guess = recognizeShape(px);
       // 도형이 아니면 곡선(v0.24): 휘어지게 그은 선·휜 화살표는 매끈한 곡선으로, 거의 곧으면 아래 직선
       const curve = guess ? null : recognizeCurve(px);
@@ -679,11 +688,15 @@ export function InkCanvas(props: Props) {
         else if (curve && (!curve.straight || curve.kind === "arrow"))
           stroke = makeShapeStroke(stroke.id, curveSpec(curve.kind, curve.a, curve.b, curve.c1, curve.c2, p0), stroke, p0);
       }
-      // 필기 보정: 펜 획(형광펜·도형 제외)을 반듯하게
+      // 필기 보정: 펜 획(형광펜·도형 제외)을 반듯하게. 작은 글씨(화면 SMALL_WRITING_PX 안)는 그대로 (v0.37)
       if (propsRef.current.beautify && !stroke.shape && stroke.tool === "pen") {
-        stroke.points = beautifyStroke(stroke.points, page(), unitsToPx(stroke.width, page()));
-        // 다듬은 점은 고른 간격으로 다시 찍은 것이라 예전 방식으로 그린다 (SPEC 5장)
-        delete stroke.smooth;
+        const zoom = propsRef.current.zoom || 1;
+        const tidy = beautifyStroke(stroke.points, page(), unitsToPx(stroke.width, page()), { minSizePx: SMALL_WRITING_PX / zoom });
+        if (tidy !== stroke.points) {
+          stroke.points = tidy;
+          // 다듬은 점은 고른 간격으로 다시 찍은 것이라 예전 방식으로 그린다 (SPEC 5장). 다듬지 않은 획은 v0.32 방식 그대로 (v0.37)
+          delete stroke.smooth;
+        }
       }
       const s = scale();
       const target = isHighlighter(stroke) ? ls.hl : ls.base;
