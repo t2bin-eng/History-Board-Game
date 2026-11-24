@@ -1,3 +1,4 @@
+import { art } from "./art";
 import { Check, Pipette, Trash2 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { RICH_COLORS, RICH_HIGHLIGHTERS } from "../doc/swatches";
@@ -49,11 +50,11 @@ type Props =
 const LEVEL_NAMES = ["가늘게", "보통", "굵게"];
 
 /** 펜 종류 (v0.41): 볼펜은 nib 없음 */
-const NIB_CHOICES: { id: PenNib | undefined; label: string }[] = [
-  { id: undefined, label: "볼펜" },
-  { id: "fountain", label: "만년필" },
-  { id: "calligraphy", label: "캘리그래피" },
-  { id: "pencil", label: "연필" },
+const NIB_CHOICES: { id: PenNib | undefined; label: string; art: string }[] = [
+  { id: undefined, label: "볼펜", art: "editor-tools/fineliner" },
+  { id: "fountain", label: "만년필", art: "editor-tools/fountain-pen" },
+  { id: "calligraphy", label: "캘리그래피", art: "editor-tools/stylus" },
+  { id: "pencil", label: "연필", art: "editor-tools/mechanical-pencil" },
 ];
 /** 불투명도 (v0.41): 1이면 opacity 없음 */
 const OPACITY_CHOICES = [1, 0.8, 0.6, 0.4];
@@ -237,9 +238,11 @@ export function ToolSettings(props: Props) {
                     key={n.label}
                     role="radio"
                     aria-checked={props.preset.nib === n.id}
-                    className={`ts-target${props.preset.nib === n.id ? " active" : ""}`}
+                    className={`ts-target ts-nib${props.preset.nib === n.id ? " active" : ""}`}
                     onClick={() => props.onChange({ nib: n.id })}
                   >
+                    {/* v0.47 디자인: 판서 도구 그림 */}
+                    <img src={art(n.art)} alt="" draggable={false} />
                     {n.label}
                   </button>
                 ))}

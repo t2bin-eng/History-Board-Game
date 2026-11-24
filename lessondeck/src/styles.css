@@ -4640,7 +4640,7 @@ body:has(.select-bar) .toast {
 /* 올가미로 고른 필기 (v0.43): 틀 안을 끌어 옮긴다 */
 .sel-frame {
   outline-offset: 0;
-  background: rgba(21, 101, 192, 0.04);
+  background: rgba(241, 131, 73, 0.05);
   cursor: move;
 }
 
@@ -5977,4 +5977,33 @@ button.version-btn {
 
 .page-nav {
   box-shadow: var(--float-shadow);
+}
+
+/* 펜 종류 단추 (v0.47): 위에 판서 도구 그림 */
+.ts-target.ts-nib {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 2px;
+  height: auto;
+  padding: 6px 2px 7px;
+}
+
+.ts-nib img {
+  width: 64px;
+  height: 27px;
+  object-fit: contain;
+}
+
+.page-area-message img {
+  display: block;
+  width: 128px;
+  height: 128px;
+  margin: 0 auto 8px;
+  object-fit: contain;
+}
+
+/* 알림: 먹색 알약에 흰 글자 */
+.toast {
+  color: #fff;
 }

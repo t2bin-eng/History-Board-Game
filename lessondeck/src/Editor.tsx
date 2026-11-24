@@ -146,6 +146,7 @@ import { followDetour, stepSkipping, type Detour } from "./doc/detours";
 import { addArrow, flipArrow, moveArrowEnd, patchArrow, removeArrow, type ArrowTarget } from "./doc/arrows";
 import { cleanFormat, type BoxFormat } from "./doc/boxFonts";
 import { josa } from "./lib/josa";
+import { art } from "./ui/art";
 import { Icon } from "./ui/Icon";
 import { ShapeEditor } from "./view/ShapeEditor";
 import { SelectionEditor } from "./view/SelectionEditor";
@@ -2776,7 +2777,14 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
   ;
   const viewChildren = (
     <>
-          {doc.pages.length === 0 && <div className="page-area-message">페이지가 없습니다. 페이지를 추가해 주세요.</div>}
+          {doc.pages.length === 0 && (
+            <div className="page-area-message">
+              <div>
+                <img src={art("states/no-pages")} alt="" draggable={false} />
+                페이지가 없습니다. 페이지를 추가해 주세요.
+              </div>
+            </div>
+          )}
 
           {paletteOpen && (
             <PenPalette
