@@ -27,6 +27,7 @@ import {
   FilePlus2,
   Hand,
   Highlighter,
+  UnfoldVertical,
   LayoutTemplate,
   FileStack,
   Lasso,
@@ -151,6 +152,8 @@ import { cleanFormat, type BoxFormat } from "./doc/boxFonts";
 import { josa } from "./lib/josa";
 import { ShapeEditor } from "./view/ShapeEditor";
 import { SelectionEditor } from "./view/SelectionEditor";
+import { SpaceEditor } from "./view/SpaceEditor";
+import { shiftDown, strokesBelow } from "./ink/spacing";
 import { ScrollView } from "./view/ScrollView";
 import { loadViewMode, saveViewMode, type ViewMode } from "./view/viewMode";
 import { fingerOperatesWeb, isNativeApp, showToast } from "./lib/platform";
@@ -360,6 +363,9 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
    */
   const [selection, setSelection] = useState<{ pageId: string; ids: string[]; frame: SelFrame; refs: Stroke[] } | null>(null);
   const [selDragging, setSelDragging] = useState(false);
+  /** 여백 넣기 (v0.46): 가로줄 자리(화면에 보이는 좌표의 페이지 px)와, 끄는 중 캔버스에서 뺄 획 */
+  const [spacer, setSpacer] = useState<{ pageId: string; y: number } | null>(null);
+  const [spaceHide, setSpaceHide] = useState<string[] | null>(null);
   const [shapeDraft, setShapeDraft] = useState<Stroke | null>(null);
   /** 도형 모드: 고른 도형을 펜으로 끌어 그리기 (auto: 그린 획을 뗄 때 알아봄). 펜·형광펜·지우개·텍스트를 고르면 끝 */
   const [shapeTool, setShapeTool] = useState<ShapeTool | null>(null);
@@ -433,8 +439,12 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
       const ids = new Set(selection.ids);
       out = out.filter((s) => !ids.has(s.id));
     }
+    if (spaceHide?.length) {
+      const ids = new Set(spaceHide);
+      out = out.filter((s) => !ids.has(s.id));
+    }
     return out;
-  }, [strokes, shapeDraft, selDragging, selection]);
+  }, [strokes, shapeDraft, selDragging, selection, spaceHide]);
   const erasing = tool === "eraser" || sideEraser;
   /** S펜 버튼 형광펜(v0.33)으로 쓸 형광펜: 펜 바에서 마지막으로 고른 것 */
   const buttonHighlighter = useMemo(() => {
@@ -1120,6 +1130,48 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
   }, [!!selection]);
   const deleteSelectionRef = useRef(deleteSelection);
   deleteSelectionRef.current = deleteSelection;
+  // ── 여백 넣기 (v0.46, SPEC 6장 "여백 넣기") ──
+  const openSpacer = (atY: number) => {
+    const g = pageGeometry();
+    if (!g) return;
+    const y = atY * g.size.height;
+    setSelection(null);
+    setSelectedShape(null);
+    setSpacer({ pageId: currentIdRef.current, y });
+    showToast(
+      strokesBelow(shownStrokes(strokesRef.current), y, g.size).length
+        ? "가로줄의 손잡이를 아래로 끌면 그 아래 필기가 밀려 여백이 생깁니다 (위로 끌면 좁힘)"
+        : "줄 아래에 옮길 필기가 없습니다",
+    );
+  };
+  const commitSpace = (dy: number) => {
+    const g = pageGeometry();
+    setSpaceHide(null);
+    if (!spacer || !g) return;
+    const moving = strokesBelow(shownStrokes(strokesRef.current), spacer.y, g.size);
+    if (!moving.length) return;
+    inkAction({ type: "commit", strokes: replaceStrokes(strokesRef.current, savedStrokes(shiftDown(moving, dy, g.size))) });
+  };
+  // 다른 페이지로 가거나 다른 곳을 누르면 그만둔다 (누름은 그대로 지나감)
+  useEffect(() => {
+    if (spacer && spacer.pageId !== currentId) setSpacer(null);
+  }, [spacer, currentId]);
+  useEffect(() => {
+    if (!spacer) return;
+    const onDown = (e: PointerEvent) => {
+      if ((e.target as Element).closest?.(".se-ui, .toast")) return;
+      setSpacer(null);
+      setSpaceHide(null);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setSpacer(null);
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [!!spacer]);
+
   /** 올가미 도구 켜고 끄기 (다시 누르면 쓰던 펜으로) */
   const toggleLasso = () => {
     if (tool === "lasso" && !textMode && !shapeTool) {
@@ -1163,6 +1215,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
     setCropping(false);
     setSelectedShape(null);
     setSelection(null);
+    setSpacer(null);
     // 올가미는 강의 중에 쓰지 않으므로 쓰던 펜으로
     setTool((t) => (t === "lasso" ? presetToolRef.current : t));
     detours.current = [];
@@ -1980,6 +2033,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
               },
             },
             at && !aiMode && { label: "링크", icon: <Link2 size={18} />, onSelect: () => createLinkBox(at) },
+            at && strokes.length > 0 && { label: "여백 넣기", icon: <UnfoldVertical size={18} />, onSelect: () => openSpacer(at.y) },
             at && {
               label: "베일 (가리기)",
               icon: <Blinds size={18} />,
@@ -2631,6 +2685,23 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
                     />
                   );
                 })()}
+                {current &&
+                  spacer &&
+                  spacer.pageId === page.id &&
+                  (() => {
+                    const moving = strokesBelow(shownStrokes(strokes), spacer.y, size);
+                    return (
+                      <SpaceEditor
+                        key={spacer.y}
+                        y={spacer.y}
+                        size={size}
+                        moving={moving}
+                        onLive={(on) => setSpaceHide(on ? moving.map((s) => s.id) : null)}
+                        onCommit={commitSpace}
+                        onDone={() => setSpacer(null)}
+                      />
+                    );
+                  })()}
               </>
   );
   const lectureNav =
