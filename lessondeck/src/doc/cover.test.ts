@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { contrast } from "./colors";
-import { autoCoverColor, COVER_COLORS, coverLook, splitCoverTitle } from "./cover";
+import { autoCoverArt, autoCoverColor, COVER_ARTS, COVER_COLORS, coverLook, splitCoverTitle } from "./cover";
 
 describe("표지", () => {
   it("차시 번호와 제목을 나눈다", () => {
@@ -28,9 +28,18 @@ describe("표지", () => {
     expect(autoCoverColor("doc-abc")).toBe(autoCoverColor("doc-abc"));
     const used = new Set(Array.from({ length: 60 }, (_, i) => autoCoverColor(`doc-${i}-x`)));
     expect(used.size).toBeGreaterThanOrEqual(8);
-    expect(coverLook("d", "page", false)).toEqual({ type: "color", color: autoCoverColor("d") });
     expect(coverLook("d", "page", true)).toEqual({ type: "page" });
     expect(coverLook("d", "#7a2e4a", true)).toEqual({ type: "color", color: "#7a2e4a" });
-    expect(coverLook("d", undefined, true)).toEqual({ type: "color", color: autoCoverColor("d") });
+  });
+
+  it("표지 그림 (v0.47): 자동은 문서마다 정해진 그림, 고른 그림, 모르는 그림은 자동", () => {
+    expect(autoCoverArt("doc-abc")).toBe(autoCoverArt("doc-abc"));
+    const used = new Set(Array.from({ length: 60 }, (_, i) => autoCoverArt(`doc-${i}-x`)));
+    expect(used.size).toBe(COVER_ARTS.length);
+    expect(coverLook("d", undefined, true)).toEqual({ type: "art", art: autoCoverArt("d") });
+    expect(coverLook("d", "auto", true)).toEqual({ type: "art", art: autoCoverArt("d") });
+    expect(coverLook("d", "page", false)).toEqual({ type: "art", art: autoCoverArt("d") });
+    expect(coverLook("d", "art:rose-paper", false)).toEqual({ type: "art", art: "rose-paper" });
+    expect(coverLook("d", "art:nope", false)).toEqual({ type: "art", art: autoCoverArt("d") });
   });
 });

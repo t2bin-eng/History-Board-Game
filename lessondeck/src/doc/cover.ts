@@ -18,22 +18,37 @@ export const COVER_COLORS = [
 
 /** 문서 id로 정하는 자동 표지 색 (이름을 바꿔도 그대로) */
 export function autoCoverColor(docId: string): string {
-  // FNV-1a
-  let h = 0x811c9dc5;
-  for (let i = 0; i < docId.length; i++) {
-    h ^= docId.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return COVER_COLORS[(h >>> 0) % COVER_COLORS.length];
+  return COVER_COLORS[hash(docId) % COVER_COLORS.length];
 }
 
-export type CoverLook = { type: "color"; color: string } | { type: "page" };
+export type CoverLook = { type: "color"; color: string } | { type: "page" } | { type: "art"; art: CoverArt };
 
-/** 고른 표지("auto" · "#rrggbb" · "page")를 그릴 모양으로. 첫 페이지 그림이 없으면 자동 색 */
+/** 표지 그림 (v0.47 디자인, src/assets/ui/covers): 옅은 바탕에 먹색 제목 */
+export const COVER_ARTS = ["apricot-sunrise", "sage-contours", "mist-blue-waves", "lavender-arcs", "sand-stitch", "rose-paper"] as const;
+export type CoverArt = (typeof COVER_ARTS)[number];
+
+function hash(id: string): number {
+  // FNV-1a
+  let h = 0x811c9dc5;
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+/** 문서 id로 정하는 자동 표지 그림 (이름을 바꿔도 그대로) */
+export function autoCoverArt(docId: string): CoverArt {
+  return COVER_ARTS[hash(docId) % COVER_ARTS.length];
+}
+
+/** 고른 표지("auto" · "art:<id>" · "#rrggbb" · "page")를 그릴 모양으로. 첫 페이지 그림이 없으면 자동 표지 */
 export function coverLook(docId: string, choice: string | undefined, hasThumb: boolean): CoverLook {
   if (choice === "page" && hasThumb) return { type: "page" };
   if (choice && /^#[0-9a-f]{6}$/i.test(choice)) return { type: "color", color: choice };
-  return { type: "color", color: autoCoverColor(docId) };
+  const art = choice?.startsWith("art:") ? choice.slice(4) : "";
+  if ((COVER_ARTS as readonly string[]).includes(art)) return { type: "art", art: art as CoverArt };
+  return { type: "art", art: autoCoverArt(docId) };
 }
 
 export interface CoverTitle {

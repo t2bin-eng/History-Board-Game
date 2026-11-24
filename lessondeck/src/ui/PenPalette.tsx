@@ -1,3 +1,4 @@
+import { art } from "./art";
 import { Blinds, ChevronDown, ChevronUp, EyeOff, GripHorizontal } from "lucide-react";
 import { useState } from "react";
 import type { PenPreset } from "../ink/types";
@@ -110,72 +111,61 @@ function PenGlyph({ preset }: { preset: PenPreset }) {
   const nib = hl ? undefined : preset.nib;
   // 불투명도 (v0.41): 색 띠·펜촉을 그만큼 비치게
   const alpha = hl ? 1 : Math.max(0.2, Math.min(1, preset.opacity ?? 1));
+  // v0.47 디자인: 먹색 윤곽선 + 크림색 몸통, 뚜껑 띠와 펜촉은 그 펜 색 (src/assets 판서 도구 그림과 같은 결)
+  const ink = "#28231F";
+  const body = "#FFFDF9";
+  const capW = hl ? 19 : 12;
+  const barrelX = 1.5 + capW;
+  const barrelW = hl ? 26 : 32;
+  const coneX = barrelX + barrelW;
   return (
     <svg width="76" height="26" viewBox="0 0 76 26" aria-hidden="true">
-      <defs>
-        <linearGradient id={`barrel-${preset.id}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#9a9a9a" />
-          <stop offset="0.5" stopColor="#6b6b6b" />
-          <stop offset="1" stopColor="#4a4a4a" />
-        </linearGradient>
-      </defs>
-      {/* 색 띠 */}
-      <rect x="0" y="5" width={hl ? 22 : 14} height="16" fill={preset.color} fillOpacity={alpha} />
-      {/* 검정처럼 어두운 색도 팔레트 배경에서 보이도록 얇은 테두리 */}
-      <rect x="0.5" y="5.5" width={hl ? 21 : 13} height="15" fill="none" stroke="rgba(255,255,255,0.22)" />
-      {hl && <rect x="10" y="5" width="6" height="16" fill="rgba(0,0,0,0.25)" />}
-      {/* 직선 형광펜 (v0.33): 색 띠 위 곧은 줄 */}
-      {hl && preset.straight && <rect x="1" y="12" width="20" height="2" fill="rgba(255,255,255,0.85)" />}
-      {/* 몸통 */}
-      <rect x={hl ? 22 : 14} y="5" width={hl ? 26 : 34} height="16" fill={`url(#barrel-${preset.id})`} />
-      {/* 원뿔 (연필은 깎은 나무) */}
-      <path
-        d={hl || nib === "calligraphy" || nib === "fountain" ? "M48 5 L64 9 L64 17 L48 21 Z" : nib === "pencil" ? "M48 5 L67 11 L67 15 L48 21 Z" : "M48 5 L68 11.5 L68 14.5 L48 21 Z"}
-        fill={nib === "pencil" ? "#d9b07a" : `url(#barrel-${preset.id})`}
-      />
-      {/* 펜촉 */}
-      {hl ? (
-        <path d="M64 9 L72 10 L72 16 L64 17 Z" fill={preset.color} />
-      ) : nib === "fountain" ? (
-        // 만년필 (v0.41): 뾰족한 펜촉과 가운데 홈
-        <>
-          <path d="M64 9 L76 13 L64 17 Q62 13 64 9 Z" fill={preset.color} fillOpacity={alpha} />
-          <path d="M65.5 13 L73 13" stroke="rgba(0,0,0,0.45)" strokeWidth="0.8" />
-        </>
-      ) : nib === "calligraphy" ? (
-        // 캘리그래피 펜 (v0.41): 비스듬히 납작한 끝
-        <path d="M64 9 L71 7 L74 19 L64 17 Z" fill={preset.color} fillOpacity={alpha} />
-      ) : nib === "pencil" ? (
-        // 연필 (v0.41): 깎은 나무 끝의 심
-        <path d="M67 11 L76 13 L67 15 Z" fill={preset.color} fillOpacity={alpha} />
-      ) : preset.fixedWidth ? (
-        // 고른 굵기 펜 (v0.33): 볼펜처럼 둥근 끝
-        <>
-          <path d="M68 11.5 L72 12 L72 14 L68 14.5 Z" fill={`url(#barrel-${preset.id})`} />
-          <circle cx="73.5" cy="13" r="2.2" fill={preset.color} fillOpacity={alpha} />
-        </>
-      ) : (
-        <path d="M68 11.5 L76 13 L68 14.5 Z" fill={preset.color} fillOpacity={alpha} />
-      )}
+      <g stroke={ink} strokeWidth="1.4" strokeLinejoin="round" strokeLinecap="round">
+        {/* 뚜껑 띠: 펜 색 */}
+        <rect x="1.5" y="6.5" width={capW} height="13" rx="3" fill={preset.color} fillOpacity={alpha} />
+        {/* 몸통 */}
+        <rect x={barrelX} y="6.5" width={barrelW} height="13" rx="1.5" fill={body} />
+        {/* 직선 형광펜 (v0.33): 몸통에 곧은 줄 */}
+        {hl && preset.straight && <path d={`M${barrelX + 4} 13 H${barrelX + barrelW - 4}`} stroke={preset.color} strokeWidth="2.2" />}
+        {!hl && <path d={`M${barrelX + barrelW - 9} 6.5 V19.5`} strokeWidth="1.1" />}
+        {/* 원뿔 (연필은 깎은 나무) */}
+        <path
+          d={
+            hl || nib === "calligraphy" || nib === "fountain"
+              ? `M${coneX} 6.5 L${coneX + 15} 9.5 L${coneX + 15} 16.5 L${coneX} 19.5 Z`
+              : nib === "pencil"
+                ? `M${coneX} 6.5 L${coneX + 18} 11.2 L${coneX + 18} 14.8 L${coneX} 19.5 Z`
+                : `M${coneX} 6.5 L${coneX + 19} 11.6 L${coneX + 19} 14.4 L${coneX} 19.5 Z`
+          }
+          fill={nib === "pencil" ? "#F3D6A8" : body}
+        />
+        {/* 펜촉: 펜 색 */}
+        {hl ? (
+          <path d={`M${coneX + 15} 9.5 L${coneX + 22} 10.5 L${coneX + 22} 16.5 L${coneX + 15} 16.5 Z`} fill={preset.color} />
+        ) : nib === "fountain" ? (
+          // 만년필 (v0.41): 뾰족한 펜촉과 가운데 홈
+          <>
+            <path d={`M${coneX + 15} 9.5 L${coneX + 26} 13 L${coneX + 15} 16.5 Q${coneX + 13} 13 ${coneX + 15} 9.5 Z`} fill={preset.color} fillOpacity={alpha} />
+            <path d={`M${coneX + 16.5} 13 L${coneX + 23} 13`} strokeWidth="0.9" />
+          </>
+        ) : nib === "calligraphy" ? (
+          // 캘리그래피 펜 (v0.41): 비스듬히 납작한 끝
+          <path d={`M${coneX + 15} 9.5 L${coneX + 21} 7.5 L${coneX + 24} 18.5 L${coneX + 15} 16.5 Z`} fill={preset.color} fillOpacity={alpha} />
+        ) : nib === "pencil" ? (
+          // 연필 (v0.41): 깎은 나무 끝의 심
+          <path d={`M${coneX + 18} 11.2 L${coneX + 26} 13 L${coneX + 18} 14.8 Z`} fill={preset.color} fillOpacity={alpha} />
+        ) : preset.fixedWidth ? (
+          // 고른 굵기 펜 (v0.33): 볼펜처럼 둥근 끝
+          <circle cx={coneX + 21.5} cy="13" r="2.3" fill={preset.color} fillOpacity={alpha} />
+        ) : (
+          <path d={`M${coneX + 19} 11.6 L${coneX + 26} 13 L${coneX + 19} 14.4 Z`} fill={preset.color} fillOpacity={alpha} />
+        )}
+      </g>
     </svg>
   );
 }
 
-/** 레이저 펜 그림: 빨간 빛을 내는 점 */
+/** 레이저 펜 그림 (v0.47 디자인 그림) */
 function LaserGlyph() {
-  return (
-    <svg width="76" height="26" viewBox="0 0 76 26" aria-hidden="true">
-      <defs>
-        <radialGradient id="laser-glow">
-          <stop offset="0" stopColor="#ffe9e9" />
-          <stop offset="0.35" stopColor="#ff2d2d" />
-          <stop offset="1" stopColor="rgba(255,45,45,0)" />
-        </radialGradient>
-      </defs>
-      <rect x="6" y="9" width="40" height="8" rx="4" fill="#5a5a5a" />
-      <rect x="40" y="10" width="8" height="6" rx="1" fill="#8a8a8a" />
-      <path d="M48 13 L66 13" stroke="rgba(255,60,60,0.55)" strokeWidth="2" />
-      <circle cx="68" cy="13" r="8" fill="url(#laser-glow)" />
-    </svg>
-  );
+  return <img className="pen-art" src={art("editor-tools/laser-pointer")} alt="" draggable={false} />;
 }

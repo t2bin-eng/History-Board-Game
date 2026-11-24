@@ -1,6 +1,7 @@
 import { BookImage, BookOpen, Check, X } from "lucide-react";
 import type { CSSProperties } from "react";
 import { COVER_COLORS, coverKindLabel, coverLook, splitCoverTitle } from "../doc/cover";
+import { art, COVER_ARTS } from "./art";
 import type { DocRecord } from "../store/db";
 import type { CoverChoice } from "../store/folders";
 import { Dialog } from "./FolderDialogs";
@@ -38,11 +39,10 @@ export function DocCover({ doc, choice, className }: { doc: DocRecord; choice?: 
   const t = splitCoverTitle(doc.title);
   const peek = peekThumb(doc, choice);
   const kind = <span className="cover-kind">{coverKindLabel(doc.manifest.pages[0])}</span>;
+  // 표지 그림 (v0.47): 옅은 그림 위에 먹색 제목 · 색 표지는 예전처럼 진한 색에 흰 글자
+  const style = (look.type === "art" ? { backgroundImage: `url("${art(`covers/${look.art}`)}")` } : { "--cover": look.color }) as CSSProperties;
   return (
-    <span
-      className={`doc-thumb doc-cover${t.num ? "" : " no-num"}${peek ? " with-peek" : ""} ${className ?? ""}`}
-      style={{ "--cover": look.color } as CSSProperties}
-    >
+    <span className={`doc-thumb doc-cover${look.type === "art" ? " art" : ""}${t.num ? "" : " no-num"}${peek ? " with-peek" : ""} ${className ?? ""}`} style={style}>
       {t.num && (
         <span className="cover-num">
           {t.num}
@@ -102,6 +102,7 @@ export function CoverDialog({ docs, current, onPick, onRemoveThumb, onClose }: C
     <Dialog title={docs.length > 1 ? `표지 (${docs.length}개)` : "표지"} icon={<BookOpen size={20} />} className="cover-dialog" onClose={onClose}>
       <div className="cover-options" role="radiogroup" aria-label="표지">
         {option("auto", "자동")}
+        {COVER_ARTS.map((a) => option(`art:${a.id}`, a.label))}
         {COVER_COLORS.map((c) => option(c, COLOR_NAMES[c] ?? c))}
         {option("page", "페이지 그림")}
       </div>
@@ -119,7 +120,7 @@ export function CoverDialog({ docs, current, onPick, onRemoveThumb, onClose }: C
         )}
       </div>
       <p className="cover-note">
-        자동은 문서마다 정해진 색입니다. 페이지 그림은 표지 대신 썸네일 페이지(고르지 않았으면 첫 페이지)를 통째로 보여 줍니다.
+        자동은 문서마다 정해진 표지 그림입니다. 페이지 그림은 표지 대신 썸네일 페이지(고르지 않았으면 첫 페이지)를 통째로 보여 줍니다.
         {!withThumb && " 그림은 이 기기에서 만들어지는 대로 보입니다."}
       </p>
     </Dialog>

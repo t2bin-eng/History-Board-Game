@@ -1,24 +1,21 @@
 import {
-  ArrowDownUp,
   ChevronRight,
   Circle,
   CircleCheck,
   EllipsisVertical,
-  File,
   FileText,
   FolderInput,
   FolderOpen,
-  FolderPlus,
-  House,
   Palette,
   Pencil,
   Search,
   Share2,
-  Sparkles,
   SquareCheckBig,
   Trash2,
   X,
 } from "lucide-react";
+import { Icon } from "./Icon";
+import { art, subjectArt } from "./art";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { safeFileName, shareOrDownload } from "../lib/files";
 import { onBackPress } from "../lib/nativeShell";
@@ -381,6 +378,9 @@ export function HomeScreen({ onOpen, headerExtra }: Props) {
       <header className="topbar">
         <div className="topbar-left">
           <div className="home-brand">
+            <span className="brand-mark" aria-hidden="true">
+              <Icon name="decks" size={22} />
+            </span>
             레슨덱{" "}
             <button className="phase-chip version-btn" title="업데이트 확인" onClick={openUpdateDialog}>
               v{__APP_VERSION__}
@@ -391,16 +391,20 @@ export function HomeScreen({ onOpen, headerExtra }: Props) {
       </header>
 
       <main className="home-main" ref={mainRef}>
+        <div className="home-hello">
+          <small>{todayLabel()}</small>
+          <h1>오늘은 어떤 수업을 펼쳐 볼까요?</h1>
+        </div>
         <section className="home-actions" aria-label="새 문서">
-          <ActionCard icon={<FileText size={28} />} title="PDF로 새 수업" desc="수업 자료 PDF 열기" onClick={() => pdfRef.current?.click()} />
-          <ActionCard icon={<File size={28} />} title="빈 노트" desc="백지 한 장에서 시작" onClick={() => run("빈 노트", () => createBlankDoc())} />
+          <ActionCard art="home-actions/pdf-new" title="PDF로 새 수업" desc="수업 자료 PDF 열기" onClick={() => pdfRef.current?.click()} />
+          <ActionCard art="home-actions/note-blank" title="빈 노트" desc="백지 한 장에서 시작" onClick={() => run("빈 노트", () => createBlankDoc())} />
           <ActionCard
-            icon={<FolderInput size={28} />}
+            art="home-actions/file-import"
             title="파일 가져오기"
             desc={`다른 기기에서 내보낸 ${PROJECT_EXT}`}
             onClick={() => projectRef.current?.click()}
           />
-          <ActionCard icon={<Sparkles size={28} />} title="필기감 시험지" desc="샘플 문서" onClick={() => run("샘플", createSampleDoc)} />
+          <ActionCard art="home-actions/pen-practice" title="필기감 시험지" desc="샘플 문서" onClick={() => run("샘플", createSampleDoc)} />
         </section>
         {here && !searching && (
           <p className="home-target">
@@ -423,7 +427,7 @@ export function HomeScreen({ onOpen, headerExtra }: Props) {
                   aria-current={folderId == null ? "page" : undefined}
                   onClick={() => go(null)}
                 >
-                  <House size={17} /> 내 문서
+                  <Icon name="home" size={20} /> 내 문서
                 </button>
                 {path.map((f) => (
                   <span key={f.id} className="crumb-step">
@@ -444,7 +448,7 @@ export function HomeScreen({ onOpen, headerExtra }: Props) {
 
             <div className="home-tools">
               <label className="home-search">
-                <Search size={16} />
+                <Icon name="search" size={18} />
                 <input type="search" value={query} placeholder="문서·폴더 찾기" aria-label="문서·폴더 찾기" onChange={(e) => setQuery(e.target.value)} />
                 {query && (
                   <button aria-label="찾기 지우기" onClick={() => setQuery("")}>
@@ -465,13 +469,13 @@ export function HomeScreen({ onOpen, headerExtra }: Props) {
                   }
                 }}
               >
-                <ArrowDownUp size={17} /> {sort === "recent" ? "최근 순" : "이름 순"}
+                <Icon name="sort" size={18} /> {sort === "recent" ? "최근 순" : "이름 순"}
               </button>
               <button className="tool-btn" onClick={() => setDialog({ type: "newFolder" })}>
-                <FolderPlus size={17} /> 새 폴더
+                <Icon name="folder-add" size={18} /> 새 폴더
               </button>
               <button className={`tool-btn${selecting ? " on" : ""}`} aria-pressed={selecting} onClick={() => setSelecting(!selecting)}>
-                <SquareCheckBig size={17} /> 선택
+                <Icon name="select" size={18} /> 선택
               </button>
             </div>
           </div>
@@ -485,7 +489,7 @@ export function HomeScreen({ onOpen, headerExtra }: Props) {
                 return (
                   <article key={f.id} className={cardClass("folder-card", item)} data-drop={f.id} {...bind(item)}>
                     <button className="folder-open" onClick={() => activate(item)} aria-label={`${f.name} 폴더 ${selecting ? "선택" : "열기"}`}>
-                      <FolderIcon color={f.color} size={30} />
+                      <FolderArt name={f.name} color={f.color} />
                       <span className="folder-info">
                         <strong>{f.name}</strong>
                         <small>
@@ -505,13 +509,16 @@ export function HomeScreen({ onOpen, headerExtra }: Props) {
           )}
 
           {empty && (
-            <p className="home-empty">
+            <div className="home-empty">
+              <img src={art(searching ? "states/no-search-results" : "states/empty-library")} alt="" draggable={false} />
+              <p>
               {searching
                 ? `‘${query.trim()}’와(과) 맞는 문서·폴더가 없습니다.`
                 : folderId
                   ? "이 폴더는 비어 있습니다. 위의 카드로 새 문서를 만들거나, 다른 문서를 길게 눌러 이 폴더로 끌어 오거나, 문서 메뉴(⋮)의 ‘옮기기’를 쓰세요."
                   : "아직 문서가 없습니다. 위에서 PDF로 새 수업을 만들거나, 구글 드라이브를 연결해 다른 기기의 문서를 받아 오세요."}
-            </p>
+              </p>
+            </div>
           )}
 
           <div className="doc-grid">
@@ -715,14 +722,32 @@ function commonLocation(locations: (string | null)[]): string | null | undefined
   return set.size === 1 ? locations[0] : undefined;
 }
 
-function ActionCard({ icon, title, desc, onClick }: { icon: ReactNode; title: string; desc: string; onClick: () => void }) {
+function ActionCard({ art: name, title, desc, onClick }: { art: string; title: string; desc: string; onClick: () => void }) {
   return (
     <button className="action-card" onClick={onClick}>
-      {icon}
-      <strong>{title}</strong>
-      <small>{desc}</small>
+      <img className="action-art" src={art(name)} alt="" draggable={false} />
+      <span className="action-text">
+        <strong>{title}</strong>
+        <small>{desc}</small>
+      </span>
     </button>
   );
+}
+
+/** 폴더 그림 (v0.47): 이름에 맞는 과목 그림(한국사·과학 등), 아니면 폴더 그림. 고른 폴더 색은 작은 점으로 */
+function FolderArt({ name, color }: { name: string; color?: string }) {
+  return (
+    <span className="folder-art">
+      <img src={art(subjectArt(name) ?? "home-actions/folder")} alt="" draggable={false} />
+      {color && <span className="folder-dot" style={{ background: color }} />}
+    </span>
+  );
+}
+
+/** "11월 24일 화요일" */
+function todayLabel(): string {
+  const d = new Date();
+  return `${d.getMonth() + 1}월 ${d.getDate()}일 ${"일월화수목금토"[d.getDay()]}요일`;
 }
 
 export function relativeTime(ms: number): string {

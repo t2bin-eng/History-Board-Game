@@ -95,7 +95,7 @@ export function libraryKey(lib: Library): string {
 }
 
 export function isCoverValue(v: string): boolean {
-  return v === "auto" || v === "page" || /^#[0-9a-f]{6}$/i.test(v);
+  return v === "auto" || v === "page" || /^#[0-9a-f]{6}$/i.test(v) || /^art:[a-z-]{1,40}$/.test(v);
 }
 
 function pickCover(a: CoverChoice | undefined, b: CoverChoice | undefined): CoverChoice {

@@ -5,7 +5,6 @@ import {
   BringToFront,
   Shapes,
   SkipForward,
-  ChevronLeft,
   Crop,
   ImagePlus,
   Maximize2,
@@ -15,7 +14,6 @@ import {
   SendToBack,
   Copy,
   CopyPlus,
-  EllipsisVertical,
   ExternalLink,
   Pencil,
   Scissors,
@@ -25,8 +23,6 @@ import {
   EyeOff,
   Flashlight,
   FilePlus2,
-  Hand,
-  Highlighter,
   UnfoldVertical,
   LayoutTemplate,
   FileStack,
@@ -150,6 +146,7 @@ import { followDetour, stepSkipping, type Detour } from "./doc/detours";
 import { addArrow, flipArrow, moveArrowEnd, patchArrow, removeArrow, type ArrowTarget } from "./doc/arrows";
 import { cleanFormat, type BoxFormat } from "./doc/boxFonts";
 import { josa } from "./lib/josa";
+import { Icon } from "./ui/Icon";
 import { ShapeEditor } from "./view/ShapeEditor";
 import { SelectionEditor } from "./view/SelectionEditor";
 import { SpaceEditor } from "./view/SpaceEditor";
@@ -2842,7 +2839,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
       <header className="topbar">
         <div className="topbar-left">
           <IconButton label="문서 목록" onClick={goHome}>
-            <ChevronLeft size={26} />
+            <Icon name="previous" size={26} />
           </IconButton>
           <button className="doc-title" title="이름 바꾸기" onClick={rename}>
             {doc.title}
@@ -2854,11 +2851,11 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
         <div className="topbar-right">
           {headerExtra}
           <button className="lecture-btn" aria-label="강의 모드 (F5)" title="강의 모드 (F5)" onClick={enterLecture} disabled={!currentPage}>
-            <Presentation size={19} /> 강의 모드
+            <Icon name="lecture" size={20} /> 강의 모드
           </button>
           <span className="topbar-sep" />
           <IconButton label="페이지 바" active={pagePanelOpen} onClick={() => setPagePanelOpen((v) => !v)}>
-            <PanelLeft size={22} />
+            <Icon name="page-panel" size={24} />
           </IconButton>
           <IconButton
             label="페이지 추가"
@@ -2870,7 +2867,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
             }}
             disabled={!currentPage}
           >
-            <FilePlus2 size={22} />
+            <Icon name="page-add" size={24} />
           </IconButton>
           <IconButton
             label={fingerDraw ? "손가락 필기 끄기" : "손가락으로도 필기"}
@@ -2880,7 +2877,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
               showToast(fingerDraw ? "S펜으로만 필기합니다 (손가락은 넘기기·확대)" : "손가락으로도 필기합니다 (두 손가락으로 확대)");
             }}
           >
-            <Hand size={22} />
+            <Icon name="hand" size={24} />
           </IconButton>
           <IconButton
             label="더보기"
@@ -2890,7 +2887,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
               setMenu({ kind: "more", x: r.right - 250, y: r.bottom + 6 });
             }}
           >
-            <EllipsisVertical size={22} />
+            <Icon name="more" size={24} />
           </IconButton>
         </div>
       </header>
@@ -2909,18 +2906,18 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
 
       <nav className="toolrow" aria-label="필기 도구">
         <IconButton label="실행 취소" disabled={!pageInk?.past.length} onClick={() => inkAction({ type: "undo" })}>
-          <Undo2 size={24} />
+          <Icon name="undo" />
         </IconButton>
         <IconButton label="다시 실행" disabled={!pageInk?.future.length} onClick={() => inkAction({ type: "redo" })}>
-          <Redo2 size={24} />
+          <Icon name="redo" />
         </IconButton>
         <span className="toolrow-sep" />
         <IconButton label="펜" active={tool === "pen" && !sideEraser && !textMode && !shapeTool} onClick={(e) => onToolButton("pen", e)}>
-          <PenLine size={24} />
+          <Icon name="pen" />
           {tool === "pen" && <span className="tool-color-dot" style={{ background: activePreset.color }} />}
         </IconButton>
         <IconButton label="형광펜" active={tool === "highlighter" && !sideEraser && !textMode && !shapeTool} onClick={(e) => onToolButton("highlighter", e)}>
-          <Highlighter size={24} />
+          <Icon name="highlighter" />
           {tool === "highlighter" && <span className="tool-color-dot" style={{ background: activePreset.color }} />}
         </IconButton>
         <IconButton
@@ -2928,7 +2925,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
           active={erasing && !textMode}
           onClick={(e) => onToolButton("eraser", e)}
         >
-          <Eraser size={24} />
+          <Icon name="eraser" />
           {sideEraser && <span className="side-badge" aria-hidden="true" />}
         </IconButton>
         <IconButton label="올가미" active={tool === "lasso" && !textMode && !shapeTool} disabled={!currentPage} onClick={toggleLasso}>
@@ -2949,15 +2946,15 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
             showToast("페이지를 누르면 글상자가 생깁니다. 상자를 누르면 옮기기·고치기·링크");
           }}
         >
-          <Type size={23} />
+          <Icon name="text" />
         </IconButton>
         {!aiMode && (
           <IconButton label="링크 만들기" disabled={!currentPage} onClick={() => createLinkBox()}>
-            <Link2 size={23} />
+            <Icon name="link" />
           </IconButton>
         )}
         <IconButton label="이미지 스티커" disabled={!currentPage} onClick={() => pickFile("sticker", pageIndex)}>
-          <ImagePlus size={23} />
+          <Icon name="image-add" />
         </IconButton>
         <IconButton
           label={shapeTool ? `도형 모드 (${shapeTool === "auto" ? "자동" : SHAPE_NAMES[shapeTool]})` : "도형"}
@@ -2968,21 +2965,21 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
             setPopover(popover?.kind === "shapes" ? null : { kind: "shapes", ...pickerAt(r.left - 120, r.bottom + 8) });
           }}
         >
-          <Shapes size={23} />
+          <Icon name="shapes" />
         </IconButton>
         <IconButton label={pasteHereLabel()} disabled={!currentPage} onClick={() => void pasteHere()}>
           <ClipboardPaste size={22} />
         </IconButton>
         <span className="toolrow-sep" />
         <IconButton label="필기 지우기" disabled={strokes.length === 0} onClick={() => inkAction({ type: "clear" })}>
-          <Trash2 size={22} />
+          <Icon name="trash" />
         </IconButton>
         <IconButton label={paletteOpen ? "펜 바 감추기" : "펜 바 보이기"} active={paletteOpen} onClick={() => setPaletteOpen((v) => !v)}>
-          <Palette size={22} />
+          <Icon name="palette" />
         </IconButton>
         {onAi && (
           <IconButton label="AI로 보내기" disabled={!currentPage || aiBusy} onClick={() => void startAi()}>
-            {aiBusy ? <span className="spinner" aria-hidden="true" /> : <AiIcon />}
+            {aiBusy ? <span className="spinner" aria-hidden="true" /> : <Icon name="ai" />}
           </IconButton>
         )}
         {onInteractive && (

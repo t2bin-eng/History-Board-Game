@@ -492,7 +492,7 @@ button {
 
 .pp-add:hover,
 .pp-add:focus-visible {
-  background: #2f2f2f;
+  background: var(--hover);
   color: var(--icon);
 }
 
@@ -5571,4 +5571,410 @@ button.version-btn {
   color: var(--text);
   font-size: 13px;
   white-space: nowrap;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   레슨덱 디자인 (v0.47): 크림 종이 · 먹색 윤곽 · 살구 포인트 (src/assets, SPEC 6장 "디자인")
+   위의 규칙을 덮어쓰는 층 — 색은 :root 토큰
+   ══════════════════════════════════════════════════════════════════ */
+
+/* 아이콘 (src/ui/Icon.tsx) · lucide 아이콘도 같은 굵기로 */
+.ld-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: inherit;
+}
+
+.ld-icon svg {
+  display: block;
+}
+
+.lucide {
+  stroke-width: 1.75;
+}
+
+/* ── 상단 바 · 도구 막대: 흰 종이 위에 옅은 구분선 ── */
+.topbar {
+  border-bottom: 1px solid var(--divider);
+}
+
+.toolrow {
+  border-top: 0;
+  border-bottom: 1px solid var(--divider);
+  box-shadow: 0 6px 16px -12px rgba(60, 40, 20, 0.25);
+  position: relative;
+  z-index: 2;
+}
+
+.icon-btn {
+  border-radius: 14px;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.icon-btn:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.icon-btn.active {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  box-shadow: inset 0 0 0 1.5px rgba(241, 131, 73, 0.55);
+}
+
+.icon-btn:disabled {
+  color: var(--icon-disabled);
+}
+
+.lecture-btn {
+  background: var(--ink);
+  color: #fff;
+  box-shadow: 0 4px 12px -4px rgba(40, 35, 31, 0.45);
+}
+
+.lecture-btn:hover {
+  background: #3a332d;
+}
+
+.phase-chip {
+  color: var(--accent-text);
+  border-color: #f4c3a5;
+  background: #fff7f1;
+}
+
+/* ── 홈 ── */
+.app.home {
+  background: var(--cream);
+}
+
+.home-brand {
+  gap: 10px;
+  font-size: 21px;
+  letter-spacing: -0.4px;
+}
+
+.brand-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  background: var(--accent-soft);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px rgba(241, 131, 73, 0.35);
+}
+
+.home-main {
+  background:
+    radial-gradient(1200px 420px at 85% -120px, rgba(252, 230, 215, 0.7), transparent 70%),
+    var(--cream);
+}
+
+.home-hello {
+  margin: 4px 0 18px;
+}
+
+.home-hello small {
+  color: var(--accent-text);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.home-hello h1 {
+  margin: 4px 0 0;
+  font-size: clamp(22px, 2.6vw, 28px);
+  font-weight: 800;
+  letter-spacing: -0.6px;
+  color: var(--ink);
+}
+
+.home-actions {
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 16px;
+  margin-bottom: 36px;
+}
+
+.action-card {
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px 16px 14px;
+  border: 1px solid var(--divider);
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: var(--card-shadow);
+  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+}
+
+.action-card:hover {
+  transform: translateY(-2px);
+  border-color: #f4c3a5;
+  box-shadow: 0 2px 4px rgba(60, 40, 20, 0.05), 0 14px 28px rgba(60, 40, 20, 0.1);
+}
+
+.action-card:active {
+  transform: translateY(0);
+}
+
+.action-art {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.action-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.action-card strong {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+
+.action-card small {
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+.crumb {
+  color: var(--ink-soft);
+}
+
+.crumb[aria-current="page"] {
+  color: var(--ink);
+}
+
+.home-search,
+.tool-btn {
+  height: 40px;
+  border-radius: 12px;
+  border-color: var(--divider);
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(60, 40, 20, 0.04);
+}
+
+.home-search input {
+  color: var(--ink);
+}
+
+.tool-btn:hover {
+  background: #fffaf6;
+  border-color: #f4c3a5;
+}
+
+.tool-btn.on {
+  background: var(--accent-soft);
+  border-color: rgba(241, 131, 73, 0.6);
+  color: var(--accent-text);
+}
+
+.folder-grid {
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 14px;
+}
+
+.folder-card {
+  border-color: var(--divider);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: var(--card-shadow);
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+
+.folder-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(60, 40, 20, 0.05), 0 12px 24px rgba(60, 40, 20, 0.09);
+}
+
+.folder-open {
+  gap: 14px;
+  min-height: 72px;
+  padding: 10px 40px 10px 12px;
+}
+
+.folder-art {
+  position: relative;
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+}
+
+.folder-art img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+
+.folder-dot {
+  position: absolute;
+  right: -2px;
+  bottom: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2.5px var(--surface);
+}
+
+.home-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 24px 16px 40px;
+  text-align: center;
+}
+
+.home-empty img {
+  width: 144px;
+  height: 144px;
+  object-fit: contain;
+}
+
+.home-empty p {
+  max-width: 440px;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.doc-grid {
+  gap: 22px 20px;
+}
+
+.doc-info strong {
+  color: var(--ink);
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+
+.doc-info small {
+  color: var(--icon-muted);
+}
+
+/* 문서 카드: 살짝 떠 있는 종이 */
+.doc-thumb {
+  border-radius: 6px 14px 14px 6px;
+  box-shadow: 0 1px 2px rgba(60, 40, 20, 0.08), 0 10px 22px -6px rgba(60, 40, 20, 0.22);
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.doc-open:hover .doc-thumb {
+  transform: translateY(-3px) rotate(-0.6deg);
+  box-shadow: 0 2px 4px rgba(60, 40, 20, 0.08), 0 18px 30px -8px rgba(60, 40, 20, 0.28);
+}
+
+/* 표지 그림 (v0.47): 옅은 그림 위 먹색 제목, 위에서 10~12% 안쪽 */
+/* 그림에 둥근 먹색 테두리가 그려져 있으므로 상자는 그 모양 그대로 (모서리 투명) — 그림자도 그림 모양을 따라 */
+.doc-thumb.doc-cover.art {
+  color: var(--ink);
+  background-color: transparent;
+  background-size: 100% 100%;
+  background-position: center;
+  border-radius: 4.6cqw;
+  padding: 12cqw 10cqw 8cqw 12cqw;
+  box-shadow: none;
+  filter: drop-shadow(0 1px 1px rgba(60, 40, 20, 0.1)) drop-shadow(0 8px 12px rgba(60, 40, 20, 0.16));
+}
+
+.doc-open:hover .doc-thumb.doc-cover.art {
+  box-shadow: none;
+  filter: drop-shadow(0 2px 2px rgba(60, 40, 20, 0.1)) drop-shadow(0 14px 18px rgba(60, 40, 20, 0.2));
+}
+
+.doc-cover.art .cover-num {
+  color: var(--accent-text);
+}
+
+.doc-cover.art .cover-rule {
+  background: var(--accent);
+}
+
+.doc-cover.art .cover-title {
+  color: var(--ink);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.doc-cover.art .cover-kind {
+  color: var(--ink-soft);
+}
+
+.doc-cover.art .cover-pocket {
+  left: 0.8cqw;
+  right: 0.8cqw;
+  bottom: 0.8cqw;
+  border-radius: 0 0 4cqw 4cqw;
+  border-top: 1px solid rgba(40, 35, 31, 0.08);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.75) 0%, rgba(255, 255, 255, 0.92) 100%);
+  color: var(--ink-soft);
+}
+
+/* ── 떠 있는 것들: 흰 종이, 따뜻한 그림자 ── */
+.tool-settings,
+.ctx-menu,
+.add-menu,
+.sticker-toolbar,
+.box-toolbar,
+.sticker-style,
+.page-nav,
+.dialog {
+  border-color: var(--divider);
+  box-shadow: var(--float-shadow);
+}
+
+.ctx-menu,
+.add-menu,
+.tool-settings {
+  border-radius: 18px;
+}
+
+.toast {
+  border-radius: 999px;
+  box-shadow: 0 10px 24px -8px rgba(40, 35, 31, 0.45);
+}
+
+/* ── 편집 화면 (v0.47) ── */
+.add-menu .add-paste {
+  color: var(--accent-text);
+}
+
+.pen-art {
+  display: block;
+  width: 72px;
+  height: 30px;
+  object-fit: contain;
+}
+
+.pen-palette {
+  border: 1px solid var(--divider);
+  border-radius: 20px;
+  background: var(--float-bg);
+  box-shadow: var(--float-shadow);
+}
+
+.pen-slot.active {
+  background: var(--accent-soft);
+  box-shadow: inset -3px 0 0 var(--accent);
+}
+
+.page-panel {
+  background: #f8f3ee;
+}
+
+.pp-card.current {
+  background: var(--accent-soft);
+}
+
+.page-area:not(.lecture) .page {
+  border-radius: 2px;
+}
+
+.page-nav {
+  box-shadow: var(--float-shadow);
 }

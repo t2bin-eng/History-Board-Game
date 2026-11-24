@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, GripVertical } from "lucide-react";
+import { Icon } from "../ui/Icon";
 import { useRef, type MouseEvent, type ReactNode } from "react";
 import { useFloatingDrag } from "./useFloatingDrag";
 
@@ -46,14 +46,14 @@ export function PageNav({ label, hasPrev, hasNext, onNavigate, extra }: Props) {
       {...float.handlers}
     >
       <span className="page-nav-grip" title="끌어서 옮기기 · 두 번 누르면 원래 자리" aria-hidden="true">
-        <GripVertical size={18} />
+        <Icon name="drag-handle" size={18} />
       </span>
       <button aria-label="이전 페이지" disabled={!hasPrev} onClick={(e) => go(e, -1)}>
-        <ChevronLeft size={22} />
+        <Icon name="previous" size={22} />
       </button>
       <span className="page-nav-count">{label}</span>
       <button aria-label="다음 페이지" disabled={!hasNext} onClick={(e) => go(e, 1)}>
-        <ChevronRight size={22} />
+        <Icon name="next" size={22} />
       </button>
       {extra}
     </div>
