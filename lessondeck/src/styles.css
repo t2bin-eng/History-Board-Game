@@ -1,22 +1,37 @@
 :root {
-  --chrome: #2a2a2a;
-  --chrome-border: #3a3a3a;
-  --canvas-bg: #353535;
-  --panel: #1e1e1e;
-  --panel-border: #3c3c3c;
-  --icon: #e9e9e9;
-  --icon-muted: #8b8b8b;
-  --icon-disabled: #5d5d5d;
-  --hover: rgba(255, 255, 255, 0.08);
-  --active-bg: rgba(255, 255, 255, 0.16);
-  --accent: #3fc3e6;
-  --danger: #ff6b5f;
-  --text: #f1f1f1;
-  --text-muted: #a9a9a9;
-  --page-shadow: 0 2px 14px rgba(0, 0, 0, 0.45);
+  /* 레슨덱 디자인 (v0.47, src/assets): 흰색·옅은 크림 바탕에 먹색 윤곽, 살구 주황 포인트 */
+  --cream: #faf8f5;
+  --surface: #ffffff;
+  --surface-2: #f6f1ec;
+  --divider: #ede5de;
+  --ink: #28231f;
+  --ink-soft: #605751;
+  --accent: #f18349;
+  --accent-soft: #fce6d7;
+  --accent-text: #9c3d15;
+  --on-accent: #3a1a08;
+  --float-bg: rgba(255, 255, 255, 0.98);
+  --float-shadow: 0 1px 2px rgba(60, 40, 20, 0.06), 0 12px 32px rgba(60, 40, 20, 0.14);
+  --card-shadow: 0 1px 2px rgba(60, 40, 20, 0.05), 0 6px 18px rgba(60, 40, 20, 0.07);
+  --chip-dark: rgba(40, 35, 31, 0.8);
+
+  --chrome: var(--surface);
+  --chrome-border: var(--divider);
+  --canvas-bg: #f1ebe4;
+  --panel: var(--surface);
+  --panel-border: var(--divider);
+  --icon: var(--ink);
+  --icon-muted: #8a7f77;
+  --icon-disabled: #cdc3bb;
+  --hover: rgba(40, 35, 31, 0.055);
+  --active-bg: var(--accent-soft);
+  --danger: #d6453a;
+  --text: var(--ink);
+  --text-muted: var(--ink-soft);
+  --page-shadow: 0 1px 2px rgba(60, 40, 20, 0.07), 0 10px 28px rgba(60, 40, 20, 0.12);
   --topbar-h: 60px;
   --toolrow-h: 64px;
-  color-scheme: dark;
+  color-scheme: light;
   font-family:
     "Pretendard", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, -apple-system, sans-serif;
 }
@@ -103,7 +118,7 @@ button {
   gap: 8px;
   padding: 0 12px;
   border-top: 1px solid var(--chrome-border);
-  border-bottom: 1px solid #222;
+  border-bottom: 1px solid var(--divider);
 }
 
 .toolrow-sep {
@@ -332,7 +347,7 @@ button {
   align-items: center;
   gap: 2px;
   padding: 4px;
-  background: rgba(24, 24, 24, 0.88);
+  background: var(--float-bg);
   border: 1px solid var(--panel-border);
   border-radius: 999px;
   z-index: 4;
@@ -422,8 +437,8 @@ button {
   flex-direction: column;
   width: 164px;
   flex-shrink: 0;
-  background: #242424;
-  border-right: 1px solid #1c1c1c;
+  background: var(--surface-2);
+  border-right: 1px solid var(--divider);
 }
 
 .page-panel-head {
@@ -517,7 +532,7 @@ button {
 .pp-add.last {
   height: 44px;
   margin: 6px auto 0;
-  border: 1.5px dashed #4a4a4a;
+  border: 1.5px dashed #d9cdc2;
   border-radius: 10px;
   color: var(--text-muted);
   font-size: 13px;
@@ -532,7 +547,7 @@ button {
 }
 
 .pp-card.current {
-  background: #263238;
+  background: var(--accent-soft);
   box-shadow: inset 0 0 0 2px var(--accent);
 }
 
@@ -710,7 +725,7 @@ button {
   height: 30px;
   border: 0;
   border-radius: 8px;
-  background: #1e1e1e;
+  background: var(--surface);
   color: var(--icon);
   cursor: pointer;
 }
@@ -797,9 +812,9 @@ button {
   min-width: 0;
   height: 40px;
   padding: 0 10px;
-  border: 1px solid #4a4a4a;
+  border: 1px solid var(--divider);
   border-radius: 8px;
-  background: #121212;
+  background: var(--surface);
   color: var(--text);
   font: inherit;
   font-size: 15px;
@@ -816,7 +831,7 @@ button {
   padding: 0 14px;
   justify-content: center;
   background: var(--accent);
-  color: #062a33;
+  color: var(--on-accent);
   font-weight: 700;
 }
 
@@ -831,7 +846,7 @@ button {
   inset: 0;
   display: grid;
   place-items: center;
-  color: #777;
+  color: var(--icon-muted);
   font-size: 15px;
 }
 
@@ -958,7 +973,7 @@ button {
 }
 
 .page.web.ink .web-mode-chip {
-  color: #062a33;
+  color: var(--on-accent);
   background: var(--accent);
 }
 
@@ -1019,7 +1034,7 @@ button {
   display: flex;
   padding: 3px;
   border-radius: 12px;
-  background: #1e1e1e;
+  background: var(--surface);
 }
 
 .mode-switch button {
@@ -1038,7 +1053,7 @@ button {
 
 .mode-switch button[aria-checked="true"] {
   background: var(--accent);
-  color: #062a33;
+  color: var(--on-accent);
   font-weight: 700;
 }
 
@@ -1080,7 +1095,7 @@ button {
   margin-bottom: 10px;
   border: 0;
   border-radius: 12px;
-  background: #2b2b2b;
+  background: var(--surface);
   color: var(--icon);
   cursor: pointer;
 }
@@ -1104,7 +1119,7 @@ button {
 }
 
 .pen-slot.active {
-  background: #263238;
+  background: var(--accent-soft);
 }
 
 .pen-slot.active::after {
@@ -1125,7 +1140,7 @@ button {
 .pen-palette-sep {
   height: 1px;
   margin: 4px 10px;
-  background: #3a3a3a;
+  background: var(--surface-2);
 }
 
 .pen-slot.pen-special {
@@ -1218,12 +1233,12 @@ button {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  border: 2px solid #555;
+  border: 2px solid rgba(40, 35, 31, 0.15);
   cursor: pointer;
 }
 
 .ts-swatch.active {
-  border-color: #fff;
+  border-color: var(--ink);
   box-shadow: 0 0 0 2px var(--accent);
 }
 
@@ -1235,15 +1250,15 @@ button {
   justify-content: center;
   gap: 8px;
   height: 64px;
-  border: 1px solid #3b3b3b;
+  border: 1px solid var(--divider);
   border-radius: 10px;
-  background: #262626;
+  background: var(--surface);
   cursor: pointer;
 }
 
 .ts-width.active {
   border-color: var(--accent);
-  background: #263238;
+  background: var(--accent-soft);
 }
 
 .ts-width-line {
@@ -1275,9 +1290,9 @@ button {
   height: 38px;
   padding: 0 4px;
   white-space: nowrap;
-  border: 1px solid #3b3b3b;
+  border: 1px solid var(--divider);
   border-radius: 10px;
-  background: #262626;
+  background: var(--surface);
   color: var(--text-muted);
   font-size: 13px;
   cursor: pointer;
@@ -1285,7 +1300,7 @@ button {
 
 .ts-target.active {
   border-color: var(--accent);
-  background: #263238;
+  background: var(--accent-soft);
   color: var(--text);
 }
 
@@ -1379,7 +1394,7 @@ button {
   flex: 1;
   height: 6px;
   border-radius: 3px;
-  background: #333;
+  background: var(--surface-2);
   overflow: hidden;
 }
 
@@ -1394,14 +1409,14 @@ button {
   align-items: center;
   gap: 8px;
   padding: 8px 0;
-  border-top: 1px solid #333;
+  border-top: 1px solid var(--divider);
 }
 
 .debug-checklist {
   list-style: none;
   margin: 0;
   padding: 8px 0;
-  border-top: 1px solid #333;
+  border-top: 1px solid var(--divider);
   display: grid;
   gap: 6px;
 }
@@ -1431,14 +1446,14 @@ button {
   width: 15px;
   height: 15px;
   border-radius: 4px;
-  background: #333;
-  color: #777;
+  background: var(--surface-2);
+  color: var(--icon-muted);
   font-size: 11px;
 }
 
 .debug-checklist li.ok .auto-mark {
   background: var(--accent);
-  color: #062a33;
+  color: var(--on-accent);
 }
 
 .debug-checklist small {
@@ -1450,7 +1465,7 @@ button {
   list-style: none;
   margin: 0;
   padding: 8px 0 0;
-  border-top: 1px solid #333;
+  border-top: 1px solid var(--divider);
   color: #9a9a9a;
   font-size: 11px;
   line-height: 1.45;
@@ -1466,7 +1481,7 @@ button {
   gap: 14px;
   padding: 10px 18px;
   border-radius: 999px;
-  background: rgba(30, 30, 30, 0.95);
+  background: rgba(40, 35, 31, 0.94);
   border: 1px solid var(--panel-border);
   font-size: 14px;
   z-index: 30;
@@ -1554,7 +1569,7 @@ button.doc-title:hover {
   padding: 18px;
   border: 1px solid var(--panel-border);
   border-radius: 16px;
-  background: #2b2b2b;
+  background: var(--surface);
   color: var(--text);
   text-align: left;
   cursor: pointer;
@@ -1625,7 +1640,7 @@ button.doc-title:hover {
   aspect-ratio: 3 / 4;
   overflow: hidden;
   border-radius: 10px;
-  background: #3a3a3a;
+  background: var(--surface-2);
   color: var(--icon-muted);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
 }
@@ -1800,7 +1815,7 @@ button.doc-title:hover {
   margin-top: 18px;
   padding: 12px 14px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--surface-2);
   color: var(--text);
   font-size: 13px;
   line-height: 1.5;
@@ -1927,7 +1942,7 @@ button.doc-title:hover {
 .spinner {
   width: 20px;
   height: 20px;
-  border: 2.5px solid rgba(255, 255, 255, 0.25);
+  border: 2.5px solid rgba(40, 35, 31, 0.15);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
@@ -2002,7 +2017,7 @@ button.doc-title:hover {
   gap: 14px;
   padding: 14px;
   border-radius: 12px;
-  background: #262626;
+  background: var(--surface);
 }
 
 .sync-status.idle svg {
@@ -2056,7 +2071,7 @@ button.doc-title:hover {
   padding: 0 16px;
   border: 1px solid var(--panel-border);
   border-radius: 10px;
-  background: #2b2b2b;
+  background: var(--surface);
   color: var(--text);
   font-size: 14px;
   cursor: pointer;
@@ -2065,7 +2080,7 @@ button.doc-title:hover {
 .sync-actions button.primary {
   border-color: transparent;
   background: var(--accent);
-  color: #062a33;
+  color: var(--on-accent);
   font-weight: 700;
 }
 
@@ -2102,7 +2117,7 @@ button.doc-title:hover {
 .sync-setup {
   padding: 10px 12px;
   border-radius: 10px;
-  background: #262626;
+  background: var(--surface);
   font-size: 13px;
   line-height: 1.6;
 }
@@ -2125,7 +2140,7 @@ button.doc-title:hover {
 .sync-setup code {
   padding: 1px 5px;
   border-radius: 4px;
-  background: #121212;
+  background: var(--surface);
   color: #e6e6e6;
   font-size: 12px;
   user-select: all;
@@ -2265,7 +2280,7 @@ button.tb-note:active {
 /* 텍스트 모드에서 애니메이션 창을 연 동안 보이는 접힌 쪽지 */
 .tb-note.ghost {
   opacity: 0.92;
-  outline: 2px dashed rgba(63, 195, 230, 0.9);
+  outline: 2px dashed rgba(241, 131, 73, 0.9);
   outline-offset: 3px;
   pointer-events: none;
 }
@@ -2849,7 +2864,7 @@ button.tb-note:active {
   align-items: center;
   gap: 2px;
   padding: 4px;
-  background: rgba(24, 24, 24, 0.94);
+  background: var(--float-bg);
   border: 1px solid var(--panel-border);
   border-radius: 12px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
@@ -2887,7 +2902,7 @@ button.tb-note:active {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.25);
+  border: 2px solid rgba(40, 35, 31, 0.15);
 }
 
 .box-color.on span {
@@ -2916,7 +2931,7 @@ button.tb-note:active {
   height: 42px;
   border: 1px solid var(--panel-border);
   border-radius: 10px;
-  background: #262626;
+  background: var(--surface);
   color: var(--text-muted);
   font-size: 14px;
   cursor: pointer;
@@ -2961,7 +2976,7 @@ button.tb-note:active {
   min-height: 46px;
   padding: 0 12px;
   border: 0;
-  border-bottom: 1px solid #2a2a2a;
+  border-bottom: 1px solid var(--divider);
   background: transparent;
   color: var(--text);
   font-size: 14px;
@@ -3008,7 +3023,7 @@ button.tb-note:active {
   padding: 0 12px;
   border: 1px solid var(--panel-border);
   border-radius: 10px;
-  background: #1c1c1c;
+  background: var(--surface);
   color: var(--text);
   font-size: 15px;
 }
@@ -3029,7 +3044,7 @@ button.tb-note:active {
   border: 0;
   border-radius: 999px;
   background: var(--accent);
-  color: #062a33;
+  color: var(--on-accent);
   font-size: 14px;
   font-weight: 700;
   cursor: pointer;
@@ -3062,7 +3077,7 @@ button.tb-note:active {
   max-height: calc(100vh - 16px);
   overflow-y: auto;
   padding: 6px;
-  background: rgba(32, 32, 32, 0.98);
+  background: var(--float-bg);
   border: 1px solid var(--panel-border);
   border-radius: 14px;
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
@@ -3089,7 +3104,7 @@ button.tb-note:active {
 .ctx-group + .ctx-group {
   margin-top: 4px;
   padding-top: 4px;
-  border-top: 1px solid #333;
+  border-top: 1px solid var(--divider);
 }
 
 .ctx-menu button {
@@ -3166,7 +3181,7 @@ button.tb-note:active {
   margin: -28px 0 0 -28px;
   border-radius: 50%;
   border: 3px solid var(--accent);
-  background: rgba(63, 195, 230, 0.12);
+  background: rgba(241, 131, 73, 0.12);
   pointer-events: none;
   z-index: 8;
   animation: press-ring linear forwards;
@@ -3247,7 +3262,7 @@ button.tb-note:active {
   max-width: 34em;
   margin: 0;
   font-weight: 600;
-  color: #263238;
+  color: var(--ink);
 }
 
 .frame-status small {
@@ -3286,7 +3301,7 @@ button.tb-note:active {
   border: 1px solid #cfd8dc;
   border-radius: 10px;
   background: #f5f7f8;
-  color: #263238;
+  color: var(--ink);
   font-size: 14px;
   text-decoration: none;
   cursor: pointer;
@@ -3414,7 +3429,7 @@ button.tb-note:active {
 
 .crumb.drop-over {
   border-color: var(--accent);
-  background: rgba(63, 195, 230, 0.18);
+  background: rgba(241, 131, 73, 0.18);
   color: var(--text);
 }
 
@@ -3434,7 +3449,7 @@ button.tb-note:active {
   padding: 0 6px 0 12px;
   border: 1px solid var(--panel-border);
   border-radius: 10px;
-  background: #262626;
+  background: var(--surface);
   color: var(--icon-muted);
 }
 
@@ -3476,20 +3491,20 @@ button.tb-note:active {
   padding: 0 12px;
   border: 1px solid var(--panel-border);
   border-radius: 10px;
-  background: #2b2b2b;
+  background: var(--surface);
   color: var(--text);
   font-size: 14px;
   cursor: pointer;
 }
 
 .tool-btn:hover {
-  background: #333;
+  background: var(--surface-2);
 }
 
 .tool-btn.on {
   border-color: transparent;
   background: var(--accent);
-  color: #062a33;
+  color: var(--on-accent);
   font-weight: 700;
 }
 
@@ -3512,7 +3527,7 @@ button.tb-note:active {
 .folder-card {
   border: 1px solid var(--panel-border);
   border-radius: 14px;
-  background: #2b2b2b;
+  background: var(--surface);
 }
 
 .folder-card:hover {
@@ -3570,7 +3585,7 @@ button.tb-note:active {
 
 .folder-card.drop-over {
   border-color: var(--accent);
-  background: rgba(63, 195, 230, 0.16);
+  background: rgba(241, 131, 73, 0.16);
   transform: scale(1.03);
 }
 
@@ -3607,7 +3622,7 @@ button.tb-note:active {
   max-width: 280px;
   padding: 8px 14px;
   border-radius: 12px;
-  background: #3b3b3b;
+  background: var(--surface);
   color: var(--text);
   font-size: 14px;
   font-weight: 700;
@@ -3618,13 +3633,13 @@ button.tb-note:active {
 }
 
 .drag-ghost small {
-  color: #062a33;
+  color: var(--on-accent);
   font-weight: 600;
 }
 
 .drag-ghost.can-drop {
   background: var(--accent);
-  color: #062a33;
+  color: var(--on-accent);
 }
 
 /* 선택 */
@@ -3736,7 +3751,7 @@ body:has(.select-bar) .toast {
   border: 1px solid var(--panel-border);
   border-radius: 10px;
   outline: 0;
-  background: #262626;
+  background: var(--surface);
   color: var(--text);
   font-size: 16px;
 }
@@ -3765,7 +3780,7 @@ body:has(.select-bar) .toast {
 }
 
 .swatch.on {
-  border-color: #fff;
+  border-color: var(--ink);
   box-shadow: 0 0 0 2px var(--panel);
 }
 
@@ -3795,20 +3810,20 @@ body:has(.select-bar) .toast {
   padding: 0 16px;
   border: 1px solid var(--panel-border);
   border-radius: 10px;
-  background: #2b2b2b;
+  background: var(--surface);
   color: var(--text);
   font-size: 14px;
   cursor: pointer;
 }
 
 .btn:hover:not(:disabled) {
-  background: #333;
+  background: var(--surface-2);
 }
 
 .btn.primary {
   border-color: transparent;
   background: var(--accent);
-  color: #062a33;
+  color: var(--on-accent);
   font-weight: 700;
 }
 
@@ -3870,7 +3885,7 @@ body:has(.select-bar) .toast {
   overflow-y: auto;
   border: 1px solid var(--panel-border);
   border-radius: 12px;
-  background: #222;
+  background: var(--surface-2);
 }
 
 .tree-row {
@@ -3894,7 +3909,7 @@ body:has(.select-bar) .toast {
 }
 
 .tree-row.selected {
-  background: rgba(63, 195, 230, 0.2);
+  background: rgba(241, 131, 73, 0.2);
 }
 
 .tree-row:disabled {
@@ -4068,7 +4083,7 @@ body:has(.select-bar) .toast {
   min-height: 24px;
   border: 2px dashed rgba(120, 120, 120, 0.7);
   background: rgba(240, 240, 240, 0.7);
-  color: #777;
+  color: var(--icon-muted);
 }
 
 /* 고른 스티커 고치기: 페이지 전체를 덮고 빈 곳을 누르면 고르기 끝 */
@@ -4189,7 +4204,7 @@ body:has(.select-bar) .toast {
   margin-left: -13px;
   border-radius: 50%;
   background: var(--accent);
-  color: #062a33;
+  color: var(--on-accent);
   cursor: grab;
   touch-action: none;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
@@ -4301,7 +4316,7 @@ body:has(.select-bar) .toast {
   gap: 2px;
   width: max-content;
   padding: 4px;
-  background: rgba(24, 24, 24, 0.95);
+  background: var(--float-bg);
   border: 1px solid var(--panel-border);
   border-radius: 12px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
@@ -4342,7 +4357,7 @@ body:has(.select-bar) .toast {
 .sticker-toolbar button.primary:hover {
   padding: 0 12px;
   background: var(--accent);
-  color: #062a33;
+  color: var(--on-accent);
   font-weight: 700;
 }
 
@@ -4380,7 +4395,7 @@ body:has(.select-bar) .toast {
   gap: 6px;
   min-width: 300px;
   padding: 10px 12px;
-  background: rgba(24, 24, 24, 0.97);
+  background: var(--float-bg);
   border: 1px solid var(--panel-border);
   border-radius: 12px;
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
@@ -4424,7 +4439,7 @@ body:has(.select-bar) .toast {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.35);
+  border: 2px solid rgba(40, 35, 31, 0.15);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
 }
 
@@ -4476,7 +4491,7 @@ body:has(.select-bar) .toast {
 
 .ts-toggle.on {
   border-color: var(--accent);
-  background: rgba(63, 195, 230, 0.12);
+  background: rgba(241, 131, 73, 0.12);
 }
 
 .ts-check {
@@ -4487,7 +4502,7 @@ body:has(.select-bar) .toast {
   height: 18px;
   border: 2px solid var(--icon-muted);
   border-radius: 5px;
-  color: #062a33;
+  color: var(--on-accent);
 }
 
 .ts-toggle.on .ts-check {
@@ -4605,7 +4620,7 @@ body:has(.select-bar) .toast {
   height: 26px;
   border-radius: 50%;
   background: var(--accent);
-  color: #062a33;
+  color: var(--on-accent);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
@@ -4656,11 +4671,11 @@ body:has(.select-bar) .toast {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(40, 35, 31, 0.18);
 }
 
 .sel-swatch.on span {
-  box-shadow: 0 0 0 2px var(--panel-bg, #181818), 0 0 0 4px var(--accent);
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent);
 }
 
 .sel-order button {
@@ -4736,7 +4751,7 @@ body:has(.select-bar) .toast {
 
 .lecture-skip.on .ls-state {
   background: var(--accent);
-  color: #062a33;
+  color: var(--on-accent);
 }
 
 .lecture-skip .ls-count {
@@ -4799,7 +4814,7 @@ body:has(.select-bar) .toast {
   width: 24px;
   height: 22px;
   border-radius: 5px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  border: 1px solid rgba(40, 35, 31, 0.15);
   font-size: 14px;
   font-weight: 800;
 }
@@ -5066,7 +5081,7 @@ body:has(.select-bar) .toast {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(40, 35, 31, 0.18);
   pointer-events: none;
 }
 
@@ -5140,9 +5155,9 @@ body:has(.select-bar) .toast {
   gap: 8px;
   height: 38px;
   padding: 0 10px;
-  border: 1px solid #3b3b3b;
+  border: 1px solid var(--divider);
   border-radius: 10px;
-  background: #262626;
+  background: var(--surface);
 }
 
 .ts-hex.bad {
@@ -5154,7 +5169,7 @@ body:has(.select-bar) .toast {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(40, 35, 31, 0.18);
 }
 
 .ts-hex input {
@@ -5198,7 +5213,7 @@ body:has(.select-bar) .toast {
   padding: 0 14px;
   border: 0;
   border-radius: 999px;
-  background: #3a3a3a;
+  background: var(--surface-2);
   color: #fff;
   font-size: 13px;
   cursor: pointer;
@@ -5281,7 +5296,7 @@ body:has(.select-bar) .toast {
   gap: 4px;
   padding: 4px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--surface-2);
 }
 
 .ai-app {
@@ -5298,7 +5313,7 @@ body:has(.select-bar) .toast {
 
 .ai-app[aria-checked="true"] {
   background: var(--accent);
-  color: #062a33;
+  color: var(--on-accent);
 }
 
 .ai-text {
@@ -5328,7 +5343,7 @@ body:has(.select-bar) .toast {
   border: 0;
   border-radius: 10px;
   background: var(--accent);
-  color: #062a33;
+  color: var(--on-accent);
   font-size: 16px;
   font-weight: 700;
   white-space: nowrap;
@@ -5343,7 +5358,7 @@ body:has(.select-bar) .toast {
   width: 16px;
   height: 16px;
   border-color: rgba(6, 42, 51, 0.25);
-  border-top-color: #062a33;
+  border-top-color: var(--on-accent);
 }
 
 /* 좁은 화면: 제목 글자는 빼고 아이콘만 */
@@ -5378,7 +5393,7 @@ button.version-btn {
 .update-ver {
   padding: 1px 8px;
   border-radius: 999px;
-  background: #263238;
+  background: var(--accent-soft);
   color: #8fdcef;
   font-weight: 700;
 }
@@ -5394,7 +5409,7 @@ button.version-btn {
   margin: 12px 0 0;
   padding: 10px 12px;
   border-radius: 10px;
-  background: #222;
+  background: var(--surface-2);
   color: var(--text-muted);
   font-family: inherit;
   font-size: 13px;
@@ -5408,7 +5423,7 @@ button.version-btn {
   margin-top: 14px;
   height: 30px;
   border-radius: 8px;
-  background: #222;
+  background: var(--surface-2);
   overflow: hidden;
 }
 
@@ -5527,7 +5542,7 @@ button.version-btn {
   position: absolute;
   left: 0;
   right: 0;
-  background: repeating-linear-gradient(-45deg, rgba(63, 195, 230, 0.12) 0 8px, rgba(63, 195, 230, 0.04) 8px 16px);
+  background: repeating-linear-gradient(-45deg, rgba(241, 131, 73, 0.12) 0 8px, rgba(241, 131, 73, 0.04) 8px 16px);
   pointer-events: none;
 }
 
@@ -5540,7 +5555,7 @@ button.version-btn {
   margin: -16px 0 0 -16px;
   border-radius: 50%;
   background: var(--accent);
-  color: #062a33;
+  color: var(--on-accent);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
   cursor: ns-resize;
 }

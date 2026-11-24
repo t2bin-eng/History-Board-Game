@@ -334,11 +334,11 @@ export function InkCanvas(props: Props) {
         y1 = Math.max(y1, y);
       });
       liveCtx.closePath();
-      liveCtx.fillStyle = "rgba(21,101,192,0.07)";
+      liveCtx.fillStyle = "rgba(241,131,73,0.08)";
       liveCtx.fill();
       liveCtx.setLineDash([6 / z, 4 / z]);
       liveCtx.lineWidth = 1.6 / z;
-      liveCtx.strokeStyle = "rgba(21,101,192,0.95)";
+      liveCtx.strokeStyle = "rgba(156,61,21,0.9)";
       liveCtx.stroke();
       liveCtx.setLineDash([]);
       const m = 4 / z;
