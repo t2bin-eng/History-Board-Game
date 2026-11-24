@@ -2346,6 +2346,8 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
           eraserMode={eraserMode}
           straightLine={activePreset.tool === "highlighter" && !!activePreset.straight}
           fixedWidth={activePreset.tool === "pen" && !!activePreset.fixedWidth}
+          nib={activePreset.tool === "pen" ? activePreset.nib : undefined}
+          opacity={activePreset.tool === "pen" ? activePreset.opacity : undefined}
           penButton={penButton}
           buttonHighlighter={buttonHighlighter}
           fingerDraw={fingerDraw}

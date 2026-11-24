@@ -7,7 +7,7 @@ import { snapLineEnd } from "../ink/beautify";
 import type { PageSize } from "../ink/geometry";
 import { bendCurve, curveMid, flipLineSpec, isLineShape, lineEnds, lineSpec, shapeFrame, shapeStrokePath, withShape } from "../ink/shapes";
 import type { ShapeSpec, Stroke } from "../ink/types";
-import { HIGHLIGHT_LAYER_STYLE, isHighlighter, strokeColor } from "../ink/inkPaint";
+import { HIGHLIGHT_LAYER_STYLE, isHighlighter, strokeColor, strokeOpacity } from "../ink/inkPaint";
 
 type ShapeStroke = Stroke & { shape: ShapeSpec };
 type Pt = [number, number];
@@ -152,7 +152,7 @@ export function ShapeEditor({ stroke, size, onLive, onChange, onDuplicate, onDel
           style={isHighlighter(stroke) ? HIGHLIGHT_LAYER_STYLE : undefined}
           aria-hidden="true"
         >
-          <path d={shapeStrokePath({ ...stroke, shape: draft }, size)} fill={strokeColor(stroke)} />
+          <path d={shapeStrokePath({ ...stroke, shape: draft }, size)} fill={strokeColor(stroke)} fillOpacity={strokeOpacity(stroke)} />
         </svg>
       )}
       <div className="shape-edit" aria-label="도형 고치기">

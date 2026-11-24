@@ -373,13 +373,16 @@ export function shapePoints(spec: ShapeSpec, page: Size, widthUnits: number): In
 export function makeShapeStroke(
   id: string,
   spec: ShapeSpec,
-  style: { tool: InkTool; color: string; width: number },
+  style: { tool: InkTool; color: string; width: number; opacity?: number },
   page: Size,
 ): Stroke {
   const shape: ShapeSpec = { ...spec, cx: round(spec.cx), cy: round(spec.cy), w: round(spec.w), h: round(spec.h), rot: round(spec.rot, 100) };
   // 곡선은 선·화살표에만, 곧으면 빼 둔다
   if (!isLineShape(shape.kind) || !shape.curve) delete shape.curve;
-  return { id, tool: style.tool, color: style.color, width: style.width, points: shapePoints(shape, page, style.width), shape };
+  const stroke: Stroke = { id, tool: style.tool, color: style.color, width: style.width, points: shapePoints(shape, page, style.width), shape };
+  // 펜 불투명도 (v0.41)는 도형에도. 펜 종류는 도형에 쓰지 않는다 (고른 굵기 선)
+  if (style.tool === "pen" && typeof style.opacity === "number" && style.opacity < 1) stroke.opacity = style.opacity;
+  return stroke;
 }
 
 /** 모양만 바꾼 같은 획 */

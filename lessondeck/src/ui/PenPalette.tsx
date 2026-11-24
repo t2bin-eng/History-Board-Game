@@ -48,7 +48,7 @@ export function PenPalette({ presets, activeId, onSelect, onOpenSettings, onHide
           <button
             key={p.id}
             className={`pen-slot${p.id === activeId ? " active" : ""}`}
-            aria-label={`${p.tool === "highlighter" ? (p.straight ? "직선 형광펜" : "형광펜") : p.fixedWidth ? "고른 굵기 펜" : "펜"} ${p.color}`}
+            aria-label={`${p.tool === "highlighter" ? (p.straight ? "직선 형광펜" : "형광펜") : penName(p)} ${p.color}${p.tool === "pen" && p.opacity && p.opacity < 1 ? ` ${Math.round(p.opacity * 100)}%` : ""}`}
             aria-pressed={p.id === activeId}
             onClick={(e) => {
               if (p.id === activeId) onOpenSettings(p.id, e.currentTarget.getBoundingClientRect());
@@ -99,8 +99,17 @@ export function PenPalette({ presets, activeId, onSelect, onOpenSettings, onHide
   );
 }
 
+/** 펜 이름 (v0.41: 펜 종류) */
+function penName(p: PenPreset): string {
+  const kind = p.nib === "fountain" ? "만년필" : p.nib === "calligraphy" ? "캘리그래피 펜" : p.nib === "pencil" ? "연필" : "펜";
+  return p.fixedWidth ? `고른 굵기 ${kind}` : kind;
+}
+
 function PenGlyph({ preset }: { preset: PenPreset }) {
   const hl = preset.tool === "highlighter";
+  const nib = hl ? undefined : preset.nib;
+  // 불투명도 (v0.41): 색 띠·펜촉을 그만큼 비치게
+  const alpha = hl ? 1 : Math.max(0.2, Math.min(1, preset.opacity ?? 1));
   return (
     <svg width="76" height="26" viewBox="0 0 76 26" aria-hidden="true">
       <defs>
@@ -111,7 +120,7 @@ function PenGlyph({ preset }: { preset: PenPreset }) {
         </linearGradient>
       </defs>
       {/* 색 띠 */}
-      <rect x="0" y="5" width={hl ? 22 : 14} height="16" fill={preset.color} />
+      <rect x="0" y="5" width={hl ? 22 : 14} height="16" fill={preset.color} fillOpacity={alpha} />
       {/* 검정처럼 어두운 색도 팔레트 배경에서 보이도록 얇은 테두리 */}
       <rect x="0.5" y="5.5" width={hl ? 21 : 13} height="15" fill="none" stroke="rgba(255,255,255,0.22)" />
       {hl && <rect x="10" y="5" width="6" height="16" fill="rgba(0,0,0,0.25)" />}
@@ -119,19 +128,34 @@ function PenGlyph({ preset }: { preset: PenPreset }) {
       {hl && preset.straight && <rect x="1" y="12" width="20" height="2" fill="rgba(255,255,255,0.85)" />}
       {/* 몸통 */}
       <rect x={hl ? 22 : 14} y="5" width={hl ? 26 : 34} height="16" fill={`url(#barrel-${preset.id})`} />
-      {/* 원뿔 */}
-      <path d={hl ? "M48 5 L64 9 L64 17 L48 21 Z" : "M48 5 L68 11.5 L68 14.5 L48 21 Z"} fill={`url(#barrel-${preset.id})`} />
+      {/* 원뿔 (연필은 깎은 나무) */}
+      <path
+        d={hl || nib === "calligraphy" || nib === "fountain" ? "M48 5 L64 9 L64 17 L48 21 Z" : nib === "pencil" ? "M48 5 L67 11 L67 15 L48 21 Z" : "M48 5 L68 11.5 L68 14.5 L48 21 Z"}
+        fill={nib === "pencil" ? "#d9b07a" : `url(#barrel-${preset.id})`}
+      />
       {/* 펜촉 */}
       {hl ? (
         <path d="M64 9 L72 10 L72 16 L64 17 Z" fill={preset.color} />
+      ) : nib === "fountain" ? (
+        // 만년필 (v0.41): 뾰족한 펜촉과 가운데 홈
+        <>
+          <path d="M64 9 L76 13 L64 17 Q62 13 64 9 Z" fill={preset.color} fillOpacity={alpha} />
+          <path d="M65.5 13 L73 13" stroke="rgba(0,0,0,0.45)" strokeWidth="0.8" />
+        </>
+      ) : nib === "calligraphy" ? (
+        // 캘리그래피 펜 (v0.41): 비스듬히 납작한 끝
+        <path d="M64 9 L71 7 L74 19 L64 17 Z" fill={preset.color} fillOpacity={alpha} />
+      ) : nib === "pencil" ? (
+        // 연필 (v0.41): 깎은 나무 끝의 심
+        <path d="M67 11 L76 13 L67 15 Z" fill={preset.color} fillOpacity={alpha} />
       ) : preset.fixedWidth ? (
         // 고른 굵기 펜 (v0.33): 볼펜처럼 둥근 끝
         <>
           <path d="M68 11.5 L72 12 L72 14 L68 14.5 Z" fill={`url(#barrel-${preset.id})`} />
-          <circle cx="73.5" cy="13" r="2.2" fill={preset.color} />
+          <circle cx="73.5" cy="13" r="2.2" fill={preset.color} fillOpacity={alpha} />
         </>
       ) : (
-        <path d="M68 11.5 L76 13 L68 14.5 Z" fill={preset.color} />
+        <path d="M68 11.5 L76 13 L68 14.5 Z" fill={preset.color} fillOpacity={alpha} />
       )}
     </svg>
   );

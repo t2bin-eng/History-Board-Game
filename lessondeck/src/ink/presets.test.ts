@@ -79,3 +79,25 @@ describe("고른 굵기 획 (v0.33)", () => {
     expect(Math.abs(thickness(even, 160) - thickness(even, 300))).toBeLessThan(0.6);
   });
 });
+
+describe("펜 종류·불투명도 기억 (v0.41)", () => {
+  it("펜의 펜 종류·불투명도는 그대로, 잘못된 값이나 형광펜에 붙은 값은 버린다", () => {
+    mem.set(
+      PRESETS_KEY,
+      JSON.stringify([
+        { id: "a", tool: "pen", color: "#000", width: 2, nib: "fountain", opacity: 0.6 },
+        { id: "b", tool: "pen", color: "#000", width: 2, nib: "brush", opacity: 0.1 },
+        { id: "c", tool: "highlighter", color: "#ff0", width: 12, nib: "pencil", opacity: 0.6 },
+        { id: "d", tool: "pen", color: "#000", width: 2, nib: "calligraphy", opacity: 1 },
+      ]),
+    );
+    const [a, b, c, d] = loadPresets();
+    expect(a).toMatchObject({ nib: "fountain", opacity: 0.6 });
+    expect(b.nib).toBeUndefined();
+    expect(b.opacity).toBeUndefined();
+    expect(c.nib).toBeUndefined();
+    expect(c.opacity).toBeUndefined();
+    expect(d.nib).toBe("calligraphy");
+    expect(d.opacity).toBeUndefined();
+  });
+});

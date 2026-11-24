@@ -10,7 +10,7 @@ import { curveSpec, defaultShape, dragShape, lineSpec, makeShapeStroke, type Sha
 import { eraserTakes, eraseStrokeArea, type EraserMode, type EraserTarget } from "./eraser";
 import { capPrediction, keepPoint, SMOOTH_V2, type Dropped } from "./smoothing";
 import type { PenButtonAction } from "./penButton";
-import type { InkPoint, ShapeSpec, Stroke, Tool } from "./types";
+import type { InkPoint, PenNib, ShapeSpec, Stroke, Tool } from "./types";
 
 interface Props {
   page: PageSize;
@@ -28,6 +28,9 @@ interface Props {
   /** 지금 펜 바 펜의 설정 (v0.33): 형광펜 곧게 긋기 · 펜 고른 굵기 */
   straightLine?: boolean;
   fixedWidth?: boolean;
+  /** 지금 펜의 펜 종류·불투명도 (v0.41, 펜만) */
+  nib?: PenNib;
+  opacity?: number;
   /** S펜 버튼을 누른 채 쓸 때 할 일 (v0.33, 없으면 지우개) */
   penButton?: PenButtonAction;
   /** penButton이 highlighter일 때 쓸 형광펜 (펜 바에서 마지막으로 고른 것) */
@@ -406,13 +409,15 @@ export function InkCanvas(props: Props) {
       // 그릴 펜: 버튼 형광펜이면 그 형광펜, 아니면 지금 펜 바 펜
       const hlButton = button === "highlighter" ? props0.buttonHighlighter : undefined;
       const style = hlButton
-        ? { tool: "highlighter" as const, color: hlButton.color, width: hlButton.width, straight: !!hlButton.straight, fixed: false }
+        ? { tool: "highlighter" as const, color: hlButton.color, width: hlButton.width, straight: !!hlButton.straight, fixed: false, nib: undefined, opacity: undefined }
         : {
             tool: tool === "highlighter" ? ("highlighter" as const) : ("pen" as const),
             color: props0.color,
             width: props0.width,
             straight: tool === "highlighter" && !!props0.straightLine,
             fixed: tool === "pen" && !!props0.fixedWidth,
+            nib: tool === "pen" ? props0.nib : undefined,
+            opacity: tool === "pen" && typeof props0.opacity === "number" && props0.opacity < 1 ? props0.opacity : undefined,
           };
       gesture = {
         pointerId: e.pointerId,
@@ -462,6 +467,9 @@ export function InkCanvas(props: Props) {
         smooth: SMOOTH_V2,
         // v0.33: 필압을 쓰지 않는 펜
         ...(style.fixed ? { fixedWidth: true as const } : {}),
+        // v0.41: 펜 종류·불투명도
+        ...(style.nib ? { nib: style.nib } : {}),
+        ...(style.opacity !== undefined ? { opacity: style.opacity } : {}),
       };
       const shapeTool = props0.shapeTool;
       if (shapeTool && shapeTool !== "auto") {

@@ -8,7 +8,7 @@ import { isInteractivePage, mediaAsset, pageAspect, pdfAsset, type DocState, typ
 import { fitPage, type PageSize } from "../ink/geometry";
 import { InkCanvas } from "../ink/InkCanvas";
 import type { ShapeTool } from "../ink/shapes";
-import type { Stroke, Tool } from "../ink/types";
+import type { PenNib, Stroke, Tool } from "../ink/types";
 import { PdfPageView } from "../pdf/PdfPageView";
 import { PageNav } from "./PageNav";
 import { useViewportGestures } from "./useViewportGestures";
@@ -36,6 +36,9 @@ interface Props {
   /** 펜 바 펜 설정 (v0.33): 형광펜 곧게 긋기 · 펜 고른 굵기 */
   straightLine?: boolean;
   fixedWidth?: boolean;
+  /** 펜 종류·불투명도 (v0.41) */
+  nib?: PenNib;
+  opacity?: number;
   /** S펜 버튼 동작 (v0.33) */
   penButton?: PenButtonAction;
   buttonHighlighter?: { color: string; width: number; straight?: boolean };
@@ -389,6 +392,8 @@ export function PageView(props: Props) {
             eraserMode={props.eraserMode}
             straightLine={props.straightLine}
             fixedWidth={props.fixedWidth}
+            nib={props.nib}
+            opacity={props.opacity}
             penButton={props.penButton}
             buttonHighlighter={props.buttonHighlighter}
             fingerDraw={props.fingerDraw}

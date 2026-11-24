@@ -23,7 +23,15 @@ export interface Stroke {
   smooth?: 2;
   /** 고른 굵기 (v0.33): 필압·속도와 상관없이 width 그대로 */
   fixedWidth?: true;
+  /** 펜 종류 (v0.41, 펜만): 만년필 · 캘리그래피 펜 · 연필. 없으면 볼펜 */
+  nib?: PenNib;
+  /** 불투명도 (v0.41, 펜만): 0.2~1. 없으면 1 */
+  opacity?: number;
 }
+
+/** 펜 종류 (v0.41, SPEC 5장 "펜 종류·불투명도") */
+export type PenNib = "fountain" | "calligraphy" | "pencil";
+export const PEN_NIBS: readonly PenNib[] = ["fountain", "calligraphy", "pencil"];
 
 /** 화살촉 모양 (v0.30): 열린 V · 채운 삼각형 · 동그라미 · 마름모 · 가로 막대 · 없음 */
 export type ArrowHead = "open" | "tri" | "dot" | "diamond" | "bar" | "none";
@@ -72,6 +80,10 @@ export interface PenPreset {
   straight?: boolean;
   /** 펜: 필압 안 씀 (v0.33) — 고른 굵기 */
   fixedWidth?: boolean;
+  /** 펜: 펜 종류 (v0.41). 없으면 볼펜 */
+  nib?: PenNib;
+  /** 펜: 불투명도 (v0.41) 0.2~1. 없으면 1 */
+  opacity?: number;
 }
 
 /** 페이지 가로 1000 기준 굵기 단위를 CSS 픽셀로 바꾼다 */

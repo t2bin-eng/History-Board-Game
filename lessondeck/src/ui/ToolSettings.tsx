@@ -1,10 +1,10 @@
 import { Check, Trash2 } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { RICH_COLORS, RICH_HIGHLIGHTERS } from "../doc/swatches";
 import { ERASER_MODES, ERASER_TARGETS, type EraserMode, type EraserTarget } from "../ink/eraser";
 import { PEN_BUTTON_ACTIONS, type PenButtonAction } from "../ink/penButton";
 import { ERASER_LEVELS, HIGHLIGHTER_ALPHA, WIDTH_LEVELS } from "../ink/palette";
-import type { PenPreset } from "../ink/types";
+import type { PenNib, PenPreset } from "../ink/types";
 
 interface Anchor {
   left: number;
@@ -40,6 +40,16 @@ type Props =
 
 const LEVEL_NAMES = ["가늘게", "보통", "굵게"];
 
+/** 펜 종류 (v0.41): 볼펜은 nib 없음 */
+const NIB_CHOICES: { id: PenNib | undefined; label: string }[] = [
+  { id: undefined, label: "볼펜" },
+  { id: "fountain", label: "만년필" },
+  { id: "calligraphy", label: "캘리그래피" },
+  { id: "pencil", label: "연필" },
+];
+/** 불투명도 (v0.41): 1이면 opacity 없음 */
+const OPACITY_CHOICES = [1, 0.8, 0.6, 0.4];
+
 function Toggle({ on, onChange, label, hint }: { on: boolean; onChange: (on: boolean) => void; label: string; hint: string }) {
   return (
     <button role="switch" aria-checked={on} className={`ts-toggle${on ? " on" : ""}`} title={hint} onClick={() => onChange(!on)}>
@@ -70,11 +80,25 @@ export function ToolSettings(props: Props) {
     };
   }, [props.onClose]);
 
+  // 화면 안에 들어오게 (v0.41: 펜 종류·불투명도로 길어짐): 아래로 넘치면 위로 올리고, 그래도 길면 스크롤
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const margin = 8;
+    const room = window.innerHeight - margin * 2;
+    el.style.maxHeight = `${room}px`;
+    const h = Math.min(el.scrollHeight, room);
+    const top = Math.max(margin, Math.min(props.anchor.top, window.innerHeight - margin - h));
+    el.style.top = `${top}px`;
+  });
+
   return (
     <div ref={ref} className="tool-settings" style={{ left: props.anchor.left, top: props.anchor.top }} role="dialog">
       {props.kind === "preset" ? (
         <>
-          <div className="ts-title">{props.preset.tool === "highlighter" ? "형광펜" : "펜"}</div>
+          <div className="ts-title">
+            {props.preset.tool === "highlighter" ? "형광펜" : `펜 (${NIB_CHOICES.find((n) => n.id === props.preset.nib)?.label ?? "볼펜"})`}
+          </div>
           <div className="ts-row ts-colors" role="radiogroup" aria-label="색상">
             {(props.preset.tool === "highlighter" ? RICH_HIGHLIGHTERS : RICH_COLORS).map((c) => (
               <button
@@ -114,13 +138,46 @@ export function ToolSettings(props: Props) {
                   style={{
                     height: props.preset.tool === "highlighter" ? 4 + i * 4 : 2 + i * 2,
                     background: props.preset.color,
-                    opacity: props.preset.tool === "highlighter" ? HIGHLIGHTER_ALPHA : 1,
+                    opacity: props.preset.tool === "highlighter" ? HIGHLIGHTER_ALPHA : (props.preset.opacity ?? 1),
                   }}
                 />
                 <span className="ts-width-label">{LEVEL_NAMES[i]}</span>
               </button>
             ))}
           </div>
+          {props.preset.tool === "pen" && (
+            <>
+              <div className="ts-row ts-targets" role="radiogroup" aria-label="펜 종류">
+                {NIB_CHOICES.map((n) => (
+                  <button
+                    key={n.label}
+                    role="radio"
+                    aria-checked={props.preset.nib === n.id}
+                    className={`ts-target${props.preset.nib === n.id ? " active" : ""}`}
+                    onClick={() => props.onChange({ nib: n.id })}
+                  >
+                    {n.label}
+                  </button>
+                ))}
+              </div>
+              <div className="ts-row ts-targets" role="radiogroup" aria-label="불투명도">
+                {OPACITY_CHOICES.map((o) => {
+                  const on = Math.abs((props.preset.opacity ?? 1) - o) < 0.05;
+                  return (
+                    <button
+                      key={o}
+                      role="radio"
+                      aria-checked={on}
+                      className={`ts-target${on ? " active" : ""}`}
+                      onClick={() => props.onChange({ opacity: o < 1 ? o : undefined })}
+                    >
+                      {Math.round(o * 100)}%
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
           {/* 이 펜의 설정 (v0.33): 형광펜 곧게 긋기 · 펜 필압 */}
           <div className="ts-row ts-toggles" aria-label="이 펜">
             {props.preset.tool === "highlighter" ? (

@@ -1097,6 +1097,8 @@ button {
 .tool-settings {
   position: fixed;
   z-index: 20;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   min-width: 248px;
   padding: 14px;
   background: var(--panel);
@@ -1174,7 +1176,10 @@ button {
 /* 지울 것 (v0.32): 전부 · 펜만 · 형광펜만 */
 .ts-target {
   flex: 1;
+  min-width: 0;
   height: 38px;
+  padding: 0 4px;
+  white-space: nowrap;
   border: 1px solid #3b3b3b;
   border-radius: 10px;
   background: #262626;
