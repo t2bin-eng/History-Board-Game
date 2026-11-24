@@ -83,6 +83,8 @@ interface Props {
   onShapeDrawn?: (strokeId: string) => void;
   /** 도형 모드 (InkCanvas) */
   shapeTool?: ShapeTool | null;
+  /** 올가미 (v0.43, InkCanvas): 둘러싼 자리 (페이지 px, 화면에 보이는 좌표) */
+  onLasso?: (poly: [number, number][], tap: boolean) => void;
 }
 
 export interface LongPress {
@@ -409,6 +411,7 @@ export function PageView(props: Props) {
             onCommit={onCommit}
             onShapeDrawn={props.onShapeDrawn}
             shapeTool={props.shapeTool}
+            onLasso={props.onLasso}
           />
           {props.pageOverlay?.(size)}
           {web && (

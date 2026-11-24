@@ -3,8 +3,8 @@
 // - width는 "페이지 가로 = 1000" 기준 단위라서 화면 크기가 바뀌어도 굵기 비율이 유지된다
 
 export type InkTool = "pen" | "highlighter";
-/** laser (v0.33): 레이저 펜 — 그리고 잠깐 뒤 사라짐, 저장 안 함 */
-export type Tool = InkTool | "eraser" | "laser";
+/** laser (v0.33): 레이저 펜 — 그리고 잠깐 뒤 사라짐, 저장 안 함. lasso (v0.43): 올가미 — 둘러싼 필기를 고름 */
+export type Tool = InkTool | "eraser" | "laser" | "lasso";
 
 /** [x, y, pressure] — x·y는 0~1 비율, pressure는 0~1 */
 export type InkPoint = [number, number, number];

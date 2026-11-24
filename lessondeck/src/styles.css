@@ -1386,6 +1386,18 @@ button {
   cursor: pointer;
 }
 
+/* 도구 막대가 꽉 차는 폭 (v0.43 올가미 단추를 더함): 틈을 줄이고, 그래도 넘치면 옆으로 밀어 본다 */
+@media (max-width: 860px) {
+  .toolrow {
+    justify-content: safe center;
+    gap: 4px;
+    overflow-x: auto;
+  }
+  .toolrow-sep {
+    margin: 0 4px;
+  }
+}
+
 @media (max-width: 720px) {
   .page-panel {
     width: 136px;
@@ -4513,6 +4525,51 @@ body:has(.select-bar) .toast {
   margin: -13px 0 0 -13px;
   cursor: move;
   opacity: 0.9;
+}
+
+/* 올가미로 고른 필기 (v0.43): 틀 안을 끌어 옮긴다 */
+.sel-frame {
+  outline-offset: 0;
+  background: rgba(21, 101, 192, 0.04);
+  cursor: move;
+}
+
+.sel-move-mark {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--accent);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+.sel-toolbar .sel-swatch {
+  min-width: 30px;
+  width: 30px;
+  padding: 0;
+}
+
+.sel-swatch span {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+
+.sel-swatch.on span {
+  box-shadow: 0 0 0 2px var(--panel-bg, #181818), 0 0 0 4px var(--accent);
+}
+
+.sel-order button {
+  padding: 0 10px;
 }
 
 .shape-picker {

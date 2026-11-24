@@ -3,7 +3,7 @@ import type { AssetMeta } from "../store/db";
 import type { BoxClip } from "./boxes";
 import type { Page, Sticker } from "./types";
 
-// 앱 안 클립보드 (SPEC 5장). 마지막으로 복사·잘라낸 것 하나(글상자 / 스티커 / 페이지)를 담는다.
+// 앱 안 클립보드 (SPEC 5장). 마지막으로 복사·잘라낸 것 하나(글상자 / 스티커 / 페이지 / 필기)를 담는다.
 // 문서를 바꿔도 남도록 화면 밖(모듈)에 둔다 (앱을 끄면 사라짐).
 
 /** 다른 문서에 붙일 때 함께 넣을 원본 파일 */
@@ -30,7 +30,19 @@ export interface PageClip {
   assets: Record<string, ClipAsset>;
 }
 
-export type AppClip = { kind: "boxes"; clip: BoxClip } | { kind: "stickers"; clip: StickerClip } | { kind: "pages"; clip: PageClip };
+/** 올가미로 고른 필기 (v0.43): 복사한 페이지의 0~1 좌표 그대로 + 그 페이지의 세로÷가로 */
+export interface InkClip {
+  docId: string;
+  pageId: string;
+  strokes: Stroke[];
+  aspect: number;
+}
+
+export type AppClip =
+  | { kind: "boxes"; clip: BoxClip }
+  | { kind: "stickers"; clip: StickerClip }
+  | { kind: "pages"; clip: PageClip }
+  | { kind: "ink"; clip: InkClip };
 
 let current: AppClip | null = null;
 

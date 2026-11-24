@@ -10,6 +10,7 @@ import { curveSpec, defaultShape, dragShape, lineSpec, makeShapeStroke, type Sha
 import { eraserTakes, eraseStrokeArea, type EraserMode, type EraserTarget } from "./eraser";
 import { capPrediction, keepPoint, SMOOTH_V2, stabilizeOf, type Dropped, type StabilizeLevel } from "./smoothing";
 import type { PenButtonAction } from "./penButton";
+import { LASSO_TAP_PX } from "./selection";
 import type { InkPoint, PenNib, ShapeSpec, Stroke, Tool } from "./types";
 
 interface Props {
@@ -54,14 +55,18 @@ interface Props {
   onShapeDrawn?: (strokeId: string) => void;
   /** 도형 모드: 고른 도형을 펜으로 끌어 그리기 / auto면 그린 획을 뗄 때 알아본 도형으로 */
   shapeTool?: ShapeTool | null;
+  /** 올가미 (v0.43): 둘러싼 자리(페이지 px). tap이면 거의 움직이지 않고 톡 누른 것 */
+  onLasso?: (poly: [number, number][], tap: boolean) => void;
 }
 
 interface Gesture {
   pointerId: number;
   /** 펜·마우스·손 (inputState.pointerKind) */
   pointerType: PointerKind;
-  /** laser (v0.33): 레이저 펜 — 그리기만 하고 저장하지 않는다 */
-  mode: "draw" | "erase" | "laser";
+  /** laser (v0.33): 레이저 펜 — 그리기만 하고 저장하지 않는다. lasso (v0.43): 올가미 — 둘러싼 자리를 알린다 */
+  mode: "draw" | "erase" | "laser" | "lasso";
+  /** 올가미 자리 (페이지 px, mode lasso) */
+  lasso: [number, number][] | null;
   /** 레이저 펜 자국 (mode laser) */
   laser: Laser | null;
   /** 곧게 긋는 형광펜 (v0.33): 댄 곳부터 늘 직선, 뗀 뒤 고르지 않음 */
@@ -309,6 +314,37 @@ export function InkCanvas(props: Props) {
       liveBox = { x0: x - r - 2, y0: y - r - 2, x1: x + r + 2, y1: y + r + 2 };
     };
 
+    /** 올가미 (v0.43): 지나간 자리를 점선으로, 처음 점까지 닫힌 모양으로 옅게 칠한다 */
+    const drawLasso = (pts: [number, number][]) => {
+      clearLive();
+      const s = scale();
+      const z = propsRef.current.zoom || 1;
+      liveCtx.setTransform(s, 0, 0, s, 0, 0);
+      liveCtx.beginPath();
+      let x0 = Infinity;
+      let y0 = Infinity;
+      let x1 = -Infinity;
+      let y1 = -Infinity;
+      pts.forEach(([x, y], i) => {
+        if (i) liveCtx.lineTo(x, y);
+        else liveCtx.moveTo(x, y);
+        x0 = Math.min(x0, x);
+        y0 = Math.min(y0, y);
+        x1 = Math.max(x1, x);
+        y1 = Math.max(y1, y);
+      });
+      liveCtx.closePath();
+      liveCtx.fillStyle = "rgba(21,101,192,0.07)";
+      liveCtx.fill();
+      liveCtx.setLineDash([6 / z, 4 / z]);
+      liveCtx.lineWidth = 1.6 / z;
+      liveCtx.strokeStyle = "rgba(21,101,192,0.95)";
+      liveCtx.stroke();
+      liveCtx.setLineDash([]);
+      const m = 4 / z;
+      liveBox = { x0: x0 - m, y0: y0 - m, x1: x1 + m, y1: y1 + m };
+    };
+
     const renderLive = (stroke: Stroke, predicted: InkPoint[]) => {
       const t0 = performance.now();
       clearLive(true);
@@ -409,7 +445,14 @@ export function InkCanvas(props: Props) {
       // 사이드 버튼을 누르고 있으면 도구와 상관없이 버튼 동작(기본 지우개, v0.33부터 레이저 펜·형광펜도)
       // (안드로이드 앱: 펜이 닿는 순간 버튼이 눌려 있었는지 앱에 물어 획 전체를 정한다. 중간에 버튼을 떼도 그대로)
       const button = penStrokeErasing(e) ? (props0.penButton ?? "eraser") : null;
-      const mode = tool === "eraser" || button === "eraser" ? "erase" : tool === "laser" || button === "laser" ? "laser" : "draw";
+      const mode =
+        tool === "eraser" || button === "eraser"
+          ? "erase"
+          : tool === "laser" || button === "laser"
+            ? "laser"
+            : tool === "lasso" || button === "lasso"
+              ? "lasso"
+              : "draw";
       // 그릴 펜: 버튼 형광펜이면 그 형광펜, 아니면 지금 펜 바 펜
       const hlButton = button === "highlighter" ? props0.buttonHighlighter : undefined;
       const style = hlButton
@@ -428,6 +471,7 @@ export function InkCanvas(props: Props) {
         pointerType: pointerKind(e),
         mode,
         laser: null,
+        lasso: null,
         autoStraight: false,
         rect,
         stroke: null,
@@ -459,6 +503,12 @@ export function InkCanvas(props: Props) {
         gesture.laser = { pts: [[x, y]], end: 0 };
         lasers.push(gesture.laser);
         kickLaser();
+        return;
+      }
+      if (mode === "lasso") {
+        const { x, y } = toPagePx(e, rect);
+        gesture.lasso = [[x, y]];
+        drawLasso(gesture.lasso);
         return;
       }
       gesture.stroke = {
@@ -626,6 +676,16 @@ export function InkCanvas(props: Props) {
         kickLaser();
         return;
       }
+      if (gesture.mode === "lasso") {
+        const pts = gesture.lasso!;
+        for (const ev of events) {
+          const { x, y } = toPagePx(ev, gesture.rect);
+          const last = pts[pts.length - 1];
+          if (Math.abs(x - last[0]) + Math.abs(y - last[1]) > 0.5) pts.push([x, y]);
+        }
+        drawLasso(pts);
+        return;
+      }
       const stroke = gesture.stroke!;
       if (gesture.drag) {
         const { x, y } = toPagePx(e, gesture.rect);
@@ -702,6 +762,14 @@ export function InkCanvas(props: Props) {
         endLaser(g);
         return;
       }
+      if (g.mode === "lasso") {
+        if (cancelled) return;
+        const pts = g.lasso!;
+        let len = 0;
+        for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+        propsRef.current.onLasso?.(pts, len * (propsRef.current.zoom || 1) < LASSO_TAP_PX);
+        return;
+      }
       if (cancelled && g.pointerType === "touch") return;
       let stroke = g.stroke!;
       // 곧게 긋는 형광펜: 움직이지 않았거나(톡) 너무 짧으면 남기지 않는다
@@ -773,7 +841,7 @@ export function InkCanvas(props: Props) {
       if (!gesture) return;
       clearTimeout(gesture.holdTimer);
       ignored = gesture.pointerId;
-      if (gesture.mode === "draw" || gesture.mode === "laser") cancelGesture();
+      if (gesture.mode === "draw" || gesture.mode === "laser" || gesture.mode === "lasso") cancelGesture();
       else {
         const g = gesture;
         gesture = null;

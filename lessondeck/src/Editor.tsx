@@ -27,6 +27,7 @@ import {
   FilePlus2,
   Hand,
   Highlighter,
+  Lasso,
   Link2,
   Minimize2,
   Minus,
@@ -68,7 +69,7 @@ import {
   stepBoxSize,
   type BoxClip,
 } from "./doc/boxes";
-import { getClip, setClip, type AppClip, type PageClip, type StickerClip } from "./doc/clipboard";
+import { getClip, setClip, type AppClip, type InkClip, type PageClip, type StickerClip } from "./doc/clipboard";
 import { newVeil } from "./doc/boxAnim";
 import { pageAssetIds, pdfPagesUsed, planPaste } from "./doc/pageClip";
 import {
@@ -122,12 +123,28 @@ import { safeFileName, shareOrDownload } from "./lib/files";
 import { onPenDown, onSideButtonChange, palmActive, penButtonRecently, pointerKind } from "./lib/inputState";
 import { hasShape, SHAPE_NAMES, shapeAt, withShape, type ShapeTool } from "./ink/shapes";
 import { shiftStroke } from "./ink/shift";
+import {
+  frameAffine,
+  frameOf,
+  lassoSelect,
+  pasteAffine,
+  recolorStrokes,
+  recolorTool,
+  reorderStrokes,
+  replaceStrokes,
+  rewidthStrokes,
+  strokeAtPx,
+  transformStrokes,
+  type SelFrame,
+} from "./ink/selection";
+import { HIGHLIGHTER_COLORS, PEN_COLORS } from "./ink/palette";
 import { ShapePicker } from "./ui/ShapePicker";
 import { followDetour, stepSkipping, type Detour } from "./doc/detours";
 import { addArrow, flipArrow, moveArrowEnd, patchArrow, removeArrow, type ArrowTarget } from "./doc/arrows";
 import { cleanFormat, type BoxFormat } from "./doc/boxFonts";
 import { josa } from "./lib/josa";
 import { ShapeEditor } from "./view/ShapeEditor";
+import { SelectionEditor } from "./view/SelectionEditor";
 import { fingerOperatesWeb, isNativeApp, showToast } from "./lib/platform";
 import { AI_APPS, captureShownPage, lastAiApp, rememberAiApp, shareToAi, type AiAppId } from "./lib/aiShare";
 import { AI_SHOT_ID, type AiRequest } from "./doc/aiScratch";
@@ -260,6 +277,8 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
   /** 스포이트로 색을 고르는 중 (v0.42): 다 고르면 그 펜 설정 창을 같은 자리에 다시 연다 */
   const [eyedrop, setEyedrop] = useState<{ presetId: string; left: number; top: number } | null>(null);
   const [tool, setTool] = useState<Tool>("pen");
+  const presetToolRef = useRef(activePreset.tool);
+  presetToolRef.current = activePreset.tool;
   /** S펜 버튼을 누르고 있는지 (inputState) */
   const [sideDown, setSideDown] = useState(false);
   /** 버튼 동작이 지우개일 때만 버튼을 누르는 동안 지우개 표시 */
@@ -319,6 +338,12 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
   >(null);
   /** 고른 도형 획 (손잡이로 크기·회전·옮기기) / 끄는 중의 모양 */
   const [selectedShape, setSelectedShape] = useState<string | null>(null);
+  /**
+   * 올가미로 고른 필기 (v0.43): 페이지, 획 id, 틀(화면에 보이는 좌표의 페이지 px), 고를 때·고친 뒤의 획(다른 데서 바뀌면 — 실행 취소·지우개 — 놓는다).
+   * dragging이면 끄는 중이라 캔버스에서 빼고 고치는 화면이 바뀐 모양을 보여 준다
+   */
+  const [selection, setSelection] = useState<{ pageId: string; ids: string[]; frame: SelFrame; refs: Stroke[] } | null>(null);
+  const [selDragging, setSelDragging] = useState(false);
   const [shapeDraft, setShapeDraft] = useState<Stroke | null>(null);
   /** 도형 모드: 고른 도형을 펜으로 끌어 그리기 (auto: 그린 획을 뗄 때 알아봄). 펜·형광펜·지우개·텍스트를 고르면 끝 */
   const [shapeTool, setShapeTool] = useState<ShapeTool | null>(null);
@@ -385,7 +410,15 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
   const strokesRef = useRef(strokes);
   strokesRef.current = strokes;
   // 도형을 끄는 동안은 원래 획을 빼고 그린다 (고치는 화면이 바뀐 모양을 보여 준다)
-  const canvasStrokes = useMemo(() => (shapeDraft ? strokes.filter((s) => s.id !== shapeDraft.id) : strokes), [strokes, shapeDraft]);
+  // 올가미로 고른 필기를 끄는 동안도 (v0.43)
+  const canvasStrokes = useMemo(() => {
+    let out = shapeDraft ? strokes.filter((s) => s.id !== shapeDraft.id) : strokes;
+    if (selDragging && selection) {
+      const ids = new Set(selection.ids);
+      out = out.filter((s) => !ids.has(s.id));
+    }
+    return out;
+  }, [strokes, shapeDraft, selDragging, selection]);
   const erasing = tool === "eraser" || sideEraser;
   /** S펜 버튼 형광펜(v0.33)으로 쓸 형광펜: 펜 바에서 마지막으로 고른 것 */
   const buttonHighlighter = useMemo(() => {
@@ -778,11 +811,22 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
    */
   const inkShiftRef = useRef<{ pageId: string; x: number; y: number }>({ pageId: "", x: 0, y: 0 });
   const inkShift = () => (inkShiftRef.current.pageId === currentIdRef.current ? inkShiftRef.current : { x: 0, y: 0 });
+  /** 올가미로 고른 획 — 화면에 보이는 좌표 (고치는 화면이 끌 때마다 다시 만들지 않게) */
+  const selShown = useMemo(() => {
+    if (!selection || selection.pageId !== currentId) return NO_STROKES;
+    const ids = new Set(selection.ids);
+    const sh = inkShiftRef.current.pageId === currentId ? inkShiftRef.current : { x: 0, y: 0 };
+    const picked = strokes.filter((s) => ids.has(s.id));
+    return sh.x || sh.y ? picked.map((s) => shiftStroke(s, -sh.x, -sh.y)) : picked;
+  }, [selection, strokes, currentId]);
   const onInkShift = useCallback((pageId: string, scroll: { x: number; y: number }) => {
     const prev = inkShiftRef.current;
     inkShiftRef.current = { pageId, x: scroll.x, y: scroll.y };
     // 고른 도형의 손잡이가 웹앱과 함께 움직이지 않으므로 스크롤되면 놓는다
-    if (prev.pageId === pageId && (prev.x !== scroll.x || prev.y !== scroll.y)) setSelectedShape(null);
+    if (prev.pageId === pageId && (prev.x !== scroll.x || prev.y !== scroll.y)) {
+      setSelectedShape(null);
+      setSelection(null);
+    }
   }, []);
 
   // ── 도형 ───────────────────────────────────────────────
@@ -826,7 +870,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
   const enterShapeMode = (kind: ShapeTool) => {
     setPopover(null);
     if (textMode) leaveTextMode();
-    if (tool === "eraser" || tool === "laser") setTool(activePreset.tool);
+    if (tool === "eraser" || tool === "laser" || tool === "lasso") setTool(activePreset.tool);
     if (onInteractive) setWebMode("ink");
     setShapeTool(kind);
     showToast(
@@ -878,6 +922,180 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
     };
   }, []);
 
+  // ── 올가미 (v0.43, SPEC 6장 "올가미") ──────────────────
+  /** 화면에 보이는 좌표의 획 (HTML 페이지는 웹앱 스크롤만큼 옮김) */
+  const shownStrokes = (list: Stroke[]) => {
+    const sh = inkShift();
+    return sh.x || sh.y ? list.map((s) => shiftStroke(s, -sh.x, -sh.y)) : list;
+  };
+  /** 저장할 좌표로 되돌림 */
+  const savedStrokes = (list: Stroke[]) => {
+    const sh = inkShift();
+    return sh.x || sh.y ? list.map((s) => shiftStroke(s, sh.x, sh.y)) : list;
+  };
+  const selectedStrokes = (): Stroke[] => {
+    const sel = selection;
+    if (!sel || sel.pageId !== currentIdRef.current) return [];
+    const ids = new Set(sel.ids);
+    return strokesRef.current.filter((s) => ids.has(s.id));
+  };
+  /** 이 획들을 고른다 (틀은 화면 좌표로 감싼 상자) */
+  const selectStrokes = (picked: Stroke[]) => {
+    const g = pageGeometry();
+    const frame = g && frameOf(shownStrokes(picked), g.size);
+    if (!frame || !picked.length) {
+      setSelection(null);
+      return;
+    }
+    setSelectedShape(null);
+    setSelDragging(false);
+    setSelection({ pageId: currentIdRef.current, ids: picked.map((s) => s.id), frame, refs: picked });
+  };
+  const onLasso = (poly: [number, number][], tap: boolean) => {
+    const g = pageGeometry();
+    if (!g || !g.rect.width) return;
+    const shown = shownStrokes(strokesRef.current);
+    let ids: string[];
+    if (tap) {
+      // 톡: 그 자리의 획 하나 (화면 10px 안)
+      const hit = strokeAtPx(shown, poly[0][0], poly[0][1], g.size, (10 * g.size.width) / g.rect.width);
+      ids = hit ? [hit.id] : [];
+    } else ids = lassoSelect(shown, poly, g.size);
+    if (!ids.length) {
+      setSelection(null);
+      if (!tap) showToast("둘러싼 곳에 고를 필기가 없습니다");
+      return;
+    }
+    const set = new Set(ids);
+    selectStrokes(strokesRef.current.filter((s) => set.has(s.id)));
+  };
+  /** 고른 획을 바꿔 저장하고 계속 고른 채로 (frame이 있으면 틀도) */
+  const commitSelection = (changed: Stroke[], frame?: SelFrame, all = replaceStrokes(strokesRef.current, changed)) => {
+    const sel = selection;
+    if (!sel) return;
+    inkAction({ type: "commit", strokes: all });
+    setSelection({ ...sel, frame: frame ?? sel.frame, refs: changed });
+    setSelDragging(false);
+  };
+  const transformSelection = (next: SelFrame) => {
+    const g = pageGeometry();
+    if (!selection || !g) return;
+    const m = frameAffine(selection.frame, next);
+    commitSelection(savedStrokes(transformStrokes(shownStrokes(selectedStrokes()), m, g.size)), next);
+  };
+  const copySelection = (cut = false) => {
+    const picked = selectedStrokes();
+    const g = pageGeometry();
+    if (!picked.length || !g) return;
+    putClip({ kind: "ink", clip: { docId: docRef.current.id, pageId: currentIdRef.current, strokes: picked, aspect: g.size.height / g.size.width } });
+    if (cut) {
+      deleteSelection();
+      showToast("필기를 잘라냈습니다. 붙일 곳을 길게 눌러 붙여넣기 (다른 페이지·문서도)");
+    } else showToast("필기를 복사했습니다. 붙일 곳을 길게 눌러 붙여넣기 (다른 페이지·문서도)");
+  };
+  const deleteSelection = () => {
+    const ids = new Set(selection?.ids ?? []);
+    if (!ids.size) return;
+    inkAction({ type: "commit", strokes: strokesRef.current.filter((s) => !ids.has(s.id)) });
+    setSelection(null);
+    setSelDragging(false);
+  };
+  /** 붙인 획: 새 id, 페이지 가로 기준 같은 크기. at(0~1, 화면에 보이는 자리)이면 가운데를 거기에, 같은 페이지면 조금 비켜서 */
+  const placeInk = (c: InkClip, at: { x: number; y: number } | undefined, nudge: boolean): Stroke[] | null => {
+    const g = pageGeometry();
+    if (!g) return null;
+    const to = g.size;
+    const from = { width: to.width, height: to.width * c.aspect };
+    const sh = inkShift();
+    const atPx: [number, number] | null = at ? [(at.x + sh.x) * to.width, (at.y + sh.y) * to.height] : null;
+    const m = pasteAffine(c.strokes, from, to, atPx, nudge);
+    return transformStrokes(c.strokes, m, from, to).map((s) => ({ ...s, id: newId("s") }));
+  };
+  const pasteInk = (c: InkClip, at?: { x: number; y: number }) => {
+    const here = c.docId === docRef.current.id && c.pageId === currentIdRef.current;
+    const pasted = placeInk(c, at, !at && here);
+    if (!pasted?.length) return;
+    inkAction({ type: "commit", strokes: [...strokesRef.current, ...pasted] });
+    selectStrokes(pasted);
+  };
+  const duplicateSelection = () => {
+    const picked = selectedStrokes();
+    const g = pageGeometry();
+    if (!picked.length || !g) return;
+    const copies = placeInk({ docId: docRef.current.id, pageId: currentIdRef.current, strokes: picked, aspect: g.size.height / g.size.width }, undefined, true);
+    if (!copies) return;
+    inkAction({ type: "commit", strokes: [...strokesRef.current, ...copies] });
+    selectStrokes(copies);
+  };
+  const recolorSelection = (color: string) => {
+    const g = pageGeometry();
+    if (!g) return;
+    const picked = selectedStrokes();
+    commitSelection(recolorStrokes(picked, color, g.size));
+    rememberColor(recolorTool(picked), color);
+  };
+  const rewidthSelection = (k: number) => {
+    const g = pageGeometry();
+    if (g) commitSelection(rewidthStrokes(selectedStrokes(), k, g.size));
+  };
+  const reorderSelection = (to: "front" | "back") => {
+    if (!selection) return;
+    commitSelection(selectedStrokes(), undefined, reorderStrokes(strokesRef.current, selection.ids, to));
+    showToast(to === "front" ? "고른 필기를 맨 앞으로 옮겼습니다" : "고른 필기를 맨 뒤로 옮겼습니다");
+  };
+  // 다른 페이지로 가거나, 고른 획이 다른 데서 바뀌면(실행 취소·지우개·동기화) 놓는다
+  useEffect(() => {
+    if (!selection) return;
+    if (selection.pageId !== currentId) {
+      setSelection(null);
+      return;
+    }
+    const now = new Map(strokes.map((s) => [s.id, s]));
+    if (selection.refs.some((r) => now.get(r.id) !== r)) setSelection(null);
+  }, [selection, strokes, currentId]);
+  // 도형을 고르면(그리다 멈춤 등) 올가미 고르기는 놓는다
+  useEffect(() => {
+    if (selectedShape) setSelection(null);
+  }, [selectedShape]);
+  // 고른 채 다른 곳을 누르면 놓는다 (누름은 그대로 지나가 바로 이어 쓰거나 다시 둘러쌀 수 있다)
+  useEffect(() => {
+    if (!selection) return;
+    const onDown = (e: PointerEvent) => {
+      if ((e.target as Element).closest?.(".se-ui")) return;
+      setSelection(null);
+      setSelDragging(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.target as Element)?.closest?.("input, textarea, [contenteditable]")) return;
+      if (e.key === "Escape") setSelection(null);
+      else if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        deleteSelectionRef.current();
+      }
+    };
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [!!selection]);
+  const deleteSelectionRef = useRef(deleteSelection);
+  deleteSelectionRef.current = deleteSelection;
+  /** 올가미 도구 켜고 끄기 (다시 누르면 쓰던 펜으로) */
+  const toggleLasso = () => {
+    if (tool === "lasso" && !textMode && !shapeTool) {
+      selectPreset(activePresetId);
+      return;
+    }
+    setShapeTool(null);
+    leaveTextMode();
+    setTool("lasso");
+    setPopover(null);
+    if (onInteractive) setWebMode("ink");
+    showToast("올가미: 고를 필기를 펜으로 둘러싸세요 (톡 누르면 그 획 하나)");
+  };
+
   // S펜 사이드 버튼을 누르는 동안 툴바의 지우개를 켠다
   useEffect(() => onSideButtonChange(setSideDown), []);
   // 펜 모드 (오픈소스 화이트보드 Excalidraw·tldraw와 같은 방식): 손가락 필기를 켜 둔 채 S펜을 쓰면 손가락 필기를 끈다.
@@ -906,6 +1124,9 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
     setSelectedSticker(null);
     setCropping(false);
     setSelectedShape(null);
+    setSelection(null);
+    // 올가미는 강의 중에 쓰지 않으므로 쓰던 펜으로
+    setTool((t) => (t === "lasso" ? presetToolRef.current : t));
     detours.current = [];
     setSeenViaLink([]);
     setRevealed(new Set());
@@ -1422,6 +1643,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
     const c = getClip();
     if (c?.kind === "boxes") pasteClip(c.clip, at);
     else if (c?.kind === "stickers") void pasteStickers(c.clip, at);
+    else if (c?.kind === "ink") pasteInk(c.clip, at);
     else if (c?.kind === "pages") void pastePages(docRef.current.pages.findIndex((p) => p.id === currentIdRef.current) + 1);
   };
 
@@ -1471,7 +1693,14 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
       return;
     }
     const blank = blankPage(index);
-    if (c.kind === "boxes") {
+    if (c.kind === "ink") {
+      // 올가미로 복사한 필기 (v0.43): 그 획을 담은 빈 페이지 (가로 기준 같은 크기·자리)
+      const to = { width: 1000, height: 1000 / blank.aspect };
+      const from = { width: 1000, height: 1000 * c.clip.aspect };
+      const strokes = transformStrokes(c.clip.strokes, pasteAffine(c.clip.strokes, from, to, null, false), from, to).map((s) => ({ ...s, id: newId("s") }));
+      setDoc((d) => ({ ...d, pages: insertPages(d.pages, index, [blank]) }));
+      setInk((b) => ({ ...b, [blank.id]: { past: [], present: strokes, future: [] } }));
+    } else if (c.kind === "boxes") {
       setDoc((d) => ({ ...d, pages: pasteBoxes(insertPages(d.pages, index, [blank]), blank.id, c.clip, d.id).pages }));
     } else {
       const imported = await importAssets(docRef.current, c.clip.docId, c.clip.assets, {}, !aiMode);
@@ -2006,13 +2235,36 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
     editingBox,
     selectedSticker,
     clip,
+    selection,
+    copySelection,
   });
-  clipRef.current = { copyBox, cutBox, pasteClip, pasteText, pasteAny, copySticker, insertStickers, selectedBox, editingBox, selectedSticker, clip };
+  clipRef.current = {
+    copyBox,
+    cutBox,
+    pasteClip,
+    pasteText,
+    pasteAny,
+    copySticker,
+    insertStickers,
+    selectedBox,
+    editingBox,
+    selectedSticker,
+    clip,
+    selection,
+    copySelection,
+  };
   useEffect(() => {
     const typing = (e: Event) => !!(e.target as Element)?.closest?.("input, textarea, [contenteditable]");
     const onCopyCut = (e: ClipboardEvent) => {
       const c = clipRef.current;
       if (typing(e) || c.editingBox || window.getSelection()?.toString()) return;
+      // 올가미로 고른 필기 (v0.43): 시스템 클립보드는 비워 둔다
+      if (c.selection) {
+        c.copySelection(e.type === "cut");
+        e.clipboardData?.setData("text/plain", "");
+        e.preventDefault();
+        return;
+      }
       if (c.selectedSticker) {
         // 시스템 클립보드는 비워 둔다 (붙일 때 예전에 복사한 글이 대신 붙지 않게)
         void c.copySticker(c.selectedSticker, e.type === "cut");
@@ -2263,6 +2515,9 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
           <Eraser size={24} />
           {sideEraser && <span className="side-badge" aria-hidden="true" />}
         </IconButton>
+        <IconButton label="올가미" active={tool === "lasso" && !textMode && !shapeTool} disabled={!currentPage} onClick={toggleLasso}>
+          <Lasso size={23} />
+        </IconButton>
         <IconButton
           label="텍스트 상자"
           active={textMode && !veilMode}
@@ -2378,6 +2633,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
           strokes={canvasStrokes}
           onShapeDrawn={setSelectedShape}
           shapeTool={shapeTool}
+          onLasso={onLasso}
           tool={tool}
           color={activePreset.color}
           width={activePreset.width}
@@ -2503,7 +2759,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
                   assets={doc.assets}
                   size={size}
                   live={liveSticker}
-                  interactive={!textMode && !selectedSticker && !selectedShape && !connectFrom}
+                  interactive={!textMode && !selectedSticker && !selectedShape && !selection && !connectFrom}
                 />
                 {(() => {
                   const sticker = stickersOf(currentPage).find((s) => s.id === selectedSticker);
@@ -2547,6 +2803,35 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
                       onDuplicate={() => duplicateShape(s.id)}
                       onDelete={() => deleteShape(s.id)}
                       onDone={() => setSelectedShape(null)}
+                    />
+                  );
+                })()}
+                {(() => {
+                  // 올가미로 고른 필기 (v0.43): 화면에 보이는 좌표로 고치고 저장할 때 되돌린다
+                  if (!selection || selection.pageId !== currentPage.id) return null;
+                  const picked = selShown;
+                  if (!picked.length) return null;
+                  const tool = recolorTool(picked);
+                  const colors = picked.filter((x) => x.tool === tool).map((x) => x.color);
+                  return (
+                    <SelectionEditor
+                      strokes={picked}
+                      frame={selection.frame}
+                      size={size}
+                      onLive={setSelDragging}
+                      onTransform={transformSelection}
+                      onCut={() => copySelection(true)}
+                      onCopy={() => copySelection()}
+                      onDuplicate={duplicateSelection}
+                      onDelete={deleteSelection}
+                      colors={{
+                        palette: tool === "pen" ? PEN_COLORS : HIGHLIGHTER_COLORS,
+                        current: colors.every((c) => c === colors[0]) ? colors[0] : null,
+                      }}
+                      onRecolor={recolorSelection}
+                      onRewidth={rewidthSelection}
+                      onOrder={reorderSelection}
+                      onDone={() => setSelection(null)}
                     />
                   );
                 })()}
@@ -2632,7 +2917,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
           {paletteOpen && (
             <PenPalette
               presets={presets}
-              activeId={erasing || textMode || tool === "laser" ? null : activePresetId}
+              activeId={erasing || textMode || tool === "laser" || tool === "lasso" ? null : activePresetId}
               onSelect={selectPreset}
               onOpenSettings={openPresetSettings}
               laserActive={tool === "laser" && !textMode}
