@@ -145,6 +145,7 @@ export function PageView(props: Props) {
   const ring = useLongPressMenu(areaRef, {
     onLongPress: props.onLongPress,
     penLongPress: props.penLongPress,
+    fingerWriting: props.fingerDraw,
     // 손가락이 웹앱으로 가는 앱(v0.35)에서는 모드를 바꾸지 않는다
     onFingerTap: web && props.webMode === "ink" && !props.fingerDraw && !fingerOperatesWeb ? props.onFingerTapWeb : undefined,
   });

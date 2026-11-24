@@ -8,8 +8,15 @@ export interface LongPress {
   target: Element;
 }
 
-/** 길게 누르기로 보는 시간 (펜은 점 찍기와 헷갈리지 않게 조금 길게) */
-const LONG_PRESS_MS = { pen: 600, touch: 500 } as const;
+/**
+ * 길게 누르기 시간 (v0.47.1, SPEC 6장 "길게 누르기 메뉴"): 누른 뒤 wait 동안은 아무것도 보이지 않고, 그다음 fill 동안 원이 차오른 뒤 메뉴.
+ * 쓰는 펜(과 손가락 필기를 켰을 때의 손가락)은 판서하다 잠깐 멈춘 것과 헷갈리지 않게 0.4초를 기다린 뒤 0.7초 (0.47까지는 0.15초 뒤 원, 0.6초에 메뉴).
+ * 쓰지 않는 손가락은 예전처럼 빠르게
+ */
+export const LONG_PRESS = {
+  write: { wait: 400, fill: 700 },
+  touch: { wait: 150, fill: 350 },
+} as const;
 export const LONG_PRESS_SLOP = 10;
 
 interface Options {
@@ -19,6 +26,8 @@ interface Options {
   penLongPress?: boolean;
   /** 손가락으로 필기층을 톡 눌렀을 때 (판서 모드 웹 페이지 → 조작 모드) */
   onFingerTap?: () => void;
+  /** 손가락 필기가 켜져 있다: 손가락도 펜처럼 느리게 (v0.47.1) */
+  fingerWriting?: boolean;
 }
 
 /**
@@ -33,6 +42,8 @@ export function useLongPressMenu(areaRef: RefObject<HTMLElement | null>, opts: O
   penLongPressRef.current = opts.penLongPress ?? true;
   const fingerTapRef = useRef(opts.onFingerTap);
   fingerTapRef.current = opts.onFingerTap;
+  const fingerWritingRef = useRef(!!opts.fingerWriting);
+  fingerWritingRef.current = !!opts.fingerWriting;
   useEffect(() => {
     const area = areaRef.current!;
     let press: { id: number; x: number; y: number; type: string; target: Element; timer: number; ringTimer: number } | null = null;
@@ -79,7 +90,7 @@ export function useLongPressMenu(areaRef: RefObject<HTMLElement | null>, opts: O
       if (kind === "pen" && (!penLongPressRef.current || penStrokeErasing(e))) return;
       const target = e.target as Element;
       if (!eligible(target)) return;
-      const ms = kind === "pen" ? LONG_PRESS_MS.pen : LONG_PRESS_MS.touch;
+      const t = kind === "pen" || fingerWritingRef.current ? LONG_PRESS.write : LONG_PRESS.touch;
       const r = area.getBoundingClientRect();
       const x = e.clientX;
       const y = e.clientY;
@@ -89,9 +100,9 @@ export function useLongPressMenu(areaRef: RefObject<HTMLElement | null>, opts: O
         y,
         type: kind,
         target,
-        // 잠깐 지나면 누른 자리에 원이 차오르며 곧 메뉴가 열린다는 걸 보여 준다
-        ringTimer: window.setTimeout(() => setRing({ x: x - r.left, y: y - r.top, ms: ms - 150 }), 150),
-        timer: window.setTimeout(fire, ms),
+        // 기다린 뒤에야 누른 자리에 원이 차오르며 곧 메뉴가 열린다는 걸 보여 준다
+        ringTimer: window.setTimeout(() => setRing({ x: x - r.left, y: y - r.top, ms: t.fill }), t.wait),
+        timer: window.setTimeout(fire, t.wait + t.fill),
       };
     };
     const onMove = (e: PointerEvent) => {

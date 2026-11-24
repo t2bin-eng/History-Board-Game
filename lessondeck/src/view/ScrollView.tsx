@@ -543,6 +543,7 @@ export function ScrollView(props: Props) {
         }
       : undefined,
     penLongPress: props.penLongPress,
+    fingerWriting: props.fingerDraw,
   });
 
   // 웹 주소 페이지 주소들 (안드로이드 앱이 띄우기 거부 머리글을 처리, PageView와 같음)
