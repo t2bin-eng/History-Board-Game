@@ -1,7 +1,7 @@
 import { Check, Trash2 } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { RICH_COLORS, RICH_HIGHLIGHTERS } from "../doc/swatches";
-import { ERASER_TARGETS, type EraserTarget } from "../ink/eraser";
+import { ERASER_MODES, ERASER_TARGETS, type EraserMode, type EraserTarget } from "../ink/eraser";
 import { PEN_BUTTON_ACTIONS, type PenButtonAction } from "../ink/penButton";
 import { ERASER_LEVELS, HIGHLIGHTER_ALPHA, WIDTH_LEVELS } from "../ink/palette";
 import type { PenPreset } from "../ink/types";
@@ -31,6 +31,9 @@ type Props =
       /** 지울 것 (v0.32): 전부 · 펜만 · 형광펜만 */
       eraserTarget: EraserTarget;
       onEraserTarget: (target: EraserTarget) => void;
+      /** 지우는 방법 (v0.40): 획 통째로 · 문지른 부분만 */
+      eraserMode: EraserMode;
+      onEraserMode: (mode: EraserMode) => void;
       onClearPage: () => void;
       onClose: () => void;
     };
@@ -153,7 +156,20 @@ export function ToolSettings(props: Props) {
         </>
       ) : (
         <>
-          <div className="ts-title">지우개 (획 단위)</div>
+          <div className="ts-title">지우개 ({props.eraserMode === "area" ? "문지른 부분만" : "획 통째로"})</div>
+          <div className="ts-row ts-targets" role="radiogroup" aria-label="지우는 방법">
+            {ERASER_MODES.map((m) => (
+              <button
+                key={m.id}
+                role="radio"
+                aria-checked={props.eraserMode === m.id}
+                className={`ts-target${props.eraserMode === m.id ? " active" : ""}`}
+                onClick={() => props.onEraserMode(m.id)}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
           <div className="ts-row" role="radiogroup" aria-label="지우개 크기">
             {ERASER_LEVELS.map((s, i) => (
               <button

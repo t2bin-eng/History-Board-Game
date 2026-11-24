@@ -18,7 +18,7 @@ import { shiftedView } from "../ink/shift";
 import { useWebScroll, type WebScroll } from "./webScroll";
 import { NATIVE_PAGE, onFramePinch, setNativePinchZone } from "./frameInput";
 import { fingerOperatesWeb, isNativeApp } from "../lib/platform";
-import type { EraserTarget } from "../ink/eraser";
+import type { EraserMode, EraserTarget } from "../ink/eraser";
 import type { PenButtonAction } from "../ink/penButton";
 import { WebStage } from "./WebStage";
 
@@ -32,6 +32,7 @@ interface Props {
   eraserSize: number;
   /** 지우개가 지울 것 (v0.32) */
   eraserTarget?: EraserTarget;
+  eraserMode?: EraserMode;
   /** 펜 바 펜 설정 (v0.33): 형광펜 곧게 긋기 · 펜 고른 굵기 */
   straightLine?: boolean;
   fixedWidth?: boolean;
@@ -385,6 +386,7 @@ export function PageView(props: Props) {
             width={props.width}
             eraserSize={props.eraserSize}
             eraserTarget={props.eraserTarget}
+            eraserMode={props.eraserMode}
             straightLine={props.straightLine}
             fixedWidth={props.fixedWidth}
             penButton={props.penButton}

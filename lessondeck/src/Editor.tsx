@@ -110,11 +110,10 @@ import { parseYouTube } from "./doc/youtube";
 import { applyInk, type InkAction, type InkBook } from "./ink/history";
 import { docThumbPage, setDocThumbPage, useLibraryView } from "./store/library";
 import { pageBaseImage, pageFullImage, snapshotPage, thumbTarget, type PageImage } from "./view/pageSnapshot";
-import { ERASER_LEVELS } from "./ink/palette";
-import { ERASER_TARGETS, eraserTakes, loadEraserTarget, saveEraserTarget, type EraserTarget } from "./ink/eraser";
-import { loadPresets, savePresets } from "./ink/presets";
+import { eraserTakes } from "./ink/eraser";
+import { usePenSettings } from "./ink/usePenSettings";
 import { openUpdateDialog } from "./lib/appUpdate";
-import { loadPenButton, PEN_BUTTON_ACTIONS, savePenButton, type PenButtonAction } from "./ink/penButton";
+import { PEN_BUTTON_ACTIONS } from "./ink/penButton";
 import type { InkTool, PenPreset, Stroke, Tool } from "./ink/types";
 import { safeFileName, shareOrDownload } from "./lib/files";
 import { onPenDown, onSideButtonChange, palmActive, penButtonRecently, pointerKind } from "./lib/inputState";
@@ -232,34 +231,30 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
   const currentIdRef = useRef(currentId);
   currentIdRef.current = currentId;
 
-  /** 펜 바의 펜들 (v0.33부터 기기에 기억) */
-  const [presets, setPresets] = useState<PenPreset[]>(loadPresets);
-  const firstOf = (t: InkTool) => (presets.find((p) => p.tool === t) ?? presets[0]).id;
-  const [activePresetId, setActivePresetId] = useState(() => firstOf("pen"));
-  const [lastByTool, setLastByTool] = useState<Record<InkTool, string>>(() => ({
-    pen: firstOf("pen"),
-    highlighter: firstOf("highlighter"),
-  }));
-  useEffect(() => savePresets(presets), [presets]);
+  /** 펜 바·지우개 설정 (v0.40: ink/usePenSettings로 떼어 냄) */
+  const {
+    presets,
+    setPresets,
+    activePresetId,
+    setActivePresetId,
+    activePreset,
+    lastByTool,
+    setLastByTool,
+    penButton,
+    setPenButton,
+    eraserSize,
+    setEraserSize,
+    eraserTarget,
+    setEraserTarget,
+    eraserTargetLabel,
+    eraserMode,
+    setEraserMode,
+  } = usePenSettings();
   const [tool, setTool] = useState<Tool>("pen");
   /** S펜 버튼을 누르고 있는지 (inputState) */
   const [sideDown, setSideDown] = useState(false);
-  /** S펜 버튼을 누른 채 쓸 때 할 일 (v0.33): 지우개 · 레이저 펜 · 형광펜 — 기기에 기억 */
-  const [penButton, setPenButtonState] = useState<PenButtonAction>(loadPenButton);
-  const setPenButton = useCallback((a: PenButtonAction) => {
-    setPenButtonState(a);
-    savePenButton(a);
-  }, []);
   /** 버튼 동작이 지우개일 때만 버튼을 누르는 동안 지우개 표시 */
   const sideEraser = sideDown && penButton === "eraser";
-  const [eraserSize, setEraserSize] = useState(ERASER_LEVELS[1]);
-  /** 지우개가 지울 것 (v0.32): 전부 · 펜만 · 형광펜만 — 기기에 기억 */
-  const [eraserTarget, setEraserTargetState] = useState<EraserTarget>(loadEraserTarget);
-  const setEraserTarget = useCallback((t: EraserTarget) => {
-    setEraserTargetState(t);
-    saveEraserTarget(t);
-  }, []);
-  const eraserTargetLabel = ERASER_TARGETS.find((t) => t.id === eraserTarget)?.label ?? "전부";
   const [popover, setPopover] = useState<Popover>(null);
   const [addMenu, setAddMenu] = useState<{ index: number; left: number; top: number } | null>(null);
   const [fingerDraw, setFingerDraw] = usePersistentFlag("lessondeck.fingerDraw", false);
@@ -371,7 +366,6 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
   const fileTarget = useRef<FileTarget>({ kind: "pdf", index: 0 });
   const [fileAccept, setFileAccept] = useState(ACCEPT.pdf);
 
-  const activePreset = presets.find((p) => p.id === activePresetId) ?? presets[0];
   const pageIndex = Math.max(
     0,
     doc.pages.findIndex((p) => p.id === currentId),
@@ -2222,7 +2216,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
           {tool === "highlighter" && <span className="tool-color-dot" style={{ background: activePreset.color }} />}
         </IconButton>
         <IconButton
-          label={`${sideEraser ? "지우개 (사이드 버튼)" : "지우개"}${eraserTarget === "all" ? "" : ` · ${eraserTargetLabel}`}`}
+          label={`${sideEraser ? "지우개 (사이드 버튼)" : "지우개"}${eraserTarget === "all" ? "" : ` · ${eraserTargetLabel}`}${eraserMode === "area" ? " · 부분" : ""}`}
           active={erasing && !textMode}
           onClick={(e) => onToolButton("eraser", e)}
         >
@@ -2349,6 +2343,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
           width={activePreset.width}
           eraserSize={eraserSize}
           eraserTarget={eraserTarget}
+          eraserMode={eraserMode}
           straightLine={activePreset.tool === "highlighter" && !!activePreset.straight}
           fixedWidth={activePreset.tool === "pen" && !!activePreset.fixedWidth}
           penButton={penButton}
@@ -2661,6 +2656,11 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
           onEraserSize={setEraserSize}
           eraserTarget={eraserTarget}
           onEraserTarget={setEraserTarget}
+          eraserMode={eraserMode}
+          onEraserMode={(m) => {
+            setEraserMode(m);
+            showToast(m === "area" ? "지우개: 문지른 부분만 지웁니다" : "지우개: 닿은 획을 통째로 지웁니다");
+          }}
           onClearPage={() => {
             // 지울 것을 골라 두었으면 그것만 (펜만·형광펜만)
             if (eraserTarget === "all") inkAction({ type: "clear" });

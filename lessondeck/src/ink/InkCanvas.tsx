@@ -7,7 +7,7 @@ import { fillStroke, HIGHLIGHT_LAYER_STYLE, isHighlighter } from "./inkPaint";
 import { recognizeCurve } from "./curveFit";
 import { recognizeShape, type ShapeGuess } from "./shapeRecognize";
 import { curveSpec, defaultShape, dragShape, lineSpec, makeShapeStroke, type ShapeTool } from "./shapes";
-import { eraserTakes, type EraserTarget } from "./eraser";
+import { eraserTakes, eraseStrokeArea, type EraserMode, type EraserTarget } from "./eraser";
 import { capPrediction, keepPoint, SMOOTH_V2, type Dropped } from "./smoothing";
 import type { PenButtonAction } from "./penButton";
 import type { InkPoint, ShapeSpec, Stroke, Tool } from "./types";
@@ -23,6 +23,8 @@ interface Props {
   eraserSize: number;
   /** 지우개가 지울 것 (v0.32): 전부 · 펜 필기만 · 형광펜만 */
   eraserTarget?: EraserTarget;
+  /** 지우는 방법 (v0.40): 획 통째로(기본) · 문지른 부분만 */
+  eraserMode?: EraserMode;
   /** 지금 펜 바 펜의 설정 (v0.33): 형광펜 곧게 긋기 · 펜 고른 굵기 */
   straightLine?: boolean;
   fixedWidth?: boolean;
@@ -336,7 +338,25 @@ export function InkCanvas(props: Props) {
       const r = unitsToPx(propsRef.current.eraserSize, p);
       let changed = false;
       const target = propsRef.current.eraserTarget ?? "all";
+      const area = propsRef.current.eraserMode === "area";
       const hitAt = (x: number, y: number) => {
+        if (area) {
+          // 부분 지우개 (v0.40): 닿은 획에서 지우개 원 안의 부분만 잘라 내고 남은 조각은 둔다
+          let cut = false;
+          const next: Stroke[] = [];
+          for (const st of g.working) {
+            const pieces = eraserTakes(target, st) ? eraseStrokeArea(st, x, y, r, p, newId) : null;
+            if (pieces) {
+              next.push(...pieces);
+              cut = true;
+            } else next.push(st);
+          }
+          if (cut) {
+            g.working = next;
+            changed = true;
+          }
+          return;
+        }
         const next = g.working.filter((st) => !(eraserTakes(target, st) && strokeHitsCircle(st, x, y, r, p)));
         if (next.length !== g.working.length) {
           g.working = next;

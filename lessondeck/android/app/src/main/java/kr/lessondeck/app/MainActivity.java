@@ -1,5 +1,6 @@
 package kr.lessondeck.app;
 
+import android.os.Build;
 import android.os.Bundle;
 import android.view.InputDevice;
 import android.view.KeyEvent;
@@ -57,6 +58,7 @@ public class MainActivity extends BridgeActivity {
     public boolean dispatchTouchEvent(MotionEvent ev) {
         if (getBridge() != null) getBridge().getWebView().getLocationInWindow(webViewAt);
         MotionEvent clean = PenInput.normalizeTouch(ev, webViewAt[0], webViewAt[1]);
+        requestUnbuffered(clean != null ? clean : ev);
         showSideButton(PenInput.buttonDown);
         // 웹뷰가 이 접촉을 받기 전에 알린다 (펜이 닿는 순간 필기층이 받게)
         showPenNear();
@@ -112,6 +114,24 @@ public class MainActivity extends BridgeActivity {
                 );
         }
         return super.dispatchKeyEvent(ev);
+    }
+
+    /**
+     * S펜이 닿으면 그 획이 끝날 때까지 안드로이드가 입력을 화면 주기(약 16ms)에 모아 보내지 않고 오는 대로 웹뷰에 넘기게 한다
+     * (v0.40, 필기 지연 줄이기 — 삼성노트도 펜이 닿는 순간 같은 요청을 한다). 안드로이드 11부터 있는 기능이라 그 전에는 그대로.
+     * 펜 획에만: 손가락 넘기기·확대까지 그러면 일만 늘어난다.
+     */
+    private void requestUnbuffered(MotionEvent ev) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || getBridge() == null) return;
+        int masked = ev.getActionMasked();
+        if (masked != MotionEvent.ACTION_DOWN && masked != MotionEvent.ACTION_POINTER_DOWN) return;
+        int tool = ev.getToolType(ev.getActionIndex());
+        if (tool != MotionEvent.TOOL_TYPE_STYLUS && tool != MotionEvent.TOOL_TYPE_ERASER) return;
+        try {
+            getBridge().getWebView().requestUnbufferedDispatch(ev);
+        } catch (Exception e) {
+            // 기기가 받아 주지 않으면 그대로(모아 보냄)
+        }
     }
 
     /** CSS px 하나의 화면 px (웹뷰 viewport width=device-width라 dp와 같다) */
