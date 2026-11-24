@@ -218,6 +218,101 @@ button {
     linear-gradient(90deg, #dfe6ea 1px, transparent 1px);
 }
 
+/* ── 이어 보기 (v0.44): 페이지를 세로로 이어 붙인 띠를 스크롤 ── */
+.page-area.scroll-view {
+  display: block;
+}
+
+.page-strip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.page-strip > .page,
+.page-strip > .page-ph {
+  position: absolute;
+  left: 0;
+}
+
+.page-ph {
+  background: #fff;
+  box-shadow: var(--page-shadow);
+}
+
+/* 웹 페이지: 톡 누르기 전에는 손가락이 웹앱이 아니라 스크롤로 */
+.web-shield {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.page.hidden-page > :not(.hidden-badge):not(.ink-layer) {
+  opacity: 0.55;
+}
+
+.hidden-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.strip-tail {
+  position: absolute;
+  left: 0;
+  height: 80px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--icon-disabled);
+  font-size: 13px;
+}
+
+.strip-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 18px;
+  border: 1.5px dashed var(--chrome-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--icon);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  transition: transform 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.strip-pull-hint {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.strip-tail.pulling .strip-pull-hint {
+  opacity: 1;
+}
+
+.strip-tail.ready .strip-add {
+  transform: scale(1.08);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.strip-tail.ready .strip-pull-hint::after {
+  content: " — 놓으면 생깁니다";
+}
+
 .page-area-message {
   position: absolute;
   inset: 0;

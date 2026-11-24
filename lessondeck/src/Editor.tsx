@@ -42,6 +42,7 @@ import {
   Sparkles,
   Redo2,
   RotateCw,
+  Rows3,
   Share2,
   Trash2,
   Type,
@@ -119,6 +120,7 @@ import { pickColorAt } from "./lib/eyedropper";
 import { openUpdateDialog } from "./lib/appUpdate";
 import { PEN_BUTTON_ACTIONS } from "./ink/penButton";
 import type { InkTool, PenPreset, Stroke, Tool } from "./ink/types";
+import type { PageSize } from "./ink/geometry";
 import { safeFileName, shareOrDownload } from "./lib/files";
 import { onPenDown, onSideButtonChange, palmActive, penButtonRecently, pointerKind } from "./lib/inputState";
 import { hasShape, SHAPE_NAMES, shapeAt, withShape, type ShapeTool } from "./ink/shapes";
@@ -145,6 +147,8 @@ import { cleanFormat, type BoxFormat } from "./doc/boxFonts";
 import { josa } from "./lib/josa";
 import { ShapeEditor } from "./view/ShapeEditor";
 import { SelectionEditor } from "./view/SelectionEditor";
+import { ScrollView } from "./view/ScrollView";
+import { loadViewMode, saveViewMode, type ViewMode } from "./view/viewMode";
 import { fingerOperatesWeb, isNativeApp, showToast } from "./lib/platform";
 import { AI_APPS, captureShownPage, lastAiApp, rememberAiApp, shareToAi, type AiAppId } from "./lib/aiShare";
 import { AI_SHOT_ID, type AiRequest } from "./doc/aiScratch";
@@ -286,6 +290,12 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
   const [popover, setPopover] = useState<Popover>(null);
   const [addMenu, setAddMenu] = useState<{ index: number; left: number; top: number } | null>(null);
   const [fingerDraw, setFingerDraw] = usePersistentFlag("lessondeck.fingerDraw", false);
+  /** 보기 (v0.44): 이어 보기(세로 스크롤, 기본) · 한 장씩. 강의 모드는 늘 한 장씩 */
+  const [viewMode, setViewModeState] = useState<ViewMode>(loadViewMode);
+  const setViewMode = (m: ViewMode) => {
+    setViewModeState(m);
+    saveViewMode(m);
+  };
   /** 웹 페이지 판서 모드에서 펜은 판서, 손가락은 웹앱 조작 (v0.35, 안드로이드 앱 · 손가락 필기 끔) */
   const fingerWeb = fingerOperatesWeb && !fingerDraw;
   const fingerWebRef = useRef(fingerWeb);
@@ -804,26 +814,30 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
     if (id) setInk((b) => applyInk(b, id, action));
   }, []);
   const onCommit = useCallback((next: Stroke[]) => inkAction({ type: "commit", strokes: next }), [inkAction]);
+  /** 이어 보기 (v0.44): 지금 페이지가 아닌 페이지에도 쓴다 */
+  const onCommitPage = useCallback((pageId: string, next: Stroke[]) => setInk((b) => applyInk(b, pageId, { type: "commit", strokes: next })), []);
+  const onScrollCurrent = useCallback((pageId: string) => setCurrentId(pageId), []);
 
   /**
    * HTML 페이지 웹앱이 스크롤된 만큼 (v0.36): 획은 웹앱 문서 좌표로 저장하고 화면에는 이만큼 옮겨 그린다(PageView).
    * 스크롤할 때마다 편집 화면 전체를 다시 그리지 않도록 ref로 둔다
    */
-  const inkShiftRef = useRef<{ pageId: string; x: number; y: number }>({ pageId: "", x: 0, y: 0 });
-  const inkShift = () => (inkShiftRef.current.pageId === currentIdRef.current ? inkShiftRef.current : { x: 0, y: 0 });
+  // 페이지마다 (v0.44 이어 보기: 웹앱이 열린 HTML 페이지가 여럿일 수 있다)
+  const inkShiftRef = useRef<Record<string, { x: number; y: number }>>({});
+  const inkShift = () => inkShiftRef.current[currentIdRef.current] ?? { x: 0, y: 0 };
   /** 올가미로 고른 획 — 화면에 보이는 좌표 (고치는 화면이 끌 때마다 다시 만들지 않게) */
   const selShown = useMemo(() => {
     if (!selection || selection.pageId !== currentId) return NO_STROKES;
     const ids = new Set(selection.ids);
-    const sh = inkShiftRef.current.pageId === currentId ? inkShiftRef.current : { x: 0, y: 0 };
+    const sh = inkShiftRef.current[currentId] ?? { x: 0, y: 0 };
     const picked = strokes.filter((s) => ids.has(s.id));
     return sh.x || sh.y ? picked.map((s) => shiftStroke(s, -sh.x, -sh.y)) : picked;
   }, [selection, strokes, currentId]);
   const onInkShift = useCallback((pageId: string, scroll: { x: number; y: number }) => {
-    const prev = inkShiftRef.current;
-    inkShiftRef.current = { pageId, x: scroll.x, y: scroll.y };
-    // 고른 도형의 손잡이가 웹앱과 함께 움직이지 않으므로 스크롤되면 놓는다
-    if (prev.pageId === pageId && (prev.x !== scroll.x || prev.y !== scroll.y)) {
+    const prev = inkShiftRef.current[pageId];
+    inkShiftRef.current = { ...inkShiftRef.current, [pageId]: { x: scroll.x, y: scroll.y } };
+    // 고른 도형·필기의 손잡이가 웹앱과 함께 움직이지 않으므로 스크롤되면 놓는다
+    if (prev && pageId === currentIdRef.current && (prev.x !== scroll.x || prev.y !== scroll.y)) {
       setSelectedShape(null);
       setSelection(null);
     }
@@ -832,7 +846,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
   // ── 도형 ───────────────────────────────────────────────
   /** 화면의 페이지: 확대돼 있어도 페이지 px로 바꾸려고 (rect는 화면, size는 페이지 px) */
   const pageGeometry = () => {
-    const el = document.querySelector<HTMLElement>(".page");
+    const el = document.querySelector<HTMLElement>(".page.current");
     if (!el || !el.offsetWidth) return null;
     return { rect: el.getBoundingClientRect(), size: { width: el.offsetWidth, height: el.offsetHeight } };
   };
@@ -902,7 +916,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
     let tap: { id: number; x: number; y: number; t: number } | null = null;
     const onDown = (e: PointerEvent) => {
       tap =
-        pointerKind(e) === "touch" && e.isPrimary && (e.target as Element).closest?.(".page .ink-live")
+        pointerKind(e) === "touch" && e.isPrimary && (e.target as Element).closest?.(".page.current .ink-live")
           ? { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() }
           : null;
     };
@@ -1611,7 +1625,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
 
   /** 화면 좌표의 스티커 (위에 있는 것부터, 돌린 모양 그대로) */
   const stickerAt = (clientX: number, clientY: number): string | null => {
-    const pageEl = document.querySelector<HTMLElement>(".page");
+    const pageEl = document.querySelector<HTMLElement>(".page.current");
     const page = docRef.current.pages.find((p) => p.id === currentIdRef.current);
     if (!pageEl || !page?.stickers?.length) return null;
     const r = pageEl.getBoundingClientRect();
@@ -1736,7 +1750,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
     const offset = p.pointerType === "touch" ? 18 : 0;
     const menuAt = { x: p.clientX + offset, y: p.clientY + offset };
     // 평소에는 링크 아닌 글상자가 누름을 통과시키므로 자리로 찾는다
-    const hit = [...document.querySelectorAll<HTMLElement>(".page .text-box[data-box-id]")].reverse().find((el) => {
+    const hit = [...document.querySelectorAll<HTMLElement>(".page.current .text-box[data-box-id]")].reverse().find((el) => {
       const r = el.getBoundingClientRect();
       return p.clientX >= r.left - 4 && p.clientX <= r.right + 4 && p.clientY >= r.top - 4 && p.clientY <= r.bottom + 4;
     });
@@ -1757,7 +1771,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
       setMenu({ kind: "sticker", ...menuAt, stickerId: sticker });
       return;
     }
-    const pageEl = document.querySelector(".page");
+    const pageEl = document.querySelector(".page.current");
     const r = pageEl?.getBoundingClientRect();
     const inside = r && p.clientX >= r.left && p.clientX <= r.right && p.clientY >= r.top && p.clientY <= r.bottom;
     setMenu({
@@ -2013,6 +2027,18 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
         [
           { label: "도형 보정", icon: <Ruler size={18} />, checked: straighten, onSelect: () => setStraighten((v) => !v) },
           { label: "필기 보정", icon: <Sparkles size={18} />, checked: beautify, onSelect: () => setBeautify((v) => !v) },
+        ],
+        [
+          {
+            label: "이어 보기 (세로 스크롤)",
+            icon: <Rows3 size={18} />,
+            checked: viewMode === "scroll",
+            onSelect: () => {
+              const next = viewMode === "scroll" ? "single" : "scroll";
+              setViewMode(next);
+              showToast(next === "scroll" ? "이어 보기: 페이지를 위아래로 스크롤합니다" : "한 장씩 보기: 옆으로 넘깁니다");
+            },
+          },
         ],
         [
           { label: "펜 바", icon: <Palette size={18} />, checked: paletteOpen, onSelect: () => setPaletteOpen((v) => !v) },
@@ -2389,6 +2415,284 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
 
   const popoverPreset = popover?.kind === "preset" ? presets.find((p) => p.id === popover.id) : undefined;
 
+  /** 이어 보기 (v0.44): 강의 모드는 늘 한 장씩 */
+  const scrollView = viewMode === "scroll" && !lecture;
+  /** 맨 아래에서 밀어 올려 새 페이지: 마지막 페이지와 같은 비율·바탕(빈 페이지면) */
+  const addPageAtEnd = () => {
+    const last = docRef.current.pages[docRef.current.pages.length - 1];
+    addBlank(docRef.current.pages.length, last?.kind === "blank" ? last.background : "plain");
+    showToast("새 페이지를 더했습니다");
+  };
+  // 페이지 위에 그릴 것 (v0.44: 이어 보기는 페이지마다 — 고치는 화면은 지금 페이지만)
+  const renderUnderlay = (size: PageSize, page: Page, current: boolean) => (
+              <StickerLayer page={page} assets={doc.assets} size={size} live={current ? liveSticker : null} hiddenId={current && cropping ? selectedSticker : null} />
+  );
+  const renderOverlay = (size: PageSize, page: Page, current: boolean) => (
+              <>
+                <BoxLayer
+                  page={page}
+                  pages={doc.pages}
+                  hidden={doc.hidden}
+                  size={size}
+                  editMode={current && textMode}
+                  selectedId={current ? selectedBox : null}
+                  editingId={current ? editingBox : null}
+                  onCreate={createBox}
+                  onSelect={(id) => {
+                    setSelectedBox(id);
+                    if (!id) setEditingBox(null);
+                  }}
+                  onStartEdit={(id) => {
+                    setSelectedBox(id);
+                    setEditingBox(id);
+                  }}
+                  onText={(id, text) => editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { text }))}
+                  onEndEdit={endEdit}
+                  onMove={(id, x, y) => editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { x, y }))}
+                  onFollow={followLink}
+                  onLink={(id) => setLinkDialog({ boxId: id, created: false })}
+                  onResize={(id, step) => {
+                    const b = findBox(id);
+                    if (b && b.w == null) setBoxSize(stepBoxSize(b.size, step));
+                    resizeBox(id, step);
+                  }}
+                  onFontSize={sizeTextBox}
+                  onFormat={formatTextBox}
+                  onBoxSize={(id, r) => editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, r))}
+                  onColor={(id, color) => {
+                    setTextColor(color);
+                    editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { color }));
+                  }}
+                  onBg={(id, bg) => {
+                    setBoxBg(bg);
+                    editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { bg }));
+                  }}
+                  onBorder={(id, border) => {
+                    setBoxBorderStyle(border);
+                    editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { border }));
+                  }}
+                  onAnim={(id, anim) => editBoxes(id, (pages, pageId) => animBox(pages, pageId, id, anim))}
+                  veilDraw={current && veilMode}
+                  onCreateVeil={createVeil}
+                  onVeilColor={(id, color) => editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { veil: { color } }))}
+                  lecture={lecture}
+                  revealed={revealed}
+                  onReveal={(id, open) =>
+                    setRevealed((prev) => {
+                      const next = new Set(prev);
+                      if (open) next.add(id);
+                      else next.delete(id);
+                      return next;
+                    })
+                  }
+                  onStartConnect={(id) => {
+                    startConnect(id);
+                    showToast("화살표 끝을 둘 곳이나 이을 상자를 누르세요");
+                  }}
+                  connectFrom={current ? connectFrom : null}
+                  onConnect={connectTo}
+                  onCancelConnect={() => setConnectFrom(null)}
+                  selectedArrow={current ? selectedArrow : null}
+                  onSelectArrow={(id) => {
+                    setSelectedArrow(id);
+                    if (id) setSelectedBox(null);
+                  }}
+                  onArrowFlip={(id) => editArrows((pages, pid) => flipArrow(pages, pid, id))}
+                  onArrowPatch={(id, patch) => editArrows((pages, pid) => patchArrow(pages, pid, id, patch))}
+                  onArrowEnd={(id, target) => editArrows((pages, pid) => moveArrowEnd(pages, pid, id, target))}
+                  onArrowDelete={deleteArrow}
+                  onCopy={(id) => {
+                    copyBox(id);
+                    showToast("상자를 복사했습니다. 붙일 곳에서 붙여넣기");
+                  }}
+                  onCut={(id) => cutBox(id)}
+                  onDelete={(id) => deleteBox(id)}
+                  onPickAt={pickStickerAt}
+                />
+                <PopupLayer
+                  page={page}
+                  assets={doc.assets}
+                  size={size}
+                  live={current ? liveSticker : null}
+                  interactive={current && !textMode && !selectedSticker && !selectedShape && !selection && !connectFrom}
+                />
+                {current && (() => {
+                  const sticker = stickersOf(page).find((s) => s.id === selectedSticker);
+                  if (!sticker) return null;
+                  const id = sticker.id;
+                  return (
+                    <StickerEditor
+                      key={id}
+                      sticker={sticker}
+                      asset={mediaAsset(doc.assets, sticker.asset)}
+                      size={size}
+                      cropping={cropping}
+                      openStyle={stickerStyleReq}
+                      onLive={setLiveSticker}
+                      onChange={(patch) => editSticker(id, (pages, pageId) => patchSticker(pages, pageId, id, patch))}
+                      onCropMode={setCropping}
+                      onPickAt={pickStickerAt}
+                      onDeselect={deselectSticker}
+                      onCopy={() => void copySticker(id)}
+                      onCut={() => void copySticker(id, true)}
+                      onDuplicate={() => void duplicateSticker(id)}
+                      onDelete={() => deleteSticker(id)}
+                      onOrder={(to) => editSticker(id, (pages, pageId) => reorderSticker(pages, pageId, id, to))}
+                      onPopup={() => toggleStickerPopup(id)}
+                    />
+                  );
+                })()}
+                {current && (() => {
+                  const saved = selectedShape ? strokes.find((x) => x.id === selectedShape) : undefined;
+                  if (!saved || !hasShape(saved)) return null;
+                  // HTML 페이지가 스크롤돼 있으면 화면 좌표로 옮겨 고치고, 저장할 때 되돌린다 (v0.36)
+                  const sh = inkShift();
+                  const s = shiftStroke(saved, -sh.x, -sh.y);
+                  return (
+                    <ShapeEditor
+                      key={s.id}
+                      stroke={s}
+                      size={size}
+                      onLive={setShapeDraft}
+                      onChange={(next) => replaceStroke(shiftStroke(next, sh.x, sh.y))}
+                      onDuplicate={() => duplicateShape(s.id)}
+                      onDelete={() => deleteShape(s.id)}
+                      onDone={() => setSelectedShape(null)}
+                    />
+                  );
+                })()}
+                {current && (() => {
+                  // 올가미로 고른 필기 (v0.43): 화면에 보이는 좌표로 고치고 저장할 때 되돌린다
+                  if (!selection || selection.pageId !== page.id) return null;
+                  const picked = selShown;
+                  if (!picked.length) return null;
+                  const tool = recolorTool(picked);
+                  const colors = picked.filter((x) => x.tool === tool).map((x) => x.color);
+                  return (
+                    <SelectionEditor
+                      strokes={picked}
+                      frame={selection.frame}
+                      size={size}
+                      onLive={setSelDragging}
+                      onTransform={transformSelection}
+                      onCut={() => copySelection(true)}
+                      onCopy={() => copySelection()}
+                      onDuplicate={duplicateSelection}
+                      onDelete={deleteSelection}
+                      colors={{
+                        palette: tool === "pen" ? PEN_COLORS : HIGHLIGHTER_COLORS,
+                        current: colors.every((c) => c === colors[0]) ? colors[0] : null,
+                      }}
+                      onRecolor={recolorSelection}
+                      onRewidth={rewidthSelection}
+                      onOrder={reorderSelection}
+                      onDone={() => setSelection(null)}
+                    />
+                  );
+                })()}
+              </>
+  );
+  const lectureNav =
+            lecture && (
+              <>
+                <span className="page-nav-sep" />
+                <button aria-label="실행 취소" disabled={!pageInk?.past.length} onClick={() => inkAction({ type: "undo" })}>
+                  <Undo2 size={20} />
+                </button>
+                <button
+                  aria-label="지우개"
+                  aria-pressed={erasing}
+                  className={erasing ? "on" : undefined}
+                  onClick={() => {
+                    if (tool === "eraser") selectPreset(activePresetId);
+                    else {
+                      setTool("eraser");
+                      if (onInteractive) setWebMode("ink");
+                    }
+                  }}
+                >
+                  <Eraser size={20} />
+                </button>
+                {isWebPage(currentPage) && (
+                  <button aria-label="페이지 새로고침" onClick={reloadWebPage}>
+                    <RotateCw size={20} />
+                  </button>
+                )}
+                {onInteractive && (
+                  <button
+                    aria-label={webMode === "ink" ? "조작 모드로" : "판서 모드로"}
+                    className={webMode === "ink" ? "on" : undefined}
+                    onClick={() => setWebMode((m) => (m === "ink" ? "interact" : "ink"))}
+                  >
+                    {webMode === "ink" ? <PenLine size={20} /> : <MousePointer2 size={20} />}
+                  </button>
+                )}
+                <button
+                  aria-label={paletteOpen ? "펜 바 감추기" : "펜 바 보이기"}
+                  className={paletteOpen ? "on" : undefined}
+                  onClick={() => setPaletteOpen((v) => !v)}
+                >
+                  <Palette size={20} />
+                </button>
+                {onAi && (
+                  <button aria-label="AI로 보내기" disabled={aiBusy} onClick={() => void startAi()}>
+                    {aiBusy ? <span className="spinner" aria-hidden="true" /> : <AiIcon size={20} />}
+                  </button>
+                )}
+                <button
+                  aria-label={spotOn ? "스포트라이트 끄기" : "스포트라이트"}
+                  title="스포트라이트: 펜·손가락이 있는 곳만 밝게"
+                  aria-pressed={spotOn}
+                  className={spotOn ? "on" : undefined}
+                  onClick={() => setSpotOn((v) => !v)}
+                >
+                  <Flashlight size={20} />
+                </button>
+                {spotOn && (
+                  <>
+                    <button aria-label="스포트라이트 작게" disabled={spotStep === 0} onClick={() => stepSpot(-1)}>
+                      <Minus size={18} />
+                    </button>
+                    <button aria-label="스포트라이트 크게" disabled={spotStep === SPOTLIGHT_SIZES.length - 1} onClick={() => stepSpot(1)}>
+                      <Plus size={18} />
+                    </button>
+                  </>
+                )}
+                <span className="page-nav-sep" />
+                <button aria-label="강의 모드 끝내기" title="강의 모드 끝내기 (Esc)" onClick={exitLecture}>
+                  <Minimize2 size={20} />
+                </button>
+              </>
+            )
+  ;
+  const viewChildren = (
+    <>
+          {doc.pages.length === 0 && <div className="page-area-message">페이지가 없습니다. 페이지를 추가해 주세요.</div>}
+
+          {paletteOpen && (
+            <PenPalette
+              presets={presets}
+              activeId={erasing || textMode || tool === "laser" || tool === "lasso" ? null : activePresetId}
+              onSelect={selectPreset}
+              onOpenSettings={openPresetSettings}
+              laserActive={tool === "laser" && !textMode}
+              onLaser={toggleLaser}
+              veilActive={textMode && veilMode}
+              onVeil={currentPage ? toggleVeilMode : undefined}
+              onHide={() => {
+                setPaletteOpen(false);
+                setPopover(null);
+                showToast("펜 바를 감췄습니다", { label: "다시 보이기", run: () => setPaletteOpen(true) });
+              }}
+            />
+          )}
+
+          {debugOpen && !lecture && (
+            <DebugPanel lowLatency={lowLatency} onLowLatency={setLowLatency} pdfRenderMs={pdfRenderMs} onClose={() => setDebugOpen(false)} />
+          )}
+    </>
+  );
+
   return (
     <div className={`app${lecture ? " lecture" : ""}${aiMode ? " ai-mode" : ""}`}>
       {lecture && (
@@ -2600,7 +2904,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
           const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith("image/") || /\.(hei[cf]|tiff?)$/i.test(f.name));
           if (!files.length || !currentPage) return;
           e.preventDefault();
-          const r = document.querySelector(".page")?.getBoundingClientRect();
+          const r = document.querySelector(".page.current")?.getBoundingClientRect();
           const inside = r && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
           void insertStickers(files, inside ? { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height } : undefined);
         }}
@@ -2627,315 +2931,94 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
           />
         )}
 
-        <PageView
-          doc={doc}
-          pageIndex={pageIndex}
-          strokes={canvasStrokes}
-          onShapeDrawn={setSelectedShape}
-          shapeTool={shapeTool}
-          onLasso={onLasso}
-          tool={tool}
-          color={activePreset.color}
-          width={activePreset.width}
-          eraserSize={eraserSize}
-          eraserTarget={eraserTarget}
-          eraserMode={eraserMode}
-          straightLine={activePreset.tool === "highlighter" && !!activePreset.straight}
-          fixedWidth={activePreset.tool === "pen" && !!activePreset.fixedWidth}
-          nib={activePreset.tool === "pen" ? activePreset.nib : undefined}
-          opacity={activePreset.tool === "pen" ? activePreset.opacity : undefined}
-          stabilize={stabilize}
-          penButton={penButton}
-          buttonHighlighter={buttonHighlighter}
-          fingerDraw={fingerDraw}
-          lowLatency={lowLatency}
-          straighten={straighten}
-          beautify={beautify}
-          webMode={webMode}
-          onCommit={onCommit}
-          onNavigate={goTo}
-          onPdfRendered={setPdfRenderMs}
-          lecture={lecture}
-          spotlight={lecture && spotOn ? SPOTLIGHT_SIZES[spotStep] : null}
-          inkOff={textMode || !!selectedSticker}
-          webReloads={webReloads}
-          onLongPress={onLongPress}
-          penLongPress={!erasing}
-          onInkShift={onInkShift}
-          onFingerTapWeb={() => {
-            setWebMode("interact");
-            showToast("조작 모드로 바꿨습니다. 웹 페이지를 다시 눌러 주세요 (S펜은 판서)");
-          }}
-          pageUnderlay={(size) =>
-            currentPage && (
-              <StickerLayer page={currentPage} assets={doc.assets} size={size} live={liveSticker} hiddenId={cropping ? selectedSticker : null} />
-            )
-          }
-          pageOverlay={(size) =>
-            currentPage && (
-              <>
-                <BoxLayer
-                  page={currentPage}
-                  pages={doc.pages}
-                  hidden={doc.hidden}
-                  size={size}
-                  editMode={textMode}
-                  selectedId={selectedBox}
-                  editingId={editingBox}
-                  onCreate={createBox}
-                  onSelect={(id) => {
-                    setSelectedBox(id);
-                    if (!id) setEditingBox(null);
-                  }}
-                  onStartEdit={(id) => {
-                    setSelectedBox(id);
-                    setEditingBox(id);
-                  }}
-                  onText={(id, text) => editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { text }))}
-                  onEndEdit={endEdit}
-                  onMove={(id, x, y) => editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { x, y }))}
-                  onFollow={followLink}
-                  onLink={(id) => setLinkDialog({ boxId: id, created: false })}
-                  onResize={(id, step) => {
-                    const b = findBox(id);
-                    if (b && b.w == null) setBoxSize(stepBoxSize(b.size, step));
-                    resizeBox(id, step);
-                  }}
-                  onFontSize={sizeTextBox}
-                  onFormat={formatTextBox}
-                  onBoxSize={(id, r) => editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, r))}
-                  onColor={(id, color) => {
-                    setTextColor(color);
-                    editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { color }));
-                  }}
-                  onBg={(id, bg) => {
-                    setBoxBg(bg);
-                    editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { bg }));
-                  }}
-                  onBorder={(id, border) => {
-                    setBoxBorderStyle(border);
-                    editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { border }));
-                  }}
-                  onAnim={(id, anim) => editBoxes(id, (pages, pageId) => animBox(pages, pageId, id, anim))}
-                  veilDraw={veilMode}
-                  onCreateVeil={createVeil}
-                  onVeilColor={(id, color) => editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { veil: { color } }))}
-                  lecture={lecture}
-                  revealed={revealed}
-                  onReveal={(id, open) =>
-                    setRevealed((prev) => {
-                      const next = new Set(prev);
-                      if (open) next.add(id);
-                      else next.delete(id);
-                      return next;
-                    })
-                  }
-                  onStartConnect={(id) => {
-                    startConnect(id);
-                    showToast("화살표 끝을 둘 곳이나 이을 상자를 누르세요");
-                  }}
-                  connectFrom={connectFrom}
-                  onConnect={connectTo}
-                  onCancelConnect={() => setConnectFrom(null)}
-                  selectedArrow={selectedArrow}
-                  onSelectArrow={(id) => {
-                    setSelectedArrow(id);
-                    if (id) setSelectedBox(null);
-                  }}
-                  onArrowFlip={(id) => editArrows((pages, pid) => flipArrow(pages, pid, id))}
-                  onArrowPatch={(id, patch) => editArrows((pages, pid) => patchArrow(pages, pid, id, patch))}
-                  onArrowEnd={(id, target) => editArrows((pages, pid) => moveArrowEnd(pages, pid, id, target))}
-                  onArrowDelete={deleteArrow}
-                  onCopy={(id) => {
-                    copyBox(id);
-                    showToast("상자를 복사했습니다. 붙일 곳에서 붙여넣기");
-                  }}
-                  onCut={(id) => cutBox(id)}
-                  onDelete={(id) => deleteBox(id)}
-                  onPickAt={pickStickerAt}
-                />
-                <PopupLayer
-                  page={currentPage}
-                  assets={doc.assets}
-                  size={size}
-                  live={liveSticker}
-                  interactive={!textMode && !selectedSticker && !selectedShape && !selection && !connectFrom}
-                />
-                {(() => {
-                  const sticker = stickersOf(currentPage).find((s) => s.id === selectedSticker);
-                  if (!sticker) return null;
-                  const id = sticker.id;
-                  return (
-                    <StickerEditor
-                      key={id}
-                      sticker={sticker}
-                      asset={mediaAsset(doc.assets, sticker.asset)}
-                      size={size}
-                      cropping={cropping}
-                      openStyle={stickerStyleReq}
-                      onLive={setLiveSticker}
-                      onChange={(patch) => editSticker(id, (pages, pageId) => patchSticker(pages, pageId, id, patch))}
-                      onCropMode={setCropping}
-                      onPickAt={pickStickerAt}
-                      onDeselect={deselectSticker}
-                      onCopy={() => void copySticker(id)}
-                      onCut={() => void copySticker(id, true)}
-                      onDuplicate={() => void duplicateSticker(id)}
-                      onDelete={() => deleteSticker(id)}
-                      onOrder={(to) => editSticker(id, (pages, pageId) => reorderSticker(pages, pageId, id, to))}
-                      onPopup={() => toggleStickerPopup(id)}
-                    />
-                  );
-                })()}
-                {(() => {
-                  const saved = selectedShape ? strokes.find((x) => x.id === selectedShape) : undefined;
-                  if (!saved || !hasShape(saved)) return null;
-                  // HTML 페이지가 스크롤돼 있으면 화면 좌표로 옮겨 고치고, 저장할 때 되돌린다 (v0.36)
-                  const sh = inkShift();
-                  const s = shiftStroke(saved, -sh.x, -sh.y);
-                  return (
-                    <ShapeEditor
-                      key={s.id}
-                      stroke={s}
-                      size={size}
-                      onLive={setShapeDraft}
-                      onChange={(next) => replaceStroke(shiftStroke(next, sh.x, sh.y))}
-                      onDuplicate={() => duplicateShape(s.id)}
-                      onDelete={() => deleteShape(s.id)}
-                      onDone={() => setSelectedShape(null)}
-                    />
-                  );
-                })()}
-                {(() => {
-                  // 올가미로 고른 필기 (v0.43): 화면에 보이는 좌표로 고치고 저장할 때 되돌린다
-                  if (!selection || selection.pageId !== currentPage.id) return null;
-                  const picked = selShown;
-                  if (!picked.length) return null;
-                  const tool = recolorTool(picked);
-                  const colors = picked.filter((x) => x.tool === tool).map((x) => x.color);
-                  return (
-                    <SelectionEditor
-                      strokes={picked}
-                      frame={selection.frame}
-                      size={size}
-                      onLive={setSelDragging}
-                      onTransform={transformSelection}
-                      onCut={() => copySelection(true)}
-                      onCopy={() => copySelection()}
-                      onDuplicate={duplicateSelection}
-                      onDelete={deleteSelection}
-                      colors={{
-                        palette: tool === "pen" ? PEN_COLORS : HIGHLIGHTER_COLORS,
-                        current: colors.every((c) => c === colors[0]) ? colors[0] : null,
-                      }}
-                      onRecolor={recolorSelection}
-                      onRewidth={rewidthSelection}
-                      onOrder={reorderSelection}
-                      onDone={() => setSelection(null)}
-                    />
-                  );
-                })()}
-              </>
-            )
-          }
-          navExtra={
-            lecture && (
-              <>
-                <span className="page-nav-sep" />
-                <button aria-label="실행 취소" disabled={!pageInk?.past.length} onClick={() => inkAction({ type: "undo" })}>
-                  <Undo2 size={20} />
-                </button>
-                <button
-                  aria-label="지우개"
-                  aria-pressed={erasing}
-                  className={erasing ? "on" : undefined}
-                  onClick={() => {
-                    if (tool === "eraser") selectPreset(activePresetId);
-                    else {
-                      setTool("eraser");
-                      if (onInteractive) setWebMode("ink");
-                    }
-                  }}
-                >
-                  <Eraser size={20} />
-                </button>
-                {isWebPage(currentPage) && (
-                  <button aria-label="페이지 새로고침" onClick={reloadWebPage}>
-                    <RotateCw size={20} />
-                  </button>
-                )}
-                {onInteractive && (
-                  <button
-                    aria-label={webMode === "ink" ? "조작 모드로" : "판서 모드로"}
-                    className={webMode === "ink" ? "on" : undefined}
-                    onClick={() => setWebMode((m) => (m === "ink" ? "interact" : "ink"))}
-                  >
-                    {webMode === "ink" ? <PenLine size={20} /> : <MousePointer2 size={20} />}
-                  </button>
-                )}
-                <button
-                  aria-label={paletteOpen ? "펜 바 감추기" : "펜 바 보이기"}
-                  className={paletteOpen ? "on" : undefined}
-                  onClick={() => setPaletteOpen((v) => !v)}
-                >
-                  <Palette size={20} />
-                </button>
-                {onAi && (
-                  <button aria-label="AI로 보내기" disabled={aiBusy} onClick={() => void startAi()}>
-                    {aiBusy ? <span className="spinner" aria-hidden="true" /> : <AiIcon size={20} />}
-                  </button>
-                )}
-                <button
-                  aria-label={spotOn ? "스포트라이트 끄기" : "스포트라이트"}
-                  title="스포트라이트: 펜·손가락이 있는 곳만 밝게"
-                  aria-pressed={spotOn}
-                  className={spotOn ? "on" : undefined}
-                  onClick={() => setSpotOn((v) => !v)}
-                >
-                  <Flashlight size={20} />
-                </button>
-                {spotOn && (
-                  <>
-                    <button aria-label="스포트라이트 작게" disabled={spotStep === 0} onClick={() => stepSpot(-1)}>
-                      <Minus size={18} />
-                    </button>
-                    <button aria-label="스포트라이트 크게" disabled={spotStep === SPOTLIGHT_SIZES.length - 1} onClick={() => stepSpot(1)}>
-                      <Plus size={18} />
-                    </button>
-                  </>
-                )}
-                <span className="page-nav-sep" />
-                <button aria-label="강의 모드 끝내기" title="강의 모드 끝내기 (Esc)" onClick={exitLecture}>
-                  <Minimize2 size={20} />
-                </button>
-              </>
-            )
-          }
-        >
-          {doc.pages.length === 0 && <div className="page-area-message">페이지가 없습니다. 페이지를 추가해 주세요.</div>}
-
-          {paletteOpen && (
-            <PenPalette
-              presets={presets}
-              activeId={erasing || textMode || tool === "laser" || tool === "lasso" ? null : activePresetId}
-              onSelect={selectPreset}
-              onOpenSettings={openPresetSettings}
-              laserActive={tool === "laser" && !textMode}
-              onLaser={toggleLaser}
-              veilActive={textMode && veilMode}
-              onVeil={currentPage ? toggleVeilMode : undefined}
-              onHide={() => {
-                setPaletteOpen(false);
-                setPopover(null);
-                showToast("펜 바를 감췄습니다", { label: "다시 보이기", run: () => setPaletteOpen(true) });
-              }}
-            />
-          )}
-
-          {debugOpen && !lecture && (
-            <DebugPanel lowLatency={lowLatency} onLowLatency={setLowLatency} pdfRenderMs={pdfRenderMs} onClose={() => setDebugOpen(false)} />
-          )}
-        </PageView>
+        {scrollView ? (
+          <ScrollView
+            doc={doc}
+            currentId={currentId}
+            strokesFor={(id) => (id === currentId ? canvasStrokes : (ink[id]?.present ?? NO_STROKES))}
+            onShapeDrawn={setSelectedShape}
+            shapeTool={shapeTool}
+            onLasso={onLasso}
+            tool={tool}
+            color={activePreset.color}
+            width={activePreset.width}
+            eraserSize={eraserSize}
+            eraserTarget={eraserTarget}
+            eraserMode={eraserMode}
+            straightLine={activePreset.tool === "highlighter" && !!activePreset.straight}
+            fixedWidth={activePreset.tool === "pen" && !!activePreset.fixedWidth}
+            nib={activePreset.tool === "pen" ? activePreset.nib : undefined}
+            opacity={activePreset.tool === "pen" ? activePreset.opacity : undefined}
+            stabilize={stabilize}
+            penButton={penButton}
+            buttonHighlighter={buttonHighlighter}
+            fingerDraw={fingerDraw}
+            lowLatency={lowLatency}
+            straighten={straighten}
+            beautify={beautify}
+            webMode={webMode}
+            onCommit={onCommitPage}
+            onCurrentChange={onScrollCurrent}
+            onNavigate={goTo}
+            onAddPage={addPageAtEnd}
+            onPdfRendered={setPdfRenderMs}
+            inkOff={textMode || !!selectedSticker}
+            webReloads={webReloads}
+            onLongPress={onLongPress}
+            penLongPress={!erasing}
+            onInkShift={onInkShift}
+            pageUnderlay={renderUnderlay}
+            pageOverlay={renderOverlay}
+          >
+            {viewChildren}
+          </ScrollView>
+        ) : (
+          <PageView
+            doc={doc}
+            pageIndex={pageIndex}
+            strokes={canvasStrokes}
+            onShapeDrawn={setSelectedShape}
+            shapeTool={shapeTool}
+            onLasso={onLasso}
+            tool={tool}
+            color={activePreset.color}
+            width={activePreset.width}
+            eraserSize={eraserSize}
+            eraserTarget={eraserTarget}
+            eraserMode={eraserMode}
+            straightLine={activePreset.tool === "highlighter" && !!activePreset.straight}
+            fixedWidth={activePreset.tool === "pen" && !!activePreset.fixedWidth}
+            nib={activePreset.tool === "pen" ? activePreset.nib : undefined}
+            opacity={activePreset.tool === "pen" ? activePreset.opacity : undefined}
+            stabilize={stabilize}
+            penButton={penButton}
+            buttonHighlighter={buttonHighlighter}
+            fingerDraw={fingerDraw}
+            lowLatency={lowLatency}
+            straighten={straighten}
+            beautify={beautify}
+            webMode={webMode}
+            onCommit={onCommit}
+            onNavigate={goTo}
+            onPdfRendered={setPdfRenderMs}
+            lecture={lecture}
+            spotlight={lecture && spotOn ? SPOTLIGHT_SIZES[spotStep] : null}
+            inkOff={textMode || !!selectedSticker}
+            webReloads={webReloads}
+            onLongPress={onLongPress}
+            penLongPress={!erasing}
+            onInkShift={onInkShift}
+            onFingerTapWeb={() => {
+              setWebMode("interact");
+              showToast("조작 모드로 바꿨습니다. 웹 페이지를 다시 눌러 주세요 (S펜은 판서)");
+            }}
+            pageUnderlay={(size) => currentPage && renderUnderlay(size, currentPage, true)}
+            pageOverlay={(size) => currentPage && renderOverlay(size, currentPage, true)}
+            navExtra={lectureNav}
+          >
+            {viewChildren}
+          </PageView>
+        )}
       </div>
 
       {eyedrop && (

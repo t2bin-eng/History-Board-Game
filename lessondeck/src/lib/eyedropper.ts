@@ -61,10 +61,10 @@ async function sampleImage(src: Blob, fx: number, fy: number): Promise<string | 
 
 /**
  * 화면 점 (x, y)의 색. strokes는 지금 페이지의 저장된 획(웹 문서 좌표), shift는 HTML 페이지가 스크롤된 만큼(비율).
- * 페이지는 화면의 `.page-area > .page`.
+ * 페이지는 화면의 지금 페이지 `.page.current` (v0.44 이어 보기에서도).
  */
 export async function pickColorAt(x: number, y: number, ctx: { page: Page; doc: DocState; strokes: Stroke[]; shift: { x: number; y: number } }): Promise<PickResult> {
-  const el = document.querySelector<HTMLElement>(".page-area > .page");
+  const el = document.querySelector<HTMLElement>(".page.current");
   const rect = el?.getBoundingClientRect();
   const inside = !!rect && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
   if (el && rect && inside) {

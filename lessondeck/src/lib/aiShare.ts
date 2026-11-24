@@ -126,7 +126,10 @@ const nextFrames = () => new Promise<void>((done) => requestAnimationFrame(() =>
  */
 export async function captureShownPage(): Promise<PageImage | null> {
   if (!isNativeApp) return null;
-  const page = document.querySelector<HTMLElement>(".page-area > .page");
+  // 이어 보기 (v0.44): 지금 페이지가 다 보이게 원래 크기로 스크롤해 둔다
+  window.dispatchEvent(new Event("lessondeck:fit-current"));
+  await nextFrames();
+  const page = document.querySelector<HTMLElement>(".page.current");
   if (!page) return null;
   const root = document.documentElement;
   const transform = page.style.transform;
