@@ -8,7 +8,7 @@ import { recognizeCurve } from "./curveFit";
 import { recognizeShape, type ShapeGuess } from "./shapeRecognize";
 import { curveSpec, defaultShape, dragShape, lineSpec, makeShapeStroke, type ShapeTool } from "./shapes";
 import { eraserTakes, eraseStrokeArea, type EraserMode, type EraserTarget } from "./eraser";
-import { capPrediction, keepPoint, SMOOTH_V2, type Dropped } from "./smoothing";
+import { capPrediction, keepPoint, SMOOTH_V2, stabilizeOf, type Dropped, type StabilizeLevel } from "./smoothing";
 import type { PenButtonAction } from "./penButton";
 import type { InkPoint, PenNib, ShapeSpec, Stroke, Tool } from "./types";
 
@@ -31,6 +31,8 @@ interface Props {
   /** 지금 펜의 펜 종류·불투명도 (v0.41, 펜만) */
   nib?: PenNib;
   opacity?: number;
+  /** 손떨림 보정 세기 (v0.42, 기기 설정, 없으면 보통) */
+  stabilize?: StabilizeLevel;
   /** S펜 버튼을 누른 채 쓸 때 할 일 (v0.33, 없으면 지우개) */
   penButton?: PenButtonAction;
   /** penButton이 highlighter일 때 쓸 형광펜 (펜 바에서 마지막으로 고른 것) */
@@ -81,6 +83,8 @@ interface Gesture {
   lineLock: { x: number; y: number } | null;
   /** 떨림으로 거른 마지막 점 (v0.32): 화면에는 끝으로 그리고, 뗄 때 남긴다 */
   pending: InkPoint | null;
+  /** 떨림으로 보는 거리 (화면 px, v0.42 손떨림 보정 세기) */
+  jitterTol: number;
   /** 마지막으로 남긴 점 뒤로 거른 점 중 가장 멀리 간 것 (화면 px, smoothing.keepPoint) */
   dropped: Dropped | null;
   /** 닫힌 도형·화살표가 된 뒤 (그대로 둔다) */
@@ -439,6 +443,7 @@ export function InkCanvas(props: Props) {
         shaped: false,
         drag: null,
         lastErase: null,
+        jitterTol: stabilizeOf(props0.stabilize).tol,
       };
       if (mode === "erase") {
         eraseAt([e], gesture);
@@ -465,6 +470,8 @@ export function InkCanvas(props: Props) {
         simulatePressure: e.pointerType !== "pen",
         // v0.32: 떨림을 거른 점 → 그릴 때 끝 다듬기
         smooth: SMOOTH_V2,
+        // v0.42: 손떨림 보정 세기 (보통이면 붙이지 않음)
+        ...(stabilizeOf(props0.stabilize).radius !== 2 ? { smoothR: stabilizeOf(props0.stabilize).radius } : {}),
         // v0.33: 필압을 쓰지 않는 펜
         ...(style.fixed ? { fixedWidth: true as const } : {}),
         // v0.41: 펜 종류·불투명도
@@ -657,7 +664,7 @@ export function InkCanvas(props: Props) {
         const last = stroke.points[n - 1];
         if (stroke.smooth === SMOOTH_V2) {
           // 떨림 거르기 (v0.32): 마지막으로 남긴 점에서 화면 1px 안이면 버림 (30° 넘게 꺾이면 남김)
-          const judged = keepPoint(n > 1 ? onScreen(stroke.points[n - 2]) : null, onScreen(last), onScreen(pt), gesture.dropped);
+          const judged = keepPoint(n > 1 ? onScreen(stroke.points[n - 2]) : null, onScreen(last), onScreen(pt), gesture.dropped, gesture.jitterTol);
           gesture.dropped = judged.dropped;
           if (!judged.keep) {
             gesture.pending = pt;
@@ -724,6 +731,7 @@ export function InkCanvas(props: Props) {
           stroke.points = tidy;
           // 다듬은 점은 고른 간격으로 다시 찍은 것이라 예전 방식으로 그린다 (SPEC 5장). 다듬지 않은 획은 v0.32 방식 그대로 (v0.37)
           delete stroke.smooth;
+          delete stroke.smoothR;
         }
       }
       const s = scale();

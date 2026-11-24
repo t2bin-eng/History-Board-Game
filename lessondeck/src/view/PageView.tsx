@@ -9,6 +9,7 @@ import { fitPage, type PageSize } from "../ink/geometry";
 import { InkCanvas } from "../ink/InkCanvas";
 import type { ShapeTool } from "../ink/shapes";
 import type { PenNib, Stroke, Tool } from "../ink/types";
+import type { StabilizeLevel } from "../ink/smoothing";
 import { PdfPageView } from "../pdf/PdfPageView";
 import { PageNav } from "./PageNav";
 import { useViewportGestures } from "./useViewportGestures";
@@ -39,6 +40,8 @@ interface Props {
   /** 펜 종류·불투명도 (v0.41) */
   nib?: PenNib;
   opacity?: number;
+  /** 손떨림 보정 세기 (v0.42) */
+  stabilize?: StabilizeLevel;
   /** S펜 버튼 동작 (v0.33) */
   penButton?: PenButtonAction;
   buttonHighlighter?: { color: string; width: number; straight?: boolean };
@@ -394,6 +397,7 @@ export function PageView(props: Props) {
             fixedWidth={props.fixedWidth}
             nib={props.nib}
             opacity={props.opacity}
+            stabilize={props.stabilize}
             penButton={props.penButton}
             buttonHighlighter={props.buttonHighlighter}
             fingerDraw={props.fingerDraw}

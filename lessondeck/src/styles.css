@@ -4963,6 +4963,95 @@ body:has(.select-bar) .toast {
   height: 28px;
 }
 
+/* 최근 색 · 스포이트 · 색 코드 (v0.42) */
+.tool-settings .ts-recent {
+  margin-bottom: 10px;
+}
+
+.ts-colortools {
+  align-items: center;
+}
+
+.ts-eyedrop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 0 12px;
+}
+
+.ts-hex {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid #3b3b3b;
+  border-radius: 10px;
+  background: #262626;
+}
+
+.ts-hex.bad {
+  border-color: #c0504d;
+}
+
+.ts-hex-dot {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+
+.ts-hex input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: 14px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  text-transform: lowercase;
+}
+
+/* 스포이트 고르는 중 (v0.42): 화면 전체를 덮어 한 번 누름을 받는다 */
+.eyedrop-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.eyedrop-banner {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 8px 8px 16px;
+  border-radius: 999px;
+  background: rgba(20, 20, 20, 0.88);
+  color: #fff;
+  font-size: 14px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.eyedrop-banner button {
+  height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: #3a3a3a;
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
 /* 화살촉 모양 고르기 (v0.30): 글상자 화살표 막대·펜 화살표 막대 */
 .se-heads {
   display: flex;

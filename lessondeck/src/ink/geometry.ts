@@ -1,6 +1,6 @@
 import { getStroke, getStrokeOutlinePoints, getStrokePoints, type StrokeOptions } from "perfect-freehand";
 import { hasShape, shapeDistance, shapeStrokePath } from "./shapes";
-import { SMOOTH_V2, smoothPoints } from "./smoothing";
+import { SMOOTH_V2, smoothPoints, strokeSmoothRadius } from "./smoothing";
 import { PAGE_UNITS, type InkPoint, type InkTool, type PenNib, type Stroke } from "./types";
 
 export interface PageSize {
@@ -105,7 +105,11 @@ export function strokeToSvgPath(stroke: Stroke, page: PageSize, last = true, ext
   const smoothed = stroke.smooth === SMOOTH_V2;
   let pts = toPagePx(extra.length ? stroke.points.concat(extra) : stroke.points, page);
   // v0.32 획: 앞뒤 점으로 다듬는다 (끝 점은 그대로 — 쓰는 동안 끝 몇 점만 다시 다듬어짐)
-  if (smoothed) pts = smoothPoints(pts);
+  // 손떨림 보정 세기 (v0.42): 획에 붙은 다듬는 폭 (없으면 2)
+  if (smoothed) {
+    const r = strokeSmoothRadius(stroke.smoothR);
+    pts = smoothPoints(pts, r, Math.max(3, r));
+  }
   const sizePx = unitsToPx(stroke.width, page);
   const nib = stroke.tool === "pen" ? stroke.nib : undefined;
   // 캘리그래피 펜 (v0.41): 납작한 펜촉 — 긋는 방향에 따라 굵기가 바뀐다

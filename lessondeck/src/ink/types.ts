@@ -23,6 +23,8 @@ export interface Stroke {
   smooth?: 2;
   /** 고른 굵기 (v0.33): 필압·속도와 상관없이 width 그대로 */
   fixedWidth?: true;
+  /** 손떨림 보정 세기 (v0.42, smooth: 2 획만): 그릴 때 다듬는 폭 1~8. 없으면 2 */
+  smoothR?: number;
   /** 펜 종류 (v0.41, 펜만): 만년필 · 캘리그래피 펜 · 연필. 없으면 볼펜 */
   nib?: PenNib;
   /** 불투명도 (v0.41, 펜만): 0.2~1. 없으면 1 */

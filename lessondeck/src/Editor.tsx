@@ -34,6 +34,7 @@ import {
   Palette,
   PanelLeft,
   PenLine,
+  Pipette,
   Plus,
   Presentation,
   Ruler,
@@ -112,6 +113,8 @@ import { docThumbPage, setDocThumbPage, useLibraryView } from "./store/library";
 import { pageBaseImage, pageFullImage, snapshotPage, thumbTarget, type PageImage } from "./view/pageSnapshot";
 import { eraserTakes } from "./ink/eraser";
 import { usePenSettings } from "./ink/usePenSettings";
+import { STABILIZE_LEVELS } from "./ink/smoothing";
+import { pickColorAt } from "./lib/eyedropper";
 import { openUpdateDialog } from "./lib/appUpdate";
 import { PEN_BUTTON_ACTIONS } from "./ink/penButton";
 import type { InkTool, PenPreset, Stroke, Tool } from "./ink/types";
@@ -249,7 +252,13 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
     eraserTargetLabel,
     eraserMode,
     setEraserMode,
+    stabilize,
+    setStabilize,
+    recentColors,
+    rememberColor,
   } = usePenSettings();
+  /** 스포이트로 색을 고르는 중 (v0.42): 다 고르면 그 펜 설정 창을 같은 자리에 다시 연다 */
+  const [eyedrop, setEyedrop] = useState<{ presetId: string; left: number; top: number } | null>(null);
   const [tool, setTool] = useState<Tool>("pen");
   /** S펜 버튼을 누르고 있는지 (inputState) */
   const [sideDown, setSideDown] = useState(false);
@@ -1946,6 +1955,37 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
   };
 
   const closePopover = useCallback(() => setPopover(null), []);
+
+  // 스포이트는 Esc로도 그만둔다
+  useEffect(() => {
+    if (!eyedrop) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setEyedrop(null);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [eyedrop]);
+
+  /** 스포이트 (v0.42): 누른 자리의 색을 그 펜에 */
+  const pickEyedrop = async (x: number, y: number) => {
+    const target = eyedrop;
+    const page = docRef.current.pages.find((p) => p.id === currentIdRef.current);
+    const preset = target && presets.find((p) => p.id === target.presetId);
+    if (!target || !page || !preset) {
+      setEyedrop(null);
+      return;
+    }
+    const res = await pickColorAt(x, y, { page, doc: docRef.current, strokes: inkRef.current[page.id]?.present ?? [], shift: inkShift() }).catch(
+      () => ({ error: "unavailable" as const }),
+    );
+    if ("error" in res) {
+      showToast(res.error === "outside" ? "페이지 안을 눌러 주세요" : "이 자리의 색은 가져올 수 없습니다 (필기 색은 됩니다)");
+      return;
+    }
+    setEyedrop(null);
+    patchPreset(preset.id, { color: res.color });
+    rememberColor(preset.tool, res.color, true);
+    setPopover({ kind: "preset", id: preset.id, left: target.left, top: target.top });
+    showToast(`색을 가져왔습니다 ${res.color}`);
+  };
   /** 도형 고르기 창 자리 (화면 안으로) */
   const pickerAt = (x: number, y: number) => ({
     left: Math.max(8, Math.min(x, window.innerWidth - 316)),
@@ -2348,6 +2388,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
           fixedWidth={activePreset.tool === "pen" && !!activePreset.fixedWidth}
           nib={activePreset.tool === "pen" ? activePreset.nib : undefined}
           opacity={activePreset.tool === "pen" ? activePreset.opacity : undefined}
+          stabilize={stabilize}
           penButton={penButton}
           buttonHighlighter={buttonHighlighter}
           fingerDraw={fingerDraw}
@@ -2612,12 +2653,45 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
         </PageView>
       </div>
 
+      {eyedrop && (
+        <div
+          className="eyedrop-layer"
+          role="dialog"
+          aria-label="스포이트"
+          onPointerDown={(e) => {
+            if ((e.target as HTMLElement).closest(".eyedrop-banner")) return;
+            e.preventDefault();
+            e.stopPropagation();
+            void pickEyedrop(e.clientX, e.clientY);
+          }}
+        >
+          <div className="eyedrop-banner">
+            <Pipette size={16} /> 색을 가져올 곳을 누르세요
+            <button onClick={() => setEyedrop(null)}>취소</button>
+          </div>
+        </div>
+      )}
       {popover?.kind === "preset" && popoverPreset && (
         <ToolSettings
           kind="preset"
           anchor={popover}
           preset={popoverPreset}
-          onChange={(patch) => patchPreset(popoverPreset.id, patch)}
+          onChange={(patch) => {
+            patchPreset(popoverPreset.id, patch);
+            if (patch.color) rememberColor(popoverPreset.tool, patch.color);
+          }}
+          recent={recentColors[popoverPreset.tool]}
+          onEyedropper={() => {
+            setEyedrop({ presetId: popoverPreset.id, left: popover.left, top: popover.top });
+            setPopover(null);
+          }}
+          stabilize={{
+            level: stabilize,
+            onChange: (l) => {
+              setStabilize(l);
+              showToast(`손떨림 보정: ${STABILIZE_LEVELS.find((x) => x.id === l)?.label}${l > 2 ? " — 선이 매끈해지지만 작은 글씨는 조금 둥글어집니다" : ""}`);
+            },
+          }}
           penButton={{ action: penButton, onChange: (a) => {
             setPenButton(a);
             showToast(`S펜 버튼을 누른 채 쓰면: ${PEN_BUTTON_ACTIONS.find((x) => x.id === a)?.label}`);

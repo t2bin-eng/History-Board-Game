@@ -22,6 +22,44 @@ const CORNER_DEG = 70;
 /** 꺾임을 잴 때 앞뒤로 이만큼(px) 떨어진 점을 본다 (촘촘한 점의 작은 떨림을 꺾임으로 보지 않게) */
 const CORNER_REACH_PX = 4;
 
+// ── 손떨림 보정 세기 (v0.42, SPEC 5장 "손떨림 보정 세기"·`lessondeck.stabilize`) ──
+
+export type StabilizeLevel = 1 | 2 | 3 | 4;
+export const STABILIZE_KEY = "lessondeck.stabilize";
+/** 세기마다 떨림 거르기 거리(화면 px)와 다듬는 폭(앞뒤 점 수). 보통(2)은 0.32~0.41과 같다 */
+export const STABILIZE_LEVELS: readonly { id: StabilizeLevel; label: string; tol: number; radius: number }[] = [
+  { id: 1, label: "약하게", tol: 0.6, radius: 1 },
+  { id: 2, label: "보통", tol: JITTER_PX, radius: POS_RADIUS },
+  { id: 3, label: "강하게", tol: 1.5, radius: 4 },
+  { id: 4, label: "최대", tol: 2, radius: 7 },
+];
+
+export function stabilizeOf(level: StabilizeLevel | undefined) {
+  return STABILIZE_LEVELS.find((l) => l.id === level) ?? STABILIZE_LEVELS[1];
+}
+
+export function loadStabilize(): StabilizeLevel {
+  try {
+    const n = Number(localStorage.getItem(STABILIZE_KEY));
+    return STABILIZE_LEVELS.some((l) => l.id === n) ? (n as StabilizeLevel) : 2;
+  } catch {
+    return 2;
+  }
+}
+
+export function saveStabilize(level: StabilizeLevel) {
+  try {
+    localStorage.setItem(STABILIZE_KEY, String(level));
+  } catch {
+    // 저장하지 못해도 이번에는 쓴다
+  }
+}
+
+/** 획에 붙은 다듬는 폭 (없거나 이상하면 보통) */
+export function strokeSmoothRadius(smoothR: unknown): number {
+  return typeof smoothR === "number" && Number.isInteger(smoothR) && smoothR >= 1 && smoothR <= 8 ? smoothR : POS_RADIUS;
+}
+
 interface Pt {
   x: number;
   y: number;

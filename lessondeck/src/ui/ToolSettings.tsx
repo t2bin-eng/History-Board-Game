@@ -1,9 +1,11 @@
-import { Check, Trash2 } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { Check, Pipette, Trash2 } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { RICH_COLORS, RICH_HIGHLIGHTERS } from "../doc/swatches";
 import { ERASER_MODES, ERASER_TARGETS, type EraserMode, type EraserTarget } from "../ink/eraser";
 import { PEN_BUTTON_ACTIONS, type PenButtonAction } from "../ink/penButton";
 import { ERASER_LEVELS, HIGHLIGHTER_ALPHA, WIDTH_LEVELS } from "../ink/palette";
+import { normalizeHex } from "../ink/recentColors";
+import { STABILIZE_LEVELS, type StabilizeLevel } from "../ink/smoothing";
 import type { PenNib, PenPreset } from "../ink/types";
 
 interface Anchor {
@@ -21,6 +23,12 @@ type Props =
       correction: { straighten: boolean; beautify: boolean; onStraighten: (on: boolean) => void; onBeautify: (on: boolean) => void };
       /** S펜 버튼을 누른 채 쓸 때 (v0.33, 기기 설정) */
       penButton?: { action: PenButtonAction; onChange: (a: PenButtonAction) => void };
+      /** 이 도구의 최근 색 (v0.42) */
+      recent?: string[];
+      /** 스포이트로 화면에서 색 가져오기 (v0.42) */
+      onEyedropper?: () => void;
+      /** 손떨림 보정 세기 (v0.42, 기기 설정) */
+      stabilize?: { level: StabilizeLevel; onChange: (level: StabilizeLevel) => void };
       onClose: () => void;
     }
   | {
@@ -59,6 +67,54 @@ function Toggle({ on, onChange, label, hint }: { on: boolean; onChange: (on: boo
         <small>{hint}</small>
       </span>
     </button>
+  );
+}
+
+/** 16진수 색 입력 (v0.42): 엔터·포커스를 떠나면 적용, 잘못 쓰면 원래대로 */
+function HexInput({ color, onColor }: { color: string; onColor: (c: string) => void }) {
+  const [text, setText] = useState(color);
+  const [bad, setBad] = useState(false);
+  useEffect(() => {
+    setText(color);
+    setBad(false);
+  }, [color]);
+  const apply = () => {
+    const c = normalizeHex(text);
+    if (!c) {
+      setBad(text.trim() !== "" && text.trim() !== color);
+      setText(color);
+      return;
+    }
+    setBad(false);
+    setText(c);
+    if (c !== color.toLowerCase()) onColor(c);
+  };
+  return (
+    <label className={`ts-hex${bad ? " bad" : ""}`} title="16진수 색 (#RRGGBB)">
+      <span className="ts-hex-dot" style={{ background: normalizeHex(text) ?? color }} />
+      <input
+        type="text"
+        aria-label="색 코드"
+        value={text}
+        maxLength={7}
+        spellCheck={false}
+        autoCapitalize="off"
+        autoComplete="off"
+        onChange={(e) => {
+          setText(e.target.value);
+          setBad(false);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            apply();
+            (e.target as HTMLInputElement).blur();
+          }
+          // Escape는 창 닫기 (위로 올려 보낸다)
+        }}
+        onBlur={apply}
+      />
+    </label>
   );
 }
 
@@ -123,6 +179,34 @@ export function ToolSettings(props: Props) {
             >
               <input type="color" aria-label="다른 색" value={props.preset.color} onChange={(e) => props.onChange({ color: e.target.value })} />
             </label>
+          </div>
+          {/* 최근 색 (v0.42): 이 도구로 고른 색, 최근 것부터 10개 */}
+          {!!props.recent?.length && (
+            <>
+              <div className="ts-label">최근 색</div>
+              <div className="ts-row ts-colors ts-recent" role="radiogroup" aria-label="최근 색">
+                {props.recent.map((c) => (
+                  <button
+                    key={c}
+                    role="radio"
+                    aria-checked={props.preset.color.toLowerCase() === c}
+                    aria-label={`최근 ${c}`}
+                    className={`ts-swatch${props.preset.color.toLowerCase() === c ? " active" : ""}`}
+                    style={{ background: c }}
+                    onClick={() => props.onChange({ color: c })}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+          {/* 스포이트 · 색 코드 (v0.42) */}
+          <div className="ts-row ts-colortools">
+            {props.onEyedropper && (
+              <button className="ts-target ts-eyedrop" onClick={props.onEyedropper} title="화면을 눌러 그 자리 색 가져오기">
+                <Pipette size={15} /> 스포이트
+              </button>
+            )}
+            <HexInput color={props.preset.color} onColor={(c) => props.onChange({ color: c })} />
           </div>
           <div className="ts-row" role="radiogroup" aria-label="굵기">
             {WIDTH_LEVELS[props.preset.tool].map((w, i) => (
@@ -192,6 +276,24 @@ export function ToolSettings(props: Props) {
               <Toggle on={props.correction.beautify} onChange={props.correction.onBeautify} label="필기 보정" hint="글씨를 반듯하게" />
             )}
           </div>
+          {props.stabilize && (
+            <>
+              <div className="ts-label">손떨림 보정</div>
+              <div className="ts-row ts-targets" role="radiogroup" aria-label="손떨림 보정">
+                {STABILIZE_LEVELS.map((l) => (
+                  <button
+                    key={l.id}
+                    role="radio"
+                    aria-checked={props.stabilize!.level === l.id}
+                    className={`ts-target${props.stabilize!.level === l.id ? " active" : ""}`}
+                    onClick={() => props.stabilize!.onChange(l.id)}
+                  >
+                    {l.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
           {props.penButton && (
             <>
               <div className="ts-label">S펜 버튼을 누른 채 쓰면</div>
