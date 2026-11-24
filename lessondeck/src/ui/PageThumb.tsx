@@ -12,6 +12,7 @@ import { paintBoxes } from "../view/boxPaint";
 import { paintStickers } from "../view/stickerPaint";
 import { loadBoxFonts } from "../view/textMeasure";
 import { boxesOf } from "../doc/boxes";
+import { templateUrl } from "../doc/templates";
 
 interface Props {
   page: Page;
@@ -93,13 +94,13 @@ export const PageThumb = memo(function PageThumb({ page, doc, strokes, width, li
     };
   }, [strokes, width, height, page, doc.pages, doc.hidden, doc.assets]);
 
-  const grid = page.kind === "blank" && page.background === "grid";
+  // 템플릿 무늬 (v0.45)
+  const tpl =
+    page.kind === "blank"
+      ? templateUrl(page.background, Math.round((width / Math.max(1, height)) * 1000) / 1000, { stroke: Math.max(1, 250 / Math.max(1, width)), spacing: 1 })
+      : null;
   return (
-    <div
-      ref={hostRef}
-      className={`thumb-page${grid ? " grid" : ""}`}
-      style={{ width, height, backgroundSize: grid ? `${width / 40}px ${width / 40}px` : undefined }}
-    >
+    <div ref={hostRef} className="thumb-page" style={{ width, height, backgroundImage: tpl ? `url("${tpl}")` : undefined }}>
       {src && <img src={src} alt="" draggable={false} />}
       {page.kind === "image" && mediaAsset(doc.assets, page.asset) && (
         <img src={mediaAsset(doc.assets, page.asset)!.url} alt="" draggable={false} decoding="async" />

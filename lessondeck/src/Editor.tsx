@@ -27,6 +27,8 @@ import {
   FilePlus2,
   Hand,
   Highlighter,
+  LayoutTemplate,
+  FileStack,
   Lasso,
   Link2,
   Minimize2,
@@ -141,6 +143,8 @@ import {
 } from "./ink/selection";
 import { HIGHLIGHTER_COLORS, PEN_COLORS } from "./ink/palette";
 import { ShapePicker } from "./ui/ShapePicker";
+import { TemplatePicker } from "./ui/TemplatePicker";
+import { templateLabel } from "./doc/templates";
 import { followDetour, stepSkipping, type Detour } from "./doc/detours";
 import { addArrow, flipArrow, moveArrowEnd, patchArrow, removeArrow, type ArrowTarget } from "./doc/arrows";
 import { cleanFormat, type BoxFormat } from "./doc/boxFonts";
@@ -184,6 +188,8 @@ type Popover =
   | { kind: "eraser"; left: number; top: number }
   /** 도형 고르기 (고르면 도형 모드) */
   | { kind: "shapes"; left: number; top: number }
+  /** 빈 페이지 바탕 바꾸기 (v0.45) */
+  | { kind: "template"; pageId: string; left: number; top: number }
   | null;
 type FileTarget = { kind: "pdf" | "html" | "image" | "video" | "sticker"; index: number; at?: { x: number; y: number } };
 
@@ -686,6 +692,24 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
       },
     });
   };
+
+  /** 빈 페이지 바탕 바꾸기 (v0.45 템플릿) */
+  const setBackground = (id: string, background: BlankBackground) => {
+    setDoc((d) => ({ ...d, pages: d.pages.map((p) => (p.id === id && p.kind === "blank" ? { ...p, background } : p)) }));
+  };
+  /** 같은 바탕으로 새 페이지 (v0.45 PDF·그림 템플릿): 같은 PDF 쪽·그림·빈 페이지 바탕, 필기·글상자·스티커 없이 바로 뒤에 */
+  const canTemplateCopy = (page: Page | undefined) => !!page && (page.kind === "pdf" || page.kind === "image" || page.kind === "blank");
+  const templateCopy = (id: string) => {
+    const index = doc.pages.findIndex((p) => p.id === id);
+    const page = doc.pages[index];
+    if (!canTemplateCopy(page)) return;
+    const { boxes: _boxes, arrows: _arrows, stickers: _stickers, ...rest } = page as Page & { boxes?: unknown; arrows?: unknown; stickers?: unknown };
+    const copy = { ...rest, id: newPageId() } as Page;
+    setDoc((d) => ({ ...d, pages: insertPages(d.pages, index + 1, [copy]) }));
+    setCurrentId(copy.id);
+    showToast("같은 바탕의 새 페이지를 만들었습니다 (필기·글상자 없이)");
+  };
+  const openTemplatePicker = (pageId: string, x: number, y: number) => setPopover({ kind: "template", pageId, ...pickerAt(x, y) });
 
   const duplicatePage = (id: string) => {
     const index = doc.pages.findIndex((p) => p.id === id);
@@ -1925,6 +1949,8 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
             { label: "복사", icon: <Copy size={18} />, onSelect: () => void copyPage(id) },
             { label: "잘라내기", icon: <Scissors size={18} />, disabled: doc.pages.length <= 1, onSelect: () => void copyPage(id, true) },
             { label: "복제", icon: <CopyPlus size={18} />, onSelect: () => duplicatePage(id) },
+            canTemplateCopy(doc.pages[i]) && { label: "같은 바탕으로 새 페이지", icon: <FileStack size={18} />, onSelect: () => templateCopy(id) },
+            doc.pages[i].kind === "blank" && { label: "바탕 바꾸기", icon: <LayoutTemplate size={18} />, onSelect: () => openTemplatePicker(id, menu.x, menu.y) },
             { label: thumbPageId === id ? "썸네일에서 빼기" : "썸네일로 고르기", icon: <BookImage size={18} />, onSelect: () => void chooseThumb(id) },
           ],
           [
@@ -1991,7 +2017,22 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
             strokes.length > 0 && { label: "필기 지우기", icon: <Eraser size={18} />, onSelect: () => inkAction({ type: "clear" }) },
           ],
           !aiMode && [
-            { label: "빈 페이지 추가", icon: <FilePlus2 size={18} />, onSelect: () => addBlank(pageIndex + 1, "plain") },
+            {
+              label: "빈 페이지 추가",
+              icon: <FilePlus2 size={18} />,
+              // 빈 페이지에서는 같은 바탕(템플릿)으로 (v0.45)
+              onSelect: () => addBlank(pageIndex + 1, currentPage?.kind === "blank" ? currentPage.background : "plain"),
+            },
+            canTemplateCopy(currentPage) && currentPage?.kind !== "blank" && {
+              label: "같은 바탕으로 새 페이지",
+              icon: <FileStack size={18} />,
+              onSelect: () => templateCopy(currentPage!.id),
+            },
+            currentPage?.kind === "blank" && {
+              label: "바탕 바꾸기",
+              icon: <LayoutTemplate size={18} />,
+              onSelect: () => openTemplatePicker(currentPage.id, menu.x, menu.y),
+            },
             currentPage && { label: "페이지 복제", icon: <CopyPlus size={18} />, onSelect: () => duplicatePage(currentPage.id) },
             currentPage && { label: "페이지 복사", icon: <Copy size={18} />, onSelect: () => void copyPage(currentPage.id) },
             currentPage && {
@@ -3079,6 +3120,22 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
           onClose={closePopover}
         />
       )}
+      {popover?.kind === "template" &&
+        (() => {
+          const target = doc.pages.find((p) => p.id === popover.pageId);
+          return target?.kind === "blank" ? (
+            <TemplatePicker
+              anchor={popover}
+              current={target.background}
+              onPick={(bg) => {
+                setBackground(target.id, bg);
+                setPopover(null);
+                showToast(`바탕: ${templateLabel(bg)}`);
+              }}
+              onClose={closePopover}
+            />
+          ) : null;
+        })()}
       {popover?.kind === "shapes" && (
         <ShapePicker
           anchor={popover}

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { pageNumberLabel } from "../doc/boxes";
 import { normalizeUrl } from "../doc/html";
 import { htmlAsset, mediaAsset, pdfAsset, type Asset, type BoxLink, type Page } from "../doc/types";
+import { templateLabel } from "../doc/templates";
 
 interface Props {
   pages: Page[];
@@ -138,7 +139,7 @@ export function pageName(page: Page, assets: Record<string, Asset>): string {
       return a ? `${a.name} · ${page.pageIndex + 1}쪽` : "PDF";
     }
     case "blank":
-      return page.background === "grid" ? "모눈 페이지" : "빈 페이지";
+      return templateLabel(page.background);
     case "html":
       return htmlAsset(assets, page.asset)?.name ?? "HTML";
     case "url":
@@ -158,7 +159,7 @@ export function pageName(page: Page, assets: Record<string, Asset>): string {
 function KindIcon({ page }: { page: Page }) {
   switch (page.kind) {
     case "blank":
-      return page.background === "grid" ? <Grid3x3 size={16} /> : <File size={16} />;
+      return page.background === "plain" ? <File size={16} /> : <Grid3x3 size={16} />;
     case "html":
     case "url":
       return <FileCode2 size={16} />;

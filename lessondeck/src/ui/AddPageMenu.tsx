@@ -1,4 +1,6 @@
-import { ClipboardPaste, File, FileCode2, FileText, Film, Globe, Grid3x3, Image, SquarePlay } from "lucide-react";
+import { ClipboardPaste, FileCode2, FileText, Film, Globe, Image, SquarePlay } from "lucide-react";
+import { TEMPLATES } from "../doc/templates";
+import { TemplateIcon } from "./TemplatePicker";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { BlankBackground } from "../doc/types";
 
@@ -22,7 +24,7 @@ const PLACEHOLDER: Record<LinkKind, string> = {
   youtube: "유튜브 링크 붙여넣기",
 };
 
-// 페이지 추가 메뉴: 빈 페이지·모눈 페이지·PDF·이미지·동영상·HTML 파일·웹 주소·유튜브
+// 페이지 추가 메뉴: 빈 페이지 템플릿(백지·줄·모눈·점·코넬)·PDF·이미지·동영상·HTML 파일·웹 주소·유튜브
 export function AddPageMenu({ left, top, onBlank, onFile, onLink, paste, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [linkKind, setLinkKind] = useState<LinkKind | null>(null);
@@ -71,12 +73,15 @@ export function AddPageMenu({ left, top, onBlank, onFile, onLink, paste, onClose
           <ClipboardPaste size={20} /> {paste.label}
         </button>
       )}
-      <button role="menuitem" onClick={() => onBlank("plain")}>
-        <File size={20} /> 빈 페이지
-      </button>
-      <button role="menuitem" onClick={() => onBlank("grid")}>
-        <Grid3x3 size={20} /> 모눈 페이지
-      </button>
+      {/* 빈 페이지 템플릿 (v0.45): 백지 · 줄 · 모눈 · 점 · 코넬 */}
+      <div className="add-templates" role="group" aria-label="빈 페이지">
+        {TEMPLATES.map((t) => (
+          <button key={t.id} role="menuitem" aria-label={t.label} title={t.label} onClick={() => onBlank(t.id)}>
+            <TemplateIcon background={t.id} />
+            <span>{t.short}</span>
+          </button>
+        ))}
+      </div>
       <button role="menuitem" onClick={() => onFile("pdf")}>
         <FileText size={20} /> PDF…
       </button>

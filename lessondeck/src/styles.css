@@ -211,11 +211,11 @@ button {
   background: #fff;
 }
 
-.blank-page.grid,
-.thumb-page.grid {
-  background-image:
-    linear-gradient(#dfe6ea 1px, transparent 1px),
-    linear-gradient(90deg, #dfe6ea 1px, transparent 1px);
+/* 빈 페이지 템플릿 (v0.45): 페이지 가로 1000 기준 SVG를 페이지 크기에 맞춰 (doc/templates.ts) */
+.blank-page,
+.thumb-page {
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
 }
 
 /* ── 이어 보기 (v0.44): 페이지를 세로로 이어 붙인 띠를 스크롤 ── */
@@ -5439,4 +5439,67 @@ button.version-btn {
 .update-error {
   margin-top: 6px;
   color: #ffb4ab;
+}
+
+/* ── 템플릿 고르기 (v0.45) ───────────── */
+.tpl-icon {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 30px;
+  height: 40px;
+  border-radius: 3px;
+  background-color: #fff;
+  background-size: 100% 100%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+
+.add-menu .add-templates {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  padding: 2px 0 6px;
+}
+
+.add-menu .add-templates button {
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  height: auto;
+  padding: 6px 2px;
+  font-size: 12px;
+  text-align: center;
+}
+
+.tpl-picker {
+  width: 340px;
+}
+
+.tpl-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+
+.tpl-grid button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 2px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tpl-grid button:hover {
+  background: var(--hover);
+}
+
+.tpl-grid button.on {
+  border-color: var(--accent);
+  background: var(--active-bg);
+  color: var(--accent);
 }

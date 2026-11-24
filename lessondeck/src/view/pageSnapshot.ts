@@ -7,6 +7,7 @@ import { paintBoxes } from "./boxPaint";
 import { paintStickers } from "./stickerPaint";
 import { loadBoxFonts } from "./textMeasure";
 import { boxesOf } from "../doc/boxes";
+import { templateUrl } from "../doc/templates";
 
 // 홈 카드에 쓰는 썸네일 페이지 그림 (v0.22): 페이지 + 스티커 + 필기(형광펜은 곱하기, v0.23) + 글상자를 한 장의 JPEG로.
 // 다른 사이트(유튜브)의 그림은 캔버스에서 꺼낼 수 없어 그리지 않는다.
@@ -86,20 +87,9 @@ async function paintBase(ctx: CanvasRenderingContext2D, page: Page, doc: DocStat
       return;
     }
     case "blank": {
-      if (page.background !== "grid") return;
-      ctx.strokeStyle = "#dfe6ea";
-      ctx.lineWidth = 1;
-      const step = w / 40;
-      ctx.beginPath();
-      for (let x = step; x < w; x += step) {
-        ctx.moveTo(Math.round(x) + 0.5, 0);
-        ctx.lineTo(Math.round(x) + 0.5, h);
-      }
-      for (let y = step; y < h; y += step) {
-        ctx.moveTo(0, Math.round(y) + 0.5);
-        ctx.lineTo(w, Math.round(y) + 0.5);
-      }
-      ctx.stroke();
+      // 템플릿 무늬 (v0.45): 화면과 같은 SVG
+      const url = templateUrl(page.background, Math.round((w / Math.max(1, h)) * 1000) / 1000);
+      if (url) ctx.drawImage(await loadImage(url), 0, 0, w, h);
       return;
     }
     case "html":

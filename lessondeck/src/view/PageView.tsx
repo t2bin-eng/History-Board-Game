@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { isMadeForEmbedding } from "../doc/embed";
 import { pageFrameUrl, useShortLinks } from "../lib/shortLinks";
 import { stepVisible, visiblePosition } from "../doc/pages";
-import { isInteractivePage, mediaAsset, pageAspect, pdfAsset, type DocState, type InteractivePage, type Page } from "../doc/types";
+import { isInteractivePage, mediaAsset, pageAspect, pdfAsset, type BlankBackground as BlankBg, type DocState, type InteractivePage, type Page } from "../doc/types";
 import { fitPage, type PageSize } from "../ink/geometry";
 import { InkCanvas } from "../ink/InkCanvas";
 import type { ShapeTool } from "../ink/shapes";
@@ -21,6 +21,7 @@ import { fingerOperatesWeb, isNativeApp } from "../lib/platform";
 import type { EraserMode, EraserTarget } from "../ink/eraser";
 import type { PenButtonAction } from "../ink/penButton";
 import { WebStage } from "./WebStage";
+import { templateUrl } from "../doc/templates";
 import { useLongPressMenu } from "./useLongPressMenu";
 
 interface Props {
@@ -354,13 +355,9 @@ export function PageBackground({
   );
 }
 
-export function BlankBackground({ background, size }: { background: "plain" | "grid"; size: PageSize }) {
-  // 모눈 간격은 페이지 가로의 1/40 (A4 기준 약 5mm)
-  const cell = size.width / 40;
-  return (
-    <div
-      className={`blank-page${background === "grid" ? " grid" : ""}`}
-      style={background === "grid" ? { backgroundSize: `${cell}px ${cell}px` } : undefined}
-    />
-  );
+export function BlankBackground({ background, size }: { background: BlankBg; size: PageSize }) {
+  // 템플릿 무늬 (v0.45): 페이지 가로 1000 기준 SVG를 페이지에 맞춰 늘림 (벡터라 확대해도 또렷)
+  const aspect = size.height > 0 ? size.width / size.height : 1;
+  const url = useMemo(() => templateUrl(background, Math.round(aspect * 1000) / 1000), [background, aspect]);
+  return <div className={`blank-page ${background}`} style={url ? { backgroundImage: `url("${url}")` } : undefined} />;
 }

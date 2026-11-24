@@ -41,7 +41,8 @@ export interface MediaAsset {
 
 export type Asset = PdfAsset | HtmlAsset | MediaAsset;
 
-export type BlankBackground = "plain" | "grid";
+/** 빈 페이지 바탕 (v0.45 템플릿: 줄·점·코넬 노트, SPEC 5장) */
+export type BlankBackground = "plain" | "grid" | "lined" | "dot" | "cornell";
 
 /** HTML·URL 페이지 화면 비율 (SPEC R8) */
 export type AspectPreset = "16:9" | "4:3" | "A4";
