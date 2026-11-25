@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { registerSW } from "virtual:pwa-register";
 import App from "./App";
 import { installInputTracking } from "./lib/inputState";
+import { applyTheme } from "./lib/theme";
 import { setupNativeShell } from "./lib/nativeShell";
 import { isNativeApp, showToast } from "./lib/platform";
 import { routeExternalLinks } from "./lib/webFrames";
@@ -10,6 +11,8 @@ import { requestPersistentStorage } from "./store/db";
 import "./fonts";
 import "./styles.css";
 
+// 테마 (v0.49): 첫 화면을 그리기 전에 (깜빡이지 않게)
+applyTheme();
 installInputTracking();
 requestPersistentStorage();
 

@@ -147,6 +147,8 @@ import { addArrow, flipArrow, moveArrowEnd, patchArrow, removeArrow, type ArrowT
 import { cleanFormat, type BoxFormat } from "./doc/boxFonts";
 import { josa } from "./lib/josa";
 import { art } from "./ui/art";
+import { useTheme } from "./lib/theme";
+import { ThemeDialog } from "./ui/ThemeDialog";
 import { Icon } from "./ui/Icon";
 import { ShapeEditor } from "./view/ShapeEditor";
 import { SelectionEditor } from "./view/SelectionEditor";
@@ -246,6 +248,10 @@ function initialPageId(doc: DocState): string {
 
 // 문서 하나를 열어 판서하는 화면
 export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, resumeLecture }: Props) {
+  // 테마 (v0.49): 바뀌면 그림·아이콘을 다시 그린다
+  const theme = useTheme();
+  /** 테마 고르기 창 (v0.49) */
+  const [themeOpen, setThemeOpen] = useState(false);
   /** AI 창: 기기 저장소에 아무것도 쓰지 않는다 */
   const aiMode = !!ai;
   const storeAsset = (docId: string, id: string, blob: Blob) => (aiMode ? Promise.resolve() : putAsset(docId, id, blob));
@@ -2124,6 +2130,11 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
         ],
         [
           {
+            label: "테마",
+            icon: <Palette size={18} />,
+            onSelect: () => setThemeOpen(true),
+          },
+          {
             label: "이어 보기 (세로 스크롤)",
             icon: <Rows3 size={18} />,
             checked: viewMode === "scroll",
@@ -2805,7 +2816,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
           {doc.pages.length === 0 && (
             <div className="page-area-message">
               <div>
-                <img src={art("states/no-pages")} alt="" draggable={false} />
+                <img src={art("states/no-pages", theme)} alt="" draggable={false} />
                 페이지가 없습니다. 페이지를 추가해 주세요.
               </div>
             </div>
@@ -3276,6 +3287,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
         />
       )}
       {menu && <ContextMenu x={menu.x} y={menu.y} {...menuGroups()} onClose={() => setMenu(null)} />}
+      {themeOpen && <ThemeDialog onClose={() => setThemeOpen(false)} />}
       {linkDialog && currentPage && (
         <LinkDialog
           pages={doc.pages}

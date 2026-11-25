@@ -1,3 +1,4 @@
+import { cssToken } from "../lib/theme";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { debugStats, recordPointer, recordRender } from "../lib/debugStore";
 import { activeTouchCount, isSideButtonDown, onPalm, onSideButtonChange, palmActive, penRecentlyActive, penStrokeErasing, penTouching, pointerKind, type PointerKind } from "../lib/inputState";
@@ -334,11 +335,12 @@ export function InkCanvas(props: Props) {
         y1 = Math.max(y1, y);
       });
       liveCtx.closePath();
-      liveCtx.fillStyle = "rgba(241,131,73,0.08)";
+      // 올가미 자국: 테마 포인트 색 (v0.49)
+      liveCtx.fillStyle = `rgba(${cssToken("--accent-rgb") || "241, 131, 73"}, 0.08)`;
       liveCtx.fill();
       liveCtx.setLineDash([6 / z, 4 / z]);
       liveCtx.lineWidth = 1.6 / z;
-      liveCtx.strokeStyle = "rgba(156,61,21,0.9)";
+      liveCtx.strokeStyle = cssToken("--accent-text") || "#9c3d15";
       liveCtx.stroke();
       liveCtx.setLineDash([]);
       const m = 4 / z;

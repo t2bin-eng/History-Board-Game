@@ -1,3 +1,4 @@
+import type { ThemeId } from "../lib/theme";
 import type { Page } from "./types";
 
 // 홈 문서 카드의 표지 (v0.21): 제목·차시 번호로 그리는 책 표지 모양. SPEC 5장 library.covers
@@ -23,8 +24,16 @@ export function autoCoverColor(docId: string): string {
 
 export type CoverLook = { type: "color"; color: string } | { type: "page" } | { type: "art"; art: CoverArt };
 
-/** 표지 그림 (v0.47 디자인, src/assets/ui/covers): 옅은 바탕에 먹색 제목 */
-export const COVER_ARTS = ["apricot-sunrise", "sage-contours", "mist-blue-waves", "lavender-arcs", "sand-stitch", "rose-paper"] as const;
+/**
+ * 표지 그림 (v0.47 디자인, v0.49 테마마다 여섯 가지 — src/assets/themes/<테마>/ui/covers): 옅은 바탕에 먹색 제목.
+ * 같은 자리끼리 비슷한 빛깔이라, 자동 표지는 테마를 바꿔도 비슷한 빛깔의 그 테마 그림이 된다
+ */
+export const COVER_ART_SETS = {
+  apricot: ["apricot-sunrise", "sage-contours", "mist-blue-waves", "lavender-arcs", "sand-stitch", "rose-paper"],
+  "water-lily": ["water-lilies", "garden-bridge", "blue-reflections", "willow-curtain", "golden-pond", "rose-irises"],
+} as const satisfies Record<ThemeId, readonly string[]>;
+/** 고를 수 있는 모든 표지 그림 (테마와 상관없이 고른 그림은 그 그림) */
+export const COVER_ARTS = [...COVER_ART_SETS.apricot, ...COVER_ART_SETS["water-lily"]] as const;
 export type CoverArt = (typeof COVER_ARTS)[number];
 
 function hash(id: string): number {
@@ -37,18 +46,19 @@ function hash(id: string): number {
   return h >>> 0;
 }
 
-/** 문서 id로 정하는 자동 표지 그림 (이름을 바꿔도 그대로) */
-export function autoCoverArt(docId: string): CoverArt {
-  return COVER_ARTS[hash(docId) % COVER_ARTS.length];
+/** 문서 id로 정하는 자동 표지 그림 (이름을 바꿔도 그대로, 테마마다 같은 자리) */
+export function autoCoverArt(docId: string, theme: ThemeId = "apricot"): CoverArt {
+  const set = COVER_ART_SETS[theme] ?? COVER_ART_SETS.apricot;
+  return set[hash(docId) % set.length];
 }
 
-/** 고른 표지("auto" · "art:<id>" · "#rrggbb" · "page")를 그릴 모양으로. 첫 페이지 그림이 없으면 자동 표지 */
-export function coverLook(docId: string, choice: string | undefined, hasThumb: boolean): CoverLook {
+/** 고른 표지("auto" · "art:<id>" · "#rrggbb" · "page")를 그릴 모양으로. 첫 페이지 그림이 없으면 자동 표지(지금 테마) */
+export function coverLook(docId: string, choice: string | undefined, hasThumb: boolean, theme: ThemeId = "apricot"): CoverLook {
   if (choice === "page" && hasThumb) return { type: "page" };
   if (choice && /^#[0-9a-f]{6}$/i.test(choice)) return { type: "color", color: choice };
   const art = choice?.startsWith("art:") ? choice.slice(4) : "";
   if ((COVER_ARTS as readonly string[]).includes(art)) return { type: "art", art: art as CoverArt };
-  return { type: "art", art: autoCoverArt(docId) };
+  return { type: "art", art: autoCoverArt(docId, theme) };
 }
 
 export interface CoverTitle {

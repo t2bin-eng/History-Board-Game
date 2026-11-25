@@ -44,8 +44,8 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // 교실 와이파이가 끊겨도 동작하도록 pdf.js 워커·cmaps·글꼴·샘플 PDF까지 모두 미리 캐시한다.
-        globPatterns: ["**/*.{js,mjs,css,html,svg,png,ico,pdf,wasm,bcmap,pfb,ttf,icc,webmanifest}"],
+        // 교실 와이파이가 끊겨도 동작하도록 pdf.js 워커·cmaps·글꼴·샘플 PDF·디자인 그림(webp, 두 테마)까지 모두 미리 캐시한다.
+        globPatterns: ["**/*.{js,mjs,css,html,svg,png,webp,ico,pdf,wasm,bcmap,pfb,ttf,icc,webmanifest}"],
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
         navigateFallback: "/index.html",
         cleanupOutdatedCaches: true,

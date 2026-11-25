@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import { Icon } from "./Icon";
 import { art, subjectArt } from "./art";
+import { useTheme } from "../lib/theme";
+import { ThemeDialog } from "./ThemeDialog";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { safeFileName, shareOrDownload } from "../lib/files";
 import { onBackPress } from "../lib/nativeShell";
@@ -65,6 +67,10 @@ function loadSort(): Sort {
 
 // 문서 목록 (SPEC 6장: 홈) — 폴더로 정리, 찾기, 정렬, 여러 개 골라 옮기기·삭제
 export function HomeScreen({ onOpen, headerExtra }: Props) {
+  const theme = useTheme();
+  const [themeOpen, setThemeOpen] = useState(false);
+  /** 홈 머리 그림 (그 테마에 있을 때만, v0.49) */
+  const banner = art("backgrounds/garden-banner", theme);
   const [docs, setDocs] = useState<DocRecord[] | null>(null);
   const [busy, setBusy] = useState<Busy>(null);
   const [folderId, setFolderId] = useState<string | null>(rememberedFolder);
@@ -387,11 +393,19 @@ export function HomeScreen({ onOpen, headerExtra }: Props) {
             </button>
           </div>
         </div>
-        <div className="topbar-right">{headerExtra}</div>
+        <div className="topbar-right">
+          {/* 테마 (v0.49) */}
+          <button className="icon-btn" aria-label="테마" title="테마" onClick={() => setThemeOpen(true)}>
+            <Icon name="palette" size={22} />
+          </button>
+          {headerExtra}
+        </div>
       </header>
+      {themeOpen && <ThemeDialog onClose={() => setThemeOpen(false)} />}
 
       <main className="home-main" ref={mainRef}>
-        <div className="home-hello">
+        {/* 머리 그림이 있는 테마(v0.49 수련 정원)는 인사말 뒤에 그림 — 왼쪽 밝은 여백에 글 */}
+        <div className={`home-hello${banner ? " hero" : ""}`} style={banner ? { backgroundImage: `url("${banner}")` } : undefined}>
           <small>{todayLabel()}</small>
           <h1>오늘은 어떤 수업을 펼쳐 볼까요?</h1>
         </div>
@@ -510,7 +524,7 @@ export function HomeScreen({ onOpen, headerExtra }: Props) {
 
           {empty && (
             <div className="home-empty">
-              <img src={art(searching ? "states/no-search-results" : "states/empty-library")} alt="" draggable={false} />
+              <img src={art(searching ? "states/no-search-results" : "states/empty-library", theme)} alt="" draggable={false} />
               <p>
               {searching
                 ? `‘${query.trim()}’와(과) 맞는 문서·폴더가 없습니다.`
@@ -723,9 +737,10 @@ function commonLocation(locations: (string | null)[]): string | null | undefined
 }
 
 function ActionCard({ art: name, title, desc, onClick }: { art: string; title: string; desc: string; onClick: () => void }) {
+  const theme = useTheme();
   return (
     <button className="action-card" onClick={onClick}>
-      <img className="action-art" src={art(name)} alt="" draggable={false} />
+      <img className="action-art" src={art(name, theme)} alt="" draggable={false} />
       <span className="action-text">
         <strong>{title}</strong>
         <small>{desc}</small>
@@ -736,9 +751,10 @@ function ActionCard({ art: name, title, desc, onClick }: { art: string; title: s
 
 /** 폴더 그림 (v0.47): 이름에 맞는 과목 그림(한국사·과학 등), 아니면 폴더 그림. 고른 폴더 색은 작은 점으로 */
 function FolderArt({ name, color }: { name: string; color?: string }) {
+  const theme = useTheme();
   return (
     <span className="folder-art">
-      <img src={art(subjectArt(name) ?? "home-actions/folder")} alt="" draggable={false} />
+      <img src={art(subjectArt(name) ?? "home-actions/folder", theme)} alt="" draggable={false} />
       {color && <span className="folder-dot" style={{ background: color }} />}
     </span>
   );

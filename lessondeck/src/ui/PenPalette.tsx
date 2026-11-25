@@ -1,4 +1,5 @@
 import { art } from "./art";
+import { useTheme } from "../lib/theme";
 import { Blinds, ChevronDown, ChevronUp, EyeOff, GripHorizontal } from "lucide-react";
 import { useState } from "react";
 import type { PenPreset } from "../ink/types";
@@ -112,19 +113,20 @@ function PenGlyph({ preset }: { preset: PenPreset }) {
   // 불투명도 (v0.41): 색 띠·펜촉을 그만큼 비치게
   const alpha = hl ? 1 : Math.max(0.2, Math.min(1, preset.opacity ?? 1));
   // v0.47 디자인: 먹색 윤곽선 + 크림색 몸통, 뚜껑 띠와 펜촉은 그 펜 색 (src/assets 판서 도구 그림과 같은 결)
-  const ink = "#28231F";
-  const body = "#FFFDF9";
+  // 윤곽·몸통 색은 테마 토큰 (v0.49)
+  const ink = "var(--ink)";
+  const body = "var(--pen-body)";
   const capW = hl ? 19 : 12;
   const barrelX = 1.5 + capW;
   const barrelW = hl ? 26 : 32;
   const coneX = barrelX + barrelW;
   return (
     <svg width="76" height="26" viewBox="0 0 76 26" aria-hidden="true">
-      <g stroke={ink} strokeWidth="1.4" strokeLinejoin="round" strokeLinecap="round">
+      <g style={{ stroke: ink }} strokeWidth="1.4" strokeLinejoin="round" strokeLinecap="round">
         {/* 뚜껑 띠: 펜 색 */}
         <rect x="1.5" y="6.5" width={capW} height="13" rx="3" fill={preset.color} fillOpacity={alpha} />
         {/* 몸통 */}
-        <rect x={barrelX} y="6.5" width={barrelW} height="13" rx="1.5" fill={body} />
+        <rect x={barrelX} y="6.5" width={barrelW} height="13" rx="1.5" style={{ fill: body }} />
         {/* 직선 형광펜 (v0.33): 몸통에 곧은 줄 */}
         {hl && preset.straight && <path d={`M${barrelX + 4} 13 H${barrelX + barrelW - 4}`} stroke={preset.color} strokeWidth="2.2" />}
         {!hl && <path d={`M${barrelX + barrelW - 9} 6.5 V19.5`} strokeWidth="1.1" />}
@@ -137,7 +139,7 @@ function PenGlyph({ preset }: { preset: PenPreset }) {
                 ? `M${coneX} 6.5 L${coneX + 18} 11.2 L${coneX + 18} 14.8 L${coneX} 19.5 Z`
                 : `M${coneX} 6.5 L${coneX + 19} 11.6 L${coneX + 19} 14.4 L${coneX} 19.5 Z`
           }
-          fill={nib === "pencil" ? "#F3D6A8" : body}
+          style={{ fill: nib === "pencil" ? "#F3D6A8" : body }}
         />
         {/* 펜촉: 펜 색 */}
         {hl ? (
@@ -167,5 +169,6 @@ function PenGlyph({ preset }: { preset: PenPreset }) {
 
 /** 레이저 펜 그림 (v0.47 디자인 그림) */
 function LaserGlyph() {
-  return <img className="pen-art" src={art("editor-tools/laser-pointer")} alt="" draggable={false} />;
+  const theme = useTheme();
+  return <img className="pen-art" src={art("editor-tools/laser-pointer", theme)} alt="" draggable={false} />;
 }

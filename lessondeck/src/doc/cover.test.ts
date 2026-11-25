@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { contrast } from "./colors";
-import { autoCoverArt, autoCoverColor, COVER_ARTS, COVER_COLORS, coverLook, splitCoverTitle } from "./cover";
+import { autoCoverArt, autoCoverColor, COVER_ART_SETS, COVER_COLORS, coverLook, splitCoverTitle } from "./cover";
 
 describe("표지", () => {
   it("차시 번호와 제목을 나눈다", () => {
@@ -35,11 +35,22 @@ describe("표지", () => {
   it("표지 그림 (v0.47): 자동은 문서마다 정해진 그림, 고른 그림, 모르는 그림은 자동", () => {
     expect(autoCoverArt("doc-abc")).toBe(autoCoverArt("doc-abc"));
     const used = new Set(Array.from({ length: 60 }, (_, i) => autoCoverArt(`doc-${i}-x`)));
-    expect(used.size).toBe(COVER_ARTS.length);
+    expect(used.size).toBe(COVER_ART_SETS.apricot.length);
     expect(coverLook("d", undefined, true)).toEqual({ type: "art", art: autoCoverArt("d") });
     expect(coverLook("d", "auto", true)).toEqual({ type: "art", art: autoCoverArt("d") });
     expect(coverLook("d", "page", false)).toEqual({ type: "art", art: autoCoverArt("d") });
     expect(coverLook("d", "art:rose-paper", false)).toEqual({ type: "art", art: "rose-paper" });
+    // 테마 (v0.49): 자동 표지는 지금 테마의 같은 자리 그림, 고른 그림은 테마와 상관없이 그 그림
+    for (let i = 0; i < 30; i++) {
+      const id = `doc-${i}-y`;
+      const a = autoCoverArt(id, "apricot");
+      const w = autoCoverArt(id, "water-lily");
+      expect(COVER_ART_SETS["water-lily"].indexOf(w as never)).toBe(COVER_ART_SETS.apricot.indexOf(a as never));
+    }
+    expect(coverLook("d", "auto", true, "water-lily")).toEqual({ type: "art", art: autoCoverArt("d", "water-lily") });
+    expect(coverLook("d", "art:garden-bridge", true, "apricot")).toEqual({ type: "art", art: "garden-bridge" });
+    expect(coverLook("d", "art:rose-paper", true, "water-lily")).toEqual({ type: "art", art: "rose-paper" });
+    expect(coverLook("d", "art:no-such", true, "water-lily")).toEqual({ type: "art", art: autoCoverArt("d", "water-lily") });
     expect(coverLook("d", "art:nope", false)).toEqual({ type: "art", art: autoCoverArt("d") });
   });
 });

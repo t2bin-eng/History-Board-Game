@@ -1,7 +1,8 @@
 import { BookImage, BookOpen, Check, X } from "lucide-react";
 import type { CSSProperties } from "react";
-import { COVER_COLORS, coverKindLabel, coverLook, splitCoverTitle } from "../doc/cover";
-import { art, COVER_ARTS } from "./art";
+import { COVER_ART_SETS, COVER_COLORS, coverKindLabel, coverLook, splitCoverTitle } from "../doc/cover";
+import { useTheme } from "../lib/theme";
+import { COVER_ART_LABELS, coverArtUrl } from "./art";
 import type { DocRecord } from "../store/db";
 import type { CoverChoice } from "../store/folders";
 import { Dialog } from "./FolderDialogs";
@@ -28,7 +29,8 @@ export function peekThumb(doc: DocRecord, choice: CoverChoice | undefined): stri
 }
 
 export function DocCover({ doc, choice, className }: { doc: DocRecord; choice?: CoverChoice; className?: string }) {
-  const look = coverLook(doc.id, choice?.cover, !!doc.thumb);
+  const theme = useTheme();
+  const look = coverLook(doc.id, choice?.cover, !!doc.thumb, theme);
   if (look.type === "page") {
     return (
       <span className={`doc-thumb ${className ?? ""}`}>
@@ -40,7 +42,7 @@ export function DocCover({ doc, choice, className }: { doc: DocRecord; choice?: 
   const peek = peekThumb(doc, choice);
   const kind = <span className="cover-kind">{coverKindLabel(doc.manifest.pages[0])}</span>;
   // 표지 그림 (v0.47): 옅은 그림 위에 먹색 제목 · 색 표지는 예전처럼 진한 색에 흰 글자
-  const style = (look.type === "art" ? { backgroundImage: `url("${art(`covers/${look.art}`)}")` } : { "--cover": look.color }) as CSSProperties;
+  const style = (look.type === "art" ? { backgroundImage: `url("${coverArtUrl(look.art)}")` } : { "--cover": look.color }) as CSSProperties;
   return (
     <span className={`doc-thumb doc-cover${look.type === "art" ? " art" : ""}${t.num ? "" : " no-num"}${peek ? " with-peek" : ""} ${className ?? ""}`} style={style}>
       {t.num && (
@@ -77,6 +79,7 @@ interface CoverDialogProps {
 
 /** 표지 고르기: 자동 · 10가지 색 · 페이지 그림. 고르면 바로 바뀐다 */
 export function CoverDialog({ docs, current, onPick, onRemoveThumb, onClose }: CoverDialogProps) {
+  const theme = useTheme();
   const sample = docs.find((d) => d.thumb) ?? docs[0];
   const chosen = current?.cover ?? "auto";
   const option = (value: string, label: string) => {
@@ -102,7 +105,11 @@ export function CoverDialog({ docs, current, onPick, onRemoveThumb, onClose }: C
     <Dialog title={docs.length > 1 ? `표지 (${docs.length}개)` : "표지"} icon={<BookOpen size={20} />} className="cover-dialog" onClose={onClose}>
       <div className="cover-options" role="radiogroup" aria-label="표지">
         {option("auto", "자동")}
-        {COVER_ARTS.map((a) => option(`art:${a.id}`, a.label))}
+        {/* 지금 테마의 표지 그림 먼저, 다른 테마 그림도 고를 수 있다 (v0.49) */}
+        {COVER_ART_SETS[theme].map((a) => option(`art:${a}`, COVER_ART_LABELS[a] ?? a))}
+        {(Object.keys(COVER_ART_SETS) as (keyof typeof COVER_ART_SETS)[])
+          .filter((t) => t !== theme)
+          .flatMap((t) => COVER_ART_SETS[t].map((a) => option(`art:${a}`, COVER_ART_LABELS[a] ?? a)))}
         {COVER_COLORS.map((c) => option(c, COLOR_NAMES[c] ?? c))}
         {option("page", "페이지 그림")}
       </div>
