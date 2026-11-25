@@ -923,6 +923,12 @@ button {
   pointer-events: none;
 }
 
+/* 선명한 창 (v0.50): 확대했을 때 보이는 자리만 실제 배율로 그리는 층 — 처음에는 꺼 두고, 누름은 아래 필기층이 받음 */
+.ink-sharp {
+  display: none;
+  pointer-events: none;
+}
+
 /* HTML 페이지 조작 모드: 필기는 보이지만 터치·펜은 아래 웹앱으로 */
 .ink-layer.passthrough,
 .ink-layer.passthrough .ink-canvas {

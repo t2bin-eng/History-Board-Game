@@ -34,6 +34,7 @@ import {
 } from "./scrollLayout";
 import { useLongPressMenu, type LongPress } from "./useLongPressMenu";
 import { usePinnedScroll } from "./usePinnedScroll";
+import { viewMoved } from "./viewMotion";
 import { useWebScroll, type WebScroll } from "./webScroll";
 import { WebStage } from "./WebStage";
 
@@ -170,6 +171,7 @@ export function ScrollView(props: Props) {
     if (el) {
       const { z, x, y } = view.current;
       el.style.transform = `translate3d(${-x * z}px, ${-y * z}px, 0) scale(${z})`;
+      viewMoved();
     }
     if (!checkRaf.current) checkRaf.current = requestAnimationFrame(check);
   }, [check]);

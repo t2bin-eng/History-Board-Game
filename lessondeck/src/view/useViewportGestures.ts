@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, type RefObject } from 
 import { onPalm, palmActive, penRecentlyActive, pointerKind } from "../lib/inputState";
 import { clampView, identity, zoomAt, type Size, type View } from "./viewport";
 import { usePinnedScroll } from "./usePinnedScroll";
+import { viewMoved } from "./viewMotion";
 
 interface Options {
   areaRef: RefObject<HTMLElement | null>;
@@ -47,6 +48,7 @@ export function useViewportGestures(opts: Options) {
     const { z, tx, ty } = view.current;
     el.style.transition = animate ? "transform 180ms ease-out" : "";
     el.style.transform = z === 1 && tx === 0 && ty === 0 ? "" : `translate(${tx}px, ${ty}px) scale(${z})`;
+    viewMoved();
   }, []);
 
   const setView = useCallback(
