@@ -2533,6 +2533,8 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
                   onCreate={createBox}
                   onSelect={(id) => {
                     setSelectedBox(id);
+                    // 막대 안 글 칸 등에 포커스가 있던 입력도 평소처럼 끝낸다 (빈 상자는 지움, v0.48)
+                    if (!id && editingBox) endEdit(editingBox);
                     if (!id) setEditingBox(null);
                   }}
                   onStartEdit={(id) => {
@@ -2543,7 +2545,13 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
                   onEndEdit={endEdit}
                   onMove={(id, x, y) => editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { x, y }))}
                   onFollow={followLink}
-                  onLink={(id) => setLinkDialog({ boxId: id, created: false })}
+                  onLink={(id) => {
+                    // 입력하는 중에 링크 (v0.48): 입력을 끝내고 창으로. 아직 빈 상자는 "링크 만들기"처럼 취소하면 지운다
+                    const b = findBox(id);
+                    const empty = editingBox === id && !!b && !b.text.trim() && !b.link;
+                    setEditingBox(null);
+                    setLinkDialog({ boxId: id, created: empty, wasTextMode: true });
+                  }}
                   onResize={(id, step) => {
                     const b = findBox(id);
                     if (b && b.w == null) setBoxSize(stepBoxSize(b.size, step));

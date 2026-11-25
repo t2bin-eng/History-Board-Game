@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 import { onPalm, palmActive, penRecentlyActive, pointerKind } from "../lib/inputState";
 import { clampView, identity, zoomAt, type Size, type View } from "./viewport";
+import { usePinnedScroll } from "./usePinnedScroll";
 
 interface Options {
   areaRef: RefObject<HTMLElement | null>;
@@ -55,6 +56,14 @@ export function useViewportGestures(opts: Options) {
     },
     [apply],
   );
+
+  // 글상자 입력 때 브라우저가 페이지 영역을 스크롤하면 (v0.48): 영역은 그대로 두고(펜 바가 밀려 묻히지 않게), 확대 중이면 페이지를 그만큼 옮긴다
+  usePinnedScroll(opts.areaRef, (dx, dy) => {
+    const v = view.current;
+    if (v.z <= 1) return;
+    const { page, area } = optsRef.current;
+    setView(clampView({ ...v, tx: v.tx - dx, ty: v.ty - dy }, page, area));
+  });
 
   // 페이지가 바뀌거나 크기가 바뀌면 원래 크기로
   useLayoutEffect(() => {

@@ -11,6 +11,7 @@ import {
   ArrowLeftRight,
   ArrowRight,
   Bold,
+  Check,
   ChevronUp,
   EyeOff,
   Italic,
@@ -197,6 +198,14 @@ export function BoxLayer(props: Props) {
   /** 고른 상자 막대에서 연 창 (애니메이션 창이면 접힌 쪽지를 미리 보여 준다) */
   const [boxPanel, setBoxPanel] = useState<{ id: string; panel: ToolbarPanel } | null>(null);
   useEffect(() => setBoxPanel(null), [selectedId]);
+  /** 글을 입력하는 칸 (v0.48: 막대에서 서식을 바꾸는 동안에도 입력 칸에 커서·고른 글자가 그대로) */
+  const taRef = useRef<HTMLTextAreaElement | null>(null);
+  /** 입력 끝내기: 입력 칸에서 빠져나가면 평소처럼 onEndEdit (빈 상자는 지움) */
+  const finishEdit = () => {
+    const ta = taRef.current;
+    if (ta && document.activeElement === ta) ta.blur();
+    else if (editingId) props.onEndEdit(editingId);
+  };
   const heightRatio = size.height / Math.max(1, size.width);
   // 앱에 넣은 글꼴은 쓰는 글자 묶음을 그때그때 받아 오므로, 다 받으면 다시 재서 그린다
   useFontsVersion();
@@ -785,6 +794,51 @@ export function BoxLayer(props: Props) {
           onPointerCancel: (e: ReactPointerEvent<HTMLElement>) => onBoxUp(b, e),
         };
 
+        // 상자 막대 (v0.48: 글을 입력하는 동안에도 바로 — 서식·색을 바꾸려고 입력을 끝냈다 다시 누르지 않아도 됨)
+        const toolbar = selected && !dragPos && !liveSize && !playing && (
+          <BoxToolbar
+            box={b}
+            boxTop={pos.y * size.height}
+            boxLeft={pos.x * size.width}
+            pageWidth={size.width}
+            editing={editing}
+            onEdit={() => props.onStartEdit(b.id)}
+            onDone={finishEdit}
+            onLink={() => props.onLink(b.id)}
+            onResize={(s) => props.onResize(b.id, s)}
+            fittedSize={layout.size}
+            onFontSize={(s) => props.onFontSize(b.id, s)}
+            onFormat={(patch) => props.onFormat(b.id, patch)}
+            onColor={(c) => props.onColor(b.id, c)}
+            onBg={(bg) => props.onBg(b.id, bg)}
+            onBorder={(border) => props.onBorder(b.id, border)}
+            onAnim={(anim) => props.onAnim(b.id, anim)}
+            onPreview={() => {
+              if (foldable(b)) setPlay({ id: b.id, dir: "fold", typing: !!b.anim?.typing, emphasis: b.anim?.emphasis, preview: true });
+              else emphasize(b.id, b.anim?.emphasis, true);
+            }}
+            onVeilColor={(c) => props.onVeilColor?.(b.id, c)}
+            panel={boxPanel?.id === b.id ? boxPanel.panel : null}
+            setPanel={(panel) => setBoxPanel(panel ? { id: b.id, panel } : null)}
+            onStartConnect={() => {
+              if (editing) finishEdit();
+              props.onStartConnect(b.id);
+            }}
+            onCopy={() => {
+              if (editing) finishEdit();
+              props.onCopy(b.id);
+            }}
+            onCut={() => {
+              if (editing) finishEdit();
+              props.onCut(b.id);
+            }}
+            onDelete={() => {
+              if (editing) finishEdit();
+              props.onDelete(b.id);
+            }}
+          />
+        );
+
         if (editing) {
           return (
             <Fragment key={b.id}>
@@ -803,10 +857,16 @@ export function BoxLayer(props: Props) {
                     // 크기가 정해진 상자: 글 높이만큼만 (상자의 세로 맞춤대로 위·가운데·아래에, v0.29)
                     ...(layout.fitted ? { height: Math.max(1, layout.lines.length) * fontSize * LINE_HEIGHT + 2, maxHeight: "100%" } : {}),
                   }}
+                  ref={taRef}
                   onChange={(e) => props.onText(b.id, e.target.value)}
-                  onBlur={() => props.onEndEdit(b.id)}
+                  onBlur={(e) => {
+                    // 상자 막대 안(쪽지 글 칸·색 고르기 창 등)으로 옮겨 간 것은 입력을 끝내지 않는다
+                    if (inToolbar(e.currentTarget, e.relatedTarget)) return;
+                    props.onEndEdit(b.id);
+                  }}
                   onKeyDown={(e) => e.key === "Escape" && e.currentTarget.blur()}
                 />
+                {toolbar}
               </div>
             </Fragment>
           );
@@ -865,35 +925,6 @@ export function BoxLayer(props: Props) {
               ))}
             </>
           ) : null;
-        const toolbar = selected && !dragPos && !liveSize && !playing && (
-          <BoxToolbar
-            box={b}
-            boxTop={pos.y * size.height}
-            boxLeft={pos.x * size.width}
-            pageWidth={size.width}
-            onEdit={() => props.onStartEdit(b.id)}
-            onLink={() => props.onLink(b.id)}
-            onResize={(s) => props.onResize(b.id, s)}
-            fittedSize={layout.size}
-            onFontSize={(s) => props.onFontSize(b.id, s)}
-            onFormat={(patch) => props.onFormat(b.id, patch)}
-            onColor={(c) => props.onColor(b.id, c)}
-            onBg={(bg) => props.onBg(b.id, bg)}
-            onBorder={(border) => props.onBorder(b.id, border)}
-            onAnim={(anim) => props.onAnim(b.id, anim)}
-            onPreview={() => {
-              if (foldable(b)) setPlay({ id: b.id, dir: "fold", typing: !!b.anim?.typing, emphasis: b.anim?.emphasis, preview: true });
-              else emphasize(b.id, b.anim?.emphasis, true);
-            }}
-            onVeilColor={(c) => props.onVeilColor?.(b.id, c)}
-            panel={boxPanel?.id === b.id ? boxPanel.panel : null}
-            setPanel={(panel) => setBoxPanel(panel ? { id: b.id, panel } : null)}
-            onStartConnect={() => props.onStartConnect(b.id)}
-            onCopy={() => props.onCopy(b.id)}
-            onCut={() => props.onCut(b.id)}
-            onDelete={() => props.onDelete(b.id)}
-          />
-        );
 
         // 평소: 웹 주소 링크는 진짜 링크(새 창·외부 앱), 페이지 링크는 그 페이지로
         if (!editMode && b.link?.type === "url") {
@@ -977,7 +1008,9 @@ function BoxToolbar({
   boxTop,
   boxLeft,
   pageWidth,
+  editing,
   onEdit,
+  onDone,
   onLink,
   onResize,
   fittedSize,
@@ -1002,7 +1035,10 @@ function BoxToolbar({
   /** 상자 왼쪽 위치와 페이지 폭: 막대가 페이지 밖으로 나가지 않게 옆으로 민다 */
   boxLeft: number;
   pageWidth: number;
+  /** 글을 입력하는 중 (v0.48): 막대를 눌러도 입력 칸의 커서·키보드가 그대로 (연필 대신 "입력 끝") */
+  editing: boolean;
   onEdit: () => void;
+  onDone: () => void;
   onLink: () => void;
   onResize: (step: 1 | -1) => void;
   /** 지금 보이는 글자 크기 (크기가 정해진 상자는 맞춘 크기) */
@@ -1026,6 +1062,18 @@ function BoxToolbar({
 }) {
   // 상자를 끌거나 고르는 동작과 겹치지 않게 막대 위의 누름은 상자에 전달하지 않는다
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+  // 입력하는 중 (v0.48): 단추를 눌러도 입력 칸에서 포커스가 빠지지 않게 (키보드가 닫히거나 고른 글자가 풀리지 않게). 글 칸·슬라이더·색 고르기는 그대로
+  const press = (e: React.PointerEvent | React.MouseEvent) => {
+    e.stopPropagation();
+    if (editing && !(e.target as Element).closest("input, select, textarea")) e.preventDefault();
+  };
+  // 막대 안 글 칸 등에 있다가 상자 밖으로 나가면 입력 끝
+  const leave = (e: React.FocusEvent) => {
+    if (!editing) return;
+    const to = e.relatedTarget as Node | null;
+    if (to && (e.currentTarget as HTMLElement).closest(".text-box")?.contains(to)) return;
+    onDone();
+  };
   const ref = useRef<HTMLDivElement>(null);
   const [left, setLeft] = useState(-2);
   // 막대 높이를 재서 상자 위에 들어가지 않으면 아래로 (v0.29: 색 칸·서식 창이 커져서 정해 둔 높이로는 모자랐다)
@@ -1044,10 +1092,25 @@ function BoxToolbar({
   // 베일 (v0.28): 베일 위 글 · 색 · 복사 · 잘라내기 · 지우기만
   if (box.veil) {
     return (
-      <div ref={ref} className={`box-toolbar${below ? " below" : ""}`} style={{ left, maxWidth: pageWidth - 8 }} onPointerDown={stop} onPointerUp={stop} onClick={stop}>
-        <button aria-label="베일 글 고치기" title="베일 위에 보일 글 (없으면 ?)" onClick={onEdit}>
-          <Pencil size={16} />
-        </button>
+      <div
+        ref={ref}
+        className={`box-toolbar${below ? " below" : ""}`}
+        style={{ left, maxWidth: pageWidth - 8 }}
+        onPointerDown={press}
+        onMouseDown={press}
+        onPointerUp={stop}
+        onClick={stop}
+        onBlur={leave}
+      >
+        {editing ? (
+          <button aria-label="입력 끝" title="입력 끝 (Esc)" onClick={onDone}>
+            <Check size={16} />
+          </button>
+        ) : (
+          <button aria-label="베일 글 고치기" title="베일 위에 보일 글 (없으면 ?)" onClick={onEdit}>
+            <Pencil size={16} />
+          </button>
+        )}
         <span className="box-sep" />
         <span aria-label="베일 색" className="box-veil-colors">
           <ColorGrid colors={VEIL_COLORS} value={box.veil!.color} onPick={onVeilColor} label={(c) => `베일 색 ${c}`} custom="다른 베일 색" columns={6} />
@@ -1072,15 +1135,23 @@ function BoxToolbar({
   return (
     <div
       ref={ref}
-      className={`box-toolbar${below ? " below" : ""}`}
+      className={`box-toolbar${below ? " below" : ""}${editing ? " typing" : ""}`}
       style={{ left, maxWidth: pageWidth - 8 }}
-      onPointerDown={stop}
+      onPointerDown={press}
+      onMouseDown={press}
       onPointerUp={stop}
       onClick={stop}
+      onBlur={leave}
     >
-      <button aria-label="글 고치기" title="글 고치기" onClick={onEdit}>
-        <Pencil size={16} />
-      </button>
+      {editing ? (
+        <button aria-label="입력 끝" title="입력 끝 (Esc)" onClick={onDone}>
+          <Check size={16} />
+        </button>
+      ) : (
+        <button aria-label="글 고치기" title="글 고치기" onClick={onEdit}>
+          <Pencil size={16} />
+        </button>
+      )}
       <button aria-label="링크" title="링크 걸기" className={box.link ? "on" : undefined} onClick={onLink}>
         <Link2 size={16} />
       </button>
@@ -1430,6 +1501,12 @@ function TypedText({ lines, delay, onDone }: { lines: string[]; delay: number; o
       ))}
     </span>
   );
+}
+
+/** 입력 칸에서 옮겨 간 곳이 같은 상자의 막대 안인지 (v0.48) */
+function inToolbar(ta: HTMLElement, to: EventTarget | null): boolean {
+  const bar = ta.parentElement?.querySelector(".box-toolbar");
+  return !!bar && to instanceof Node && bar.contains(to);
 }
 
 function clamp(v: number, min: number, max: number) {

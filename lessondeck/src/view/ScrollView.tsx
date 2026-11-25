@@ -33,6 +33,7 @@ import {
   type StripLayout,
 } from "./scrollLayout";
 import { useLongPressMenu, type LongPress } from "./useLongPressMenu";
+import { usePinnedScroll } from "./usePinnedScroll";
 import { useWebScroll, type WebScroll } from "./webScroll";
 import { WebStage } from "./WebStage";
 
@@ -246,6 +247,13 @@ export function ScrollView(props: Props) {
       setView(clampScroll({ ...view.current, y: s.top + a.offset * k }, layout, area), false);
     } else setView(clampScroll(view.current, layout, area), false);
   }, [props.currentId, layout, area, setView, animateTo]);
+
+  // 글상자 입력 때 브라우저가 페이지 영역을 스크롤하면 (v0.48): 영역은 그대로 두고 띠를 그만큼 옮긴다 (펜 바·넘기기 바가 밀려 묻히지 않게)
+  usePinnedScroll(areaRef, (dx, dy) => {
+    stopAnim();
+    const v = view.current;
+    setView(clampScroll({ ...v, x: v.x + dx / v.z, y: v.y + dy / v.z }, layoutRef.current, areaSizeRef.current), false);
+  });
 
   // AI로 보내기가 웹 페이지를 찍기 전: 지금 페이지가 다 보이게 원래 크기로
   useEffect(() => {
