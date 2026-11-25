@@ -189,10 +189,43 @@ function stepAlong(p0: Pt, c: Pt, p1: Pt, t: number, dist: number, dir: 1 | -1):
   return t + (dir * dist) / speed;
 }
 
+/** 모서리에서 이만큼(상자 크기의 15%, 10~24px) 안쪽까지만 화살표가 붙는다 — 모서리에 딱 붙으면 상자와 겹쳐 보임 */
+const CORNER_INSET = 0.15;
+const CORNER_MIN = 10;
+const CORNER_MAX = 24;
+
+/**
+ * 상자 테두리에서 t(점) 쪽을 보는 자리 (v0.47.2): t 쪽을 보는 변 위에서, 그 변을 따라 t에 가장 가까운 점
+ * (모서리 가까이는 피함). 0.47.1까지는 늘 상자 가운데에서 나가 휘면 상자를 다시 가로질렀다
+ */
+export function borderAnchor(r: Rect, [tx, ty]: Pt): Pt {
+  const ix = Math.min(r.w / 2, Math.max(CORNER_MIN, Math.min(r.w * CORNER_INSET, CORNER_MAX)));
+  const iy = Math.min(r.h / 2, Math.max(CORNER_MIN, Math.min(r.h * CORNER_INSET, CORNER_MAX)));
+  const cx = Math.min(r.x + r.w - ix, Math.max(r.x + ix, tx));
+  const cy = Math.min(r.y + r.h - iy, Math.max(r.y + iy, ty));
+  // 변 고르기: 상자 가운데에서 t로 가는 방향을 상자 크기로 나눠 견줌 (가로로 넓은 상자도 위·아래에 있는 것은 위·아래 변)
+  const nx = (tx - (r.x + r.w / 2)) / Math.max(1, r.w / 2);
+  const ny = (ty - (r.y + r.h / 2)) / Math.max(1, r.h / 2);
+  if (Math.abs(nx) > Math.abs(ny)) return nx < 0 ? [r.x, cy] : [r.x + r.w, cy];
+  return ny < 0 ? [cx, r.y] : [cx, r.y + r.h];
+}
+
+/** 화살표 곡선의 두 끝 (휘기의 기준이 되는 곧은 선): 시작 상자 테두리 → 끝 상자 테두리(또는 가리키는 점). 끝이 시작 상자 안이면 null */
+export function arrowChord(a: Rect, target: Rect | Pt): [Pt, Pt] | null {
+  const toRect = Array.isArray(target) ? null : target;
+  const aim: Pt = toRect ? [toRect.x + toRect.w / 2, toRect.y + toRect.h / 2] : (target as Pt);
+  if (inRect(a, aim)) return null;
+  // 겹친 두 상자는 잇지 않는다
+  if (toRect && toRect.x < a.x + a.w && a.x < toRect.x + toRect.w && toRect.y < a.y + a.h && a.y < toRect.y + toRect.h) return null;
+  const p0 = borderAnchor(a, aim);
+  const p1 = toRect ? borderAnchor(toRect, p0) : aim;
+  return Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) < 1 ? null : [p0, p1];
+}
+
 /**
  * 화살표 모양 (페이지 px). a: 시작 상자, target: 끝 상자 또는 가리키는 점, lineW: 선 굵기(px), bend: 휜 정도.
- * 상자 가운데 → 끝(상자 가운데·점)을 잇는 2차 베지어를 시작 상자 테두리(+조금 띄움)에서 자르고,
- * 끝이 상자면 그 테두리 앞에서, 점이면 그 점에 촉 끝이 닿게. 끝이 시작 상자 안이거나 남는 길이가 없으면 null
+ * 시작 상자 테두리의 끝 쪽 자리 → 끝(상자면 그 테두리, 점이면 그 점)을 잇는 2차 베지어 (arrowChord).
+ * 휘어 상자 안으로 들어갔다 나오면 나온 뒤부터, 두 끝은 상자에서 조금 띄운다. 끝이 시작 상자 안이거나 남는 길이가 없으면 null
  */
 export function arrowShape(
   a: Rect,
@@ -203,38 +236,35 @@ export function arrowShape(
   head: ArrowHead = "tri",
   rev = false,
 ): ArrowShape | null {
-  const p0: Pt = [a.x + a.w / 2, a.y + a.h / 2];
+  const chord = arrowChord(a, target);
+  if (!chord) return null;
   const toRect = Array.isArray(target) ? null : target;
-  const p1: Pt = toRect ? [toRect.x + toRect.w / 2, toRect.y + toRect.h / 2] : (target as Pt);
+  const [p0, p1] = chord;
   const dx = p1[0] - p0[0];
   const dy = p1[1] - p0[1];
   const len = Math.hypot(dx, dy);
-  if (len < 1 || inRect(a, p1)) return null;
   // 조절점: 곧은 선 가운데에서 (가는 방향의 오른쪽 = (-dy, dx)) 2 × bend × 길이
   const nx = -dy / len;
   const ny = dx / len;
   const c: Pt = [(p0[0] + p1[0]) / 2 + nx * 2 * bend * len, (p0[1] + p1[1]) / 2 + ny * 2 * bend * len];
   const gap = Math.max(3, lineW * 1.5);
-  // 시작 상자를 벗어나는 곳 (처음으로 밖에 나오는 t를 성기게 찾고 다듬음)
-  let out = 1;
-  for (let i = 1; i <= 64; i++) {
-    if (!inRect(a, quad(p0, c, p1, i / 64))) {
-      out = i / 64;
-      break;
-    }
-  }
-  let t0 = stepAlong(p0, c, p1, crossing(p0, c, p1, a, Math.max(0, out - 1 / 64), out), gap, 1);
+  // 시작: 앞쪽 절반에서 곡선이 시작 상자 안에 있는 마지막 자리 (휘어 상자 안으로 들어갔다 나오는 경우) 뒤부터
+  let tA = 0;
+  for (let i = 1; i <= 32; i++) if (inRect(a, quad(p0, c, p1, i / 64))) tA = i / 64;
+  if (tA > 0) tA = crossing(p0, c, p1, a, tA, Math.min(1, tA + 1 / 64));
+  let t0 = stepAlong(p0, c, p1, tA, gap, 1);
   let t1 = 1;
   if (toRect) {
-    // 끝 상자에 들어가기 바로 전 (끝에서부터 거꾸로)
-    let into = 0;
-    for (let i = 63; i >= 0; i--) {
-      if (!inRect(toRect, quad(p0, c, p1, i / 64))) {
-        into = i / 64;
+    // 끝: 뒤쪽 절반에서 곡선이 끝 상자에 처음 들어가는 자리 앞까지
+    let tB = 1;
+    for (let i = 32; i <= 63; i++) {
+      if (inRect(toRect, quad(p0, c, p1, i / 64))) {
+        tB = i / 64;
         break;
       }
     }
-    t1 = stepAlong(p0, c, p1, crossing(p0, c, p1, toRect, Math.min(1, into + 1 / 64), into), gap, -1);
+    if (tB < 1) tB = crossing(p0, c, p1, toRect, tB, Math.max(0, tB - 1 / 64));
+    t1 = stepAlong(p0, c, p1, tB, gap, -1);
   }
   if (t1 - t0 < 0.02) return null;
   const headLen = Math.max(8, lineW * 4.2);

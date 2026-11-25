@@ -208,3 +208,101 @@ export function capPrediction(last: InkPoint | undefined, predicted: InkPoint[],
   }
   return out;
 }
+
+// ── 댈 때·뗄 때 갈고리 자르기 (v0.47.2, SPEC 5장 "댈 때·뗄 때 갈고리 자르기") ──
+
+/** 뗄 때 갈고리: 끝에서 이만큼(화면 px)·점 수 안, 이만큼 넘게 꺾임 */
+const HOOK_END_PX = 5;
+const HOOK_END_PTS = 5;
+const HOOK_END_DEG = 45;
+/** 댈 때 미끄러짐: 처음 이만큼(화면 px)·점 수 안, 남길 첫 점은 뒤의 진행 줄에서 이만큼 안 (미끄러졌다 돌아온 자리) */
+const HOOK_START_PX = 6;
+const HOOK_START_PTS = 5;
+const HOOK_START_ONLINE_PX = 1.2;
+/** 머리가 진행 줄에서 이만큼(화면 px) 넘게 벗어났으면 미끄러짐 (줄을 따라 되돌아간 것은 꺾임 각도로) */
+const HOOK_START_DEV_PX = 1.5;
+const HOOK_START_DEG = 60;
+/** 꺾임을 잴 때 갈고리 앞(뒤) 진행 방향을 이만큼(화면 px) 본다 */
+const HOOK_REF_PX = 6;
+/** 갈고리 필압이 그 획 필압 가운데값의 이 비율보다 낮아야 (일부러 꺾은 끝은 필압이 그대로) */
+const HOOK_PRESSURE = 0.75;
+/** 이보다 짧은 획(화면 px)은 그대로 (점·짧은 삐침) */
+const HOOK_MIN_STROKE_PX = 12;
+/**
+ * 꺾이는 점까지는 곧게 와야 갈고리: 꺾인 곳 앞 6px와 그 앞 6px의 방향 차이가 이보다 작아야 한다
+ * (작은 ㅇ처럼 고르게 휘는 곳·꼬리 가운데를 꺾인 곳으로 잘못 보지 않게)
+ */
+const HOOK_STRAIGHT_DEG = 25;
+
+/**
+ * 펜을 대고 뗄 때 생긴 갈고리를 잘라 낸 점 (바뀌지 않으면 같은 배열). toScreen: 점 → 화면 px.
+ * 끝(뗄 때): 끝에서 5px·5점 안의 꼬리가 앞의 진행 방향에서 45° 넘게 꺾이고 필압이 떨어졌으면 그 꼬리를 뗀다.
+ * 시작(댈 때): 처음 6px·5점 안의 머리가 뒤의 진행 방향에서 60° 넘게 꺾이고 필압이 낮으면, 진행 줄로 돌아온 점부터 남긴다.
+ */
+export function trimHooks(points: InkPoint[], toScreen: (p: InkPoint) => [number, number]): InkPoint[] {
+  const n = points.length;
+  if (n < 6) return points;
+  const s = points.map(toScreen);
+  let total = 0;
+  for (let i = 1; i < n; i++) total += Math.hypot(s[i][0] - s[i - 1][0], s[i][1] - s[i - 1][1]);
+  if (total < HOOK_MIN_STROKE_PX) return points;
+  const sorted = points.map((p) => p[2]).sort((a, b) => a - b);
+  const median = sorted[Math.floor(n / 2)];
+  const lowPressure = (from: number, to: number) => {
+    let sum = 0;
+    for (let i = from; i <= to; i++) sum += points[i][2];
+    return sum / (to - from + 1) < median * HOOK_PRESSURE;
+  };
+  /** a → b 와 c → d 방향 사이 각(도) */
+  const angle = (a: number, b: number, c: number, d: number) => {
+    const ux = s[b][0] - s[a][0];
+    const uy = s[b][1] - s[a][1];
+    const vx = s[d][0] - s[c][0];
+    const vy = s[d][1] - s[c][1];
+    const l = Math.hypot(ux, uy) * Math.hypot(vx, vy);
+    if (!l) return 0;
+    return (Math.acos(Math.max(-1, Math.min(1, (ux * vx + uy * vy) / l))) * 180) / Math.PI;
+  };
+  /** i에서 dir 쪽으로 HOOK_REF_PX 넘게 떨어진 점 (없으면 -1) */
+  const reach = (i: number, dir: 1 | -1) => {
+    for (let j = i + dir; j >= 0 && j < n; j += dir) if (Math.hypot(s[j][0] - s[i][0], s[j][1] - s[i][1]) >= HOOK_REF_PX) return j;
+    return -1;
+  };
+
+  // 끝: 가장 긴 꼬리부터 (b = 꼬리가 시작하는 점, 남길 마지막 점)
+  let end = n - 1;
+  let tail = 0;
+  for (let b = n - 2; b >= Math.max(1, n - 1 - HOOK_END_PTS); b--) {
+    tail += Math.hypot(s[b + 1][0] - s[b][0], s[b + 1][1] - s[b][1]);
+    if (tail > HOOK_END_PX) break;
+    const a = reach(b, -1);
+    const a2 = a < 0 ? -1 : reach(a, -1);
+    if (a2 < 0 || tail < 0.8) continue;
+    if (angle(a2, a, a, b) < HOOK_STRAIGHT_DEG && angle(a, b, b, n - 1) > HOOK_END_DEG && lowPressure(b + 1, n - 1)) end = b;
+  }
+  // 시작: 가장 긴 머리부터 (h = 머리가 끝나는 점, 남길 첫 점)
+  let start = 0;
+  let head = 0;
+  for (let h = 1; h <= Math.min(HOOK_START_PTS, end - 2); h++) {
+    head += Math.hypot(s[h][0] - s[h - 1][0], s[h][1] - s[h - 1][1]);
+    if (head > HOOK_START_PX) break;
+    const c = reach(h, 1);
+    const c2 = c < 0 ? -1 : reach(c, 1);
+    if (c2 < 0 || c2 > end || head < 0.8) continue;
+    if (angle(h, c, c, c2) >= HOOK_STRAIGHT_DEG || !lowPressure(0, h - 1)) continue;
+    // 뒤의 진행 줄(c2 → c를 뒤로 늘인 줄)에서 떨어진 거리
+    const lx = s[c][0] - s[c2][0];
+    const ly = s[c][1] - s[c2][1];
+    const ll = Math.hypot(lx, ly) || 1;
+    const off = (i: number) => Math.abs((s[i][0] - s[c][0]) * ly - (s[i][1] - s[c][1]) * lx) / ll;
+    let dev = 0;
+    for (let i = 0; i < h; i++) dev = Math.max(dev, off(i));
+    // 머리가 꺾여 있거나(줄을 따라 되돌아간 것 포함) 옆으로 벗어났고, 남길 첫 점 h는 진행 줄 위 (미끄러진 바깥 점에서 자르지 않게)
+    // 진행 줄로 돌아온 첫 점에서 (그 뒤의 제대로 쓴 점까지 자르지 않게)
+    if ((angle(0, h, h, c) > HOOK_START_DEG || dev > HOOK_START_DEV_PX) && off(h) <= HOOK_START_ONLINE_PX) {
+      start = h;
+      break;
+    }
+  }
+  return start === 0 && end === n - 1 ? points : points.slice(start, end + 1);
+}

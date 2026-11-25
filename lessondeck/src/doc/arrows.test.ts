@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addArrow, arrowColor, arrowShape, bendFromHandle, cleanBend, dropArrowsOf, flipArrow, moveArrowEnd, patchArrow, remapArrows, shapeOfArrow } from "./arrows";
+import { addArrow, arrowChord, arrowColor, arrowShape, bendFromHandle, borderAnchor, cleanBend, dropArrowsOf, flipArrow, moveArrowEnd, patchArrow, remapArrows, shapeOfArrow } from "./arrows";
 import { removeBox } from "./boxes";
 import type { Page } from "./types";
 
@@ -87,9 +87,9 @@ describe("상자 잇는 화살표", () => {
   it("휘기 (v0.24): 곡선 가운데가 곧은 선에서 bend × 길이만큼 오른쪽, 손잡이로 bend, 거의 곧으면 곧게", () => {
     const a = { x: 0, y: 0, w: 100, h: 40 };
     const s = arrowShape(a, [450, 20], 3, false, 0.25)!;
-    // 가운데 (50,20) → (450,20): 길이 400, 오른쪽(화면 아래)으로 100
-    expect(s.mid[0]).toBeCloseTo(250, 5);
-    expect(s.mid[1]).toBeCloseTo(120, 5);
+    // 상자 오른쪽 변 (100,20) → (450,20) (v0.47.2): 길이 350, 오른쪽(화면 아래)으로 87.5
+    expect(s.mid[0]).toBeCloseTo(275, 5);
+    expect(s.mid[1]).toBeCloseTo(107.5, 5);
     // 촉은 곡선이 끝나는 방향(위에서 내려와 오른쪽 위로 올라오며 끝남)
     expect(s.tip).toEqual([450, 20]);
     const [, w1, w2] = s.heads.fills[0];
@@ -104,5 +104,42 @@ describe("상자 잇는 화살표", () => {
     expect(flipArrow(pages, "p1", id!)[0].arrows![0].bend).toBe(-0.3);
     pages = patchArrow(pages, "p1", id!, { bend: undefined });
     expect("bend" in pages[0].arrows![0]).toBe(false);
+  });
+
+  it("시작점은 끝을 보는 테두리 (v0.47.2): 넓은 상자 왼쪽 위를 가리키면 위 변에서, 휘어도 상자를 가로지르지 않음", () => {
+    const wide = { x: 100, y: 390, w: 1200, h: 90 };
+    // 사용자 화면: 상자 왼쪽 위의 글자를 가리킴 → 위 변의 그 아래 자리에서 곧장 위로
+    expect(borderAnchor(wide, [185, 65])).toEqual([185, 390]);
+    // 모서리 가까이는 피함 (변 길이의 15%, 10~24px 안쪽)
+    expect(borderAnchor(wide, [0, 65])).toEqual([124, 390]);
+    expect(borderAnchor({ x: 0, y: 0, w: 60, h: 30 }, [-40, -50])).toEqual([10, 0]);
+    // 오른쪽·아래·왼쪽
+    expect(borderAnchor(wide, [1500, 430])).toEqual([1300, 430]);
+    expect(borderAnchor(wide, [700, 900])).toEqual([700, 480]);
+    expect(borderAnchor(wide, [20, 430])).toEqual([100, 430]);
+    expect(arrowChord(wide, [185, 65])).toEqual([
+      [185, 390],
+      [185, 65],
+    ]);
+    // 크게 휘어도 곡선이 상자 안으로 들어가지 않음
+    for (const bend of [-0.6, -0.3, 0, 0.3, 0.6]) {
+      const s = arrowShape(wide, [185, 65], 3, false, bend)!;
+      const [p0, c, p1] = s.curve;
+      for (let i = 0; i <= 40; i++) {
+        const t = i / 40;
+        const u = 1 - t;
+        const x = u * u * p0[0] + 2 * u * t * c[0] + t * t * p1[0];
+        const y = u * u * p0[1] + 2 * u * t * c[1] + t * t * p1[1];
+        const inside = x > wide.x && x < wide.x + wide.w && y > wide.y && y < wide.y + wide.h;
+        expect(inside).toBe(false);
+      }
+      expect(s.curve[0][1]).toBeLessThan(390);
+    }
+    // 두 상자: 서로를 보는 변끼리 (위아래로 놓이면 아래 변 → 위 변)
+    const top = { x: 0, y: 0, w: 200, h: 40 };
+    const below = { x: 400, y: 300, w: 200, h: 40 };
+    const [q0, q1] = arrowChord(top, below)!;
+    expect(q0[1]).toBe(40);
+    expect(q1[1]).toBe(300);
   });
 });

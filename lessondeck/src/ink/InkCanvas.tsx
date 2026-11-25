@@ -8,7 +8,7 @@ import { recognizeCurve } from "./curveFit";
 import { recognizeShape, type ShapeGuess } from "./shapeRecognize";
 import { curveSpec, defaultShape, dragShape, lineSpec, makeShapeStroke, type ShapeTool } from "./shapes";
 import { eraserTakes, eraseStrokeArea, type EraserMode, type EraserTarget } from "./eraser";
-import { capPrediction, keepPoint, SMOOTH_V2, stabilizeOf, type Dropped, type StabilizeLevel } from "./smoothing";
+import { capPrediction, keepPoint, SMOOTH_V2, stabilizeOf, trimHooks, type Dropped, type StabilizeLevel } from "./smoothing";
 import type { PenButtonAction } from "./penButton";
 import { LASSO_TAP_PX } from "./selection";
 import type { InkPoint, PenNib, ShapeSpec, Stroke, Tool } from "./types";
@@ -777,6 +777,11 @@ export function InkCanvas(props: Props) {
       // 떨림으로 거른 마지막 자리는 남긴다 (획이 펜을 뗀 자리까지 오도록)
       if (g.pending && !stroke.shape) stroke.points.push(g.pending);
       const p0 = page();
+      // 댈 때·뗄 때 갈고리 자르기 (v0.47.2): 실제 필압이 있는 펜 획만 (도형·곧게 긋기 제외)
+      if (!stroke.shape && !stroke.simulatePressure && !g.autoStraight && !g.drag) {
+        const z = propsRef.current.zoom || 1;
+        stroke.points = trimHooks(stroke.points, (q) => [q[0] * p0.width * z, q[1] * p0.height * z]);
+      }
       if (g.drag) {
         if (cancelled) return;
         // 끌지 않고 톡: 그 자리에 기본 크기로

@@ -36,7 +36,7 @@ import {
   Wand2,
 } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
-import { arrowEnds, arrowPathD, arrowShape, arrowsOf, bendFromHandle, cleanBend, type ArrowShape, type ArrowTarget, type Rect } from "../doc/arrows";
+import { arrowChord, arrowEnds, arrowPathD, arrowShape, arrowsOf, bendFromHandle, cleanBend, type ArrowShape, type ArrowTarget, type Rect } from "../doc/arrows";
 import { EMPHASES, MAX_NOTE_W, MIN_NOTE_W, NOTE_COLORS, NOTE_LABEL_MAX, noteOf, VEIL_COLORS, veilLabel } from "../doc/boxAnim";
 import { BOX_FONTS, boxTextStyle, type BoxFormat } from "../doc/boxFonts";
 import { RICH_BG_COLORS, RICH_COLORS } from "../doc/swatches";
@@ -489,7 +489,6 @@ export function BoxLayer(props: Props) {
     }
     return null;
   };
-  const center = (r: Rect): [number, number] => [r.x + r.w / 2, r.y + r.h / 2];
   /** 끄는 중이면 그 모양 그대로: 끝은 손가락 밑의 상자나 그 자리, 휘기는 손잡이 자리로 */
   const liveArrow = (a: BoxArrow): { shape: ArrowShape | null; bend: number; target: ArrowTarget | null } => {
     const ends = arrowEnds(a, rects, size);
@@ -503,8 +502,9 @@ export function BoxLayer(props: Props) {
         target = hit ? rects.get(hit)! : [arrowDrag.x, arrowDrag.y];
         to = hit ?? [clamp(arrowDrag.x / size.width, 0, 1), clamp(arrowDrag.y / size.height, 0, 1)];
       } else {
-        const p1 = Array.isArray(ends.target) ? ends.target : center(ends.target);
-        bend = cleanBend(bendFromHandle(center(ends.from), p1, arrowDrag.x, arrowDrag.y)) ?? 0;
+        // 휘기의 기준은 그려지는 곧은 선 (시작 상자 테두리 → 끝, v0.47.2)
+        const chord = arrowChord(ends.from, ends.target);
+        if (chord) bend = cleanBend(bendFromHandle(chord[0], chord[1], arrowDrag.x, arrowDrag.y)) ?? 0;
       }
     }
     return { shape: arrowShape(ends.from, target, lineW, a.both, bend, a.head ?? "tri", !!a.rev), bend, target: to };
