@@ -2644,6 +2644,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
                   size={size}
                   live={current ? liveSticker : null}
                   interactive={current && !textMode && !selectedSticker && !selectedShape && !selection && !connectFrom}
+                  onMoveIcon={(id, x, y) => editSticker(id, (pages, pageId) => patchSticker(pages, pageId, id, { x, y }))}
                 />
                 {current && (() => {
                   const sticker = stickersOf(page).find((s) => s.id === selectedSticker);

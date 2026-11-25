@@ -113,6 +113,8 @@ const SMALL_WRITING_PX = 24;
 const SHAPE_MIN_PX = 28;
 /** 펜 끝 예측을 그리는 최대 길이 (화면 px, v0.36) */
 const PREDICT_MAX_SCREEN_PX = 12;
+/** 형광펜 끝 예측 (v0.50.1): 굵고 반투명해 멀리 튀면 끝이 늘었다 줄어 보이므로 펜보다 짧게 */
+const PREDICT_MAX_HL_SCREEN_PX = 8;
 /** 레이저 펜: 뗀 뒤 이만큼 그대로 있다가 이만큼 동안 사라진다 */
 const LASER_HOLD_MS = 700;
 const LASER_FADE_MS = 500;
@@ -833,9 +835,13 @@ export function InkCanvas(props: Props) {
       // 예측 좌표는 화면에만 잠깐 그리고 저장하지 않는다. 거른 마지막 점은 끝으로 그려 펜 끝과 떨어지지 않게
       // 예측 (v0.36): 형광펜은 쓰지 않고(굵고 반투명해 끝이 늘었다 줄며 튀어 보였다), 펜은 화면 12px까지만
       const lastPt = stroke.points[stroke.points.length - 1];
-      const extra = isHighlighter(stroke)
-        ? []
-        : capPrediction(lastPt, predicted.map((ev) => toPoint(ev, r, lastPt)), page(), PREDICT_MAX_SCREEN_PX / (propsRef.current.zoom || 1));
+      // 형광펜 (v0.50.1): 예측을 빼서(v0.36) 펜보다 늦게 따라오던 것 → 펜보다 짧게(화면 8px까지) 다시 그린다
+      const extra = capPrediction(
+        lastPt,
+        predicted.map((ev) => toPoint(ev, r, lastPt)),
+        page(),
+        (isHighlighter(stroke) ? PREDICT_MAX_HL_SCREEN_PX : PREDICT_MAX_SCREEN_PX) / (propsRef.current.zoom || 1),
+      );
       renderLive(stroke, gesture.pending ? [gesture.pending, ...extra] : extra);
     };
 

@@ -4064,12 +4064,20 @@ body:has(.select-bar) .toast {
 .popup-layer.interactive .popup-icon {
   pointer-events: auto;
   cursor: zoom-in;
-  touch-action: manipulation;
+  /* 끌어 옮기기 (v0.50.1): 손가락으로 끌어도 화면이 움직이지 않게 */
+  touch-action: none;
   -webkit-tap-highlight-color: transparent;
 }
 
 .popup-layer.interactive .popup-icon:active {
   filter: brightness(0.92);
+}
+
+/* 끌어 옮기는 중인 아이콘 (v0.50.1) */
+.popup-layer.interactive .popup-icon.dragging {
+  cursor: grabbing;
+  filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.3));
+  z-index: 2;
 }
 
 /* 크게 본 동안 아이콘 자리는 비워 둔다 (거기서 커져 나온 것처럼) */
@@ -6281,4 +6289,52 @@ button.version-btn {
 .update-hint {
   background: var(--surface-2);
   color: var(--ink);
+}
+
+/* ── 글상자 옮기기·크기 손잡이 (v0.50.1) ── */
+/* 손잡이를 조금 크게, 누르는 자리는 더 넓게 (손가락·S펜) */
+.tb-handle {
+  width: 16px;
+  height: 16px;
+  pointer-events: auto;
+}
+
+.tb-handle::before {
+  inset: -13px;
+}
+
+/* 옮기기 손잡이: 상자 왼쪽(페이지 왼쪽 끝이면 오른쪽) 가운데의 동그란 손잡이 */
+.tb-move {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 16px);
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-top: -15px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: 0 3px 10px rgba(var(--shadow-rgb), 0.25);
+  cursor: grab;
+  touch-action: none;
+  pointer-events: auto;
+  z-index: 2;
+}
+
+.tb-move.right {
+  right: auto;
+  left: calc(100% + 16px);
+}
+
+.tb-move::before {
+  content: "";
+  position: absolute;
+  inset: -10px;
+  border-radius: 50%;
+}
+
+.tb-move:active {
+  cursor: grabbing;
 }

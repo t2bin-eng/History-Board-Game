@@ -20,6 +20,7 @@ import {
   ExternalLink,
   Link2,
   Minus,
+  Move,
   MoveHorizontal,
   MoveUpRight,
   PaintBucket,
@@ -121,6 +122,10 @@ interface Props {
 }
 
 const DRAG_SLOP = 5;
+/** 옮기기 손잡이 크기 (px, v0.50.1) */
+const GRIP_PX = 30;
+/** 상자가 이보다 좁으면(낮으면) 위·아래(왼쪽·오른쪽) 변 손잡이를 빼고 모서리만 (px) */
+const SIDE_HANDLE_MIN_PX = 64;
 /** 가장 작은 상자 (페이지 대비) */
 const MIN_W = 0.04;
 const MIN_H = 0.02;
@@ -191,7 +196,7 @@ function noteTilt(id: string): number {
 export function BoxLayer(props: Props) {
   const { page, pages, hidden, size, editMode, selectedId, editingId } = props;
   const layerRef = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ id: string; pointer: number; sx: number; sy: number; dx: number; dy: number; moved: boolean } | null>(null);
+  const drag = useRef<{ id: string; pointer: number; sx: number; sy: number; dx: number; dy: number; moved: boolean; grip?: boolean } | null>(null);
   const [dragPos, setDragPos] = useState<{ id: string; x: number; y: number } | null>(null);
   const resize = useRef<{ id: string; pointer: number; mode: HandleMode; w0: number; h0: number; x: number; y: number; px: number; py: number } | null>(null);
   /** 고른 화살표의 끝·휘기 손잡이를 끄는 중 (페이지 px) */
@@ -461,7 +466,8 @@ export function BoxLayer(props: Props) {
       setDragPos(null);
       return;
     }
-    if (e.type !== "pointerup") return;
+    // 옮기기 손잡이를 톡 누른 것은 아무 일도 하지 않는다
+    if (e.type !== "pointerup" || d.grip) return;
     // 화살표로 잇는 중: 누른 상자로 잇는다 (시작 상자를 다시 누르면 그만)
     if (props.connectFrom) {
       if (b.id !== props.connectFrom) props.onConnect(b.id);
@@ -473,9 +479,29 @@ export function BoxLayer(props: Props) {
     else props.onSelect(b.id);
   };
 
+  /**
+   * 옮기기 손잡이 (v0.50.1): 상자 옆 동그란 손잡이를 끌면 상자를 옮긴다 — 글을 입력하는 중에도(입력 칸의 커서·키보드 그대로),
+   * 작아서 몸통을 잡기 어려운 상자도. 몸통을 끌어 옮기는 것도 그대로
+   */
+  const onGripDown = (b: TextBox, e: ReactPointerEvent<HTMLElement>) => {
+    e.stopPropagation();
+    // 입력 칸에서 포커스가 빠지지 않게 (입력이 끝나지 않게)
+    e.preventDefault();
+    if (e.button > 0) return;
+    const p = toRatio(e.clientX, e.clientY);
+    drag.current = { id: b.id, pointer: e.pointerId, sx: e.clientX, sy: e.clientY, dx: p.x - b.x, dy: p.y - b.y, moved: false, grip: true };
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // 잡을 수 없는 포인터면 그냥 둔다
+    }
+  };
+
   // 크기 손잡이 (v0.29): 네 변·네 모서리. 끈 쪽 변만 움직이고 맞은편 변은 그대로. 글은 새 폭에서 줄바꿈, 글자 크기는 그대로
   const onHandleDown = (b: TextBox, mode: HandleMode, e: ReactPointerEvent<HTMLElement>) => {
     e.stopPropagation();
+    // 입력하는 중이면 입력 칸에서 포커스가 빠지지 않게 (v0.50.1)
+    e.preventDefault();
     if (e.button > 0) return;
     // 크기가 정해지지 않은 상자는 지금 보이는 크기에서 시작한다
     const el = (e.currentTarget as HTMLElement).closest(".text-box") as HTMLElement;
@@ -880,6 +906,48 @@ export function BoxLayer(props: Props) {
           />
         );
 
+        // 크기 손잡이 · 옮기기 손잡이 (v0.50.1: 글을 입력하는 중에도, 작은 상자는 변 손잡이를 빼 모서리끼리 겹치지 않게)
+        const boxW = rect.w;
+        const boxH = rect.h;
+        const sides = (mode: HandleMode) => (mode === "n" || mode === "s" ? boxW >= SIDE_HANDLE_MIN_PX : mode === "e" || mode === "w" ? boxH >= SIDE_HANDLE_MIN_PX : true);
+        // 옮기기 손잡이는 상자 왼쪽 (페이지 왼쪽 끝에 붙은 상자는 오른쪽)
+        const gripRight = pos.x * size.width < GRIP_PX + 16;
+        // 끄는 동안에는 크기 손잡이를 감추고 옮기기 손잡이는 남긴다 (끄는 손잡이를 잡고 있으므로)
+        const handles =
+          selected && !playing ? (
+            <>
+              {!dragPos &&
+                HANDLES.filter(sides).map((mode) => (
+                  <span
+                    key={mode}
+                    className={`tb-handle ${mode}`}
+                    role="slider"
+                    aria-label={`크기 ${HANDLE_NAMES[mode]}`}
+                    onPointerDown={(e) => onHandleDown(b, mode, e)}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onPointerMove={onHandleMove}
+                    onPointerUp={(e) => onHandleUp(b, e)}
+                    onPointerCancel={(e) => onHandleUp(b, e)}
+                  />
+                ))}
+              {!liveSize && (!dragPos || dragPos.id === b.id) && (
+                <span
+                  className={`tb-move${gripRight ? " right" : ""}`}
+                  role="button"
+                  aria-label="상자 옮기기"
+                  title="끌어서 옮기기"
+                  onPointerDown={(e) => onGripDown(b, e)}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onPointerMove={onBoxMove}
+                  onPointerUp={(e) => onBoxUp(b, e)}
+                  onPointerCancel={(e) => onBoxUp(b, e)}
+                >
+                  <Move size={15} strokeWidth={2.4} />
+                </span>
+              )}
+            </>
+          ) : null;
+
         if (editing) {
           // 따로 칠한 글자가 있으면 (v0.48): 입력 칸 글자는 투명하게 두고 바로 밑에 같은 자리·줄바꿈으로 색 글을 비춘다
           const mirrored = spans.length > 0;
@@ -916,6 +984,7 @@ export function BoxLayer(props: Props) {
                   onKeyDown={(e) => e.key === "Escape" && e.currentTarget.blur()}
                 />
                 {toolbar}
+                {handles}
               </div>
             </Fragment>
           );
@@ -960,23 +1029,6 @@ export function BoxLayer(props: Props) {
             )}
           </>
         );
-        const handles =
-          selected && !dragPos && !editing && !playing ? (
-            <>
-              {HANDLES.map((mode) => (
-                <span
-                  key={mode}
-                  className={`tb-handle ${mode}`}
-                  role="slider"
-                  aria-label={`크기 ${HANDLE_NAMES[mode]}`}
-                  onPointerDown={(e) => onHandleDown(b, mode, e)}
-                  onPointerMove={onHandleMove}
-                  onPointerUp={(e) => onHandleUp(b, e)}
-                  onPointerCancel={(e) => onHandleUp(b, e)}
-                />
-              ))}
-            </>
-          ) : null;
 
         // 평소: 웹 주소 링크는 진짜 링크(새 창·외부 앱), 페이지 링크는 그 페이지로
         if (!editMode && b.link?.type === "url") {

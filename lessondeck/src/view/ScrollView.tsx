@@ -99,6 +99,10 @@ const RUBBER = 0.45;
 const RUBBER_MAX = 150;
 /** 손을 떼고 미끄러지는 속도가 줄어드는 시간 상수 (ms) */
 const FLING_TAU = 325;
+/** 미끄러짐 속도를 재는 시간: 손을 뗀 순간까지 이만큼 (ms) */
+const FLING_WINDOW_MS = 100;
+/** 마지막으로 움직인 뒤 이만큼 넘게 멈췄다 떼면 미끄러지지 않는다 (ms) — 잡아서 멈춘 화면 */
+const FLING_STILL_MS = 60;
 
 // 이어 보기 (v0.44, SPEC 6장 "이어 보기"): 페이지를 세로로 이어 붙인 띠를 손가락으로 스크롤·확대한다.
 // 화면 가까이의 페이지마다 필기층(InkCanvas)이 따로 있어 걸쳐 보이는 다음 페이지에도 바로 쓴다.
@@ -288,6 +292,8 @@ export function ScrollView(props: Props) {
     let pinch = { d: 1, m: { x: 0, y: 0 }, view: view.current };
     let lastTap: { p: Pt; t: number } | null = null;
     let samples: { t: number; x: number; y: number }[] = [];
+    /** 손을 뗀 뒤 미끄러지는 중 */
+    let flinging = false;
     let moved = false;
     let pull = 0;
     let zoomAtStart = 1;
@@ -327,6 +333,7 @@ export function ScrollView(props: Props) {
     const fling = (vx: number, vy: number) => {
       // vx, vy: 화면 px/ms (띠가 움직이는 방향)
       stopAnim();
+      flinging = true;
       let last = performance.now();
       const step = (now: number) => {
         const dt = Math.min(48, now - last);
@@ -339,8 +346,11 @@ export function ScrollView(props: Props) {
         setView(next);
         vx *= decay;
         vy = next.y !== want ? 0 : vy * decay;
-        if (Math.hypot(vx, vy) > 0.02) anim.current = requestAnimationFrame(step);
-        else anim.current = 0;
+        if (Math.hypot(vx, vy) > 0.02 && flinging) anim.current = requestAnimationFrame(step);
+        else {
+          anim.current = 0;
+          flinging = false;
+        }
       };
       anim.current = requestAnimationFrame(step);
     };
@@ -355,6 +365,7 @@ export function ScrollView(props: Props) {
       const kind = pointerKind(e);
       if (kind === "pen" || kind === "mouse") {
         stopAnim();
+        flinging = false;
         if (pointers.size) {
           pointers.clear();
           endGesture();
@@ -368,12 +379,21 @@ export function ScrollView(props: Props) {
         pointers.clear();
         endGesture();
       }
-      if (pointers.size === 0 && (e.target as Element).closest?.("[data-no-gesture]")) return;
+      if (pointers.size === 0 && (e.target as Element).closest?.("[data-no-gesture]")) {
+        // 미끄러지던 화면은 글상자·스티커·넘기기 바 위를 눌러도 멈춘다 (v0.50.1)
+        if (flinging) {
+          stopAnim();
+          flinging = false;
+          settle();
+        }
+        return;
+      }
       if (penRecentlyActive() || palmActive()) return;
       if (pointers.size === 0) {
         rect = el.getBoundingClientRect();
         zoomAtStart = view.current.z;
         stopAnim();
+        flinging = false;
       }
       const p = local(e);
       pointers.set(e.pointerId, p);
@@ -461,13 +481,18 @@ export function ScrollView(props: Props) {
           settle();
           return;
         }
-        const first = samples[0];
-        const lastS = samples[samples.length - 1];
-        const dt = lastS.t - first.t;
+        // 미끄러짐 (v0.50.1): 손을 뗀 순간까지 마지막 FLING_WINDOW_MS 동안의 움직임으로만. 0.50까지는 마지막으로 움직인 때를 기준으로 재서,
+        // 미끄러지던 화면을 손가락으로 잡을 때 조금 끌린 움직임이 남아 있다가 한참 멈춘 뒤 떼어도 그 속도로 다시 미끄러졌다
+        const now = performance.now();
+        const lastMove = samples[samples.length - 1];
+        const recent = [...samples.filter((q) => now - q.t <= FLING_WINDOW_MS), { t: now, x: p.x, y: p.y }];
+        const first = recent[0];
+        const dt = now - first.t;
+        const still = now - lastMove.t > FLING_STILL_MS;
         const out = view.current.y < 0 || view.current.y > maxScrollY(layoutRef.current, areaSizeRef.current, view.current.z);
-        if (dt > 10 && !out) {
-          const vx = (lastS.x - first.x) / dt;
-          const vy = (lastS.y - first.y) / dt;
+        if (dt > 10 && !out && !still) {
+          const vx = (p.x - first.x) / dt;
+          const vy = (p.y - first.y) / dt;
           if (Math.hypot(vx, vy) > 0.25) {
             mode = "idle";
             showPull(0);

@@ -44,7 +44,9 @@ export function StickerView({
   size: PageSize;
   className?: string;
   children?: ReactNode;
-} & Pick<HTMLAttributes<HTMLDivElement>, "onPointerDown" | "onPointerUp" | "onPointerCancel" | "onClick" | "title" | "role" | "aria-label">) {
+} & Pick<HTMLAttributes<HTMLDivElement>, "onPointerDown" | "onPointerMove" | "onPointerUp" | "onPointerCancel" | "onClick" | "title" | "role" | "aria-label"> & {
+    "data-no-gesture"?: boolean;
+  }) {
   const asset = mediaAsset(assets, s.asset);
   const b = stickerBox(s, asset, size);
   const radius = b.radius === Infinity ? "50%" : b.radius;
