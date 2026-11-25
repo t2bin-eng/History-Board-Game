@@ -119,8 +119,25 @@ export function strokeToSvgPath(stroke: Stroke, page: PageSize, last = true, ext
   const opts = strokeOptions(stroke.tool, sizePx, !!stroke.simulatePressure, last, smoothed, !!stroke.fixedWidth, nib, lengthPx);
   // v0.32 획(떨림을 이미 거름)은 처음 굵기(size px)만큼의 점을 버리지 않는다 (v0.37): perfect-freehand는 획 처음 size px 안의 점을
   // 건너뛰어 펜을 댈 때의 떨림을 숨기는데, 작은 글씨에서는 ㅐ·ㅔ의 짧은 삐침이나 ㅇ의 시작이 깎여 사라졌다
-  const outline = smoothed ? getStrokeOutlinePoints(getStrokePoints(pts, { ...opts, size: NO_MIN_LENGTH }), opts) : getStroke(pts, opts);
-  return outlineToSvgPath(outline);
+  return outlineToSvgPath(freehandOutline(pts, opts, smoothed));
+}
+
+/**
+ * perfect-freehand 외곽선을 좌표·굵기를 OUTLINE_SCALE배로 키워 계산하고 되돌린다 (v0.49.1).
+ * perfect-freehand는 획 끝 "3"(좌표 단위, 크기와 상관없음) 안의 점을 건너뛰는데, 3px보다 짧은 획(작은 글씨의 ㅊ·ㅎ 윗점,
+ * ㅐ·ㅔ 삐침)은 첫 점 말고 모두 건너뛰어 시작 둥근 끝이 획 길이만 한 반원으로 그려졌다 — 짧은 획이 굵기의 몇 배인 덩어리가 되고,
+ * 쓰는 동안 3px을 넘나들며 가늘었다 뚱뚱했다 깜빡였다. 키워서 계산하면 건너뛰는 길이가 3/16px로 줄고, 나머지(굵기·다듬기·
+ * 가늘어지기)는 크기에 비례하므로 그대로다
+ */
+const OUTLINE_SCALE = 16;
+
+export function freehandOutline(pts: InkPoint[], opts: StrokeOptions, smoothed: boolean): number[][] {
+  const k = OUTLINE_SCALE;
+  const big = pts.map((q): InkPoint => [q[0] * k, q[1] * k, q[2]]);
+  const taper = (e: StrokeOptions["start"]) => (e && typeof e.taper === "number" ? { ...e, taper: e.taper * k } : e);
+  const o: StrokeOptions = { ...opts, size: (opts.size ?? 16) * k, start: taper(opts.start), end: taper(opts.end) };
+  const outline = smoothed ? getStrokeOutlinePoints(getStrokePoints(big, { ...o, size: NO_MIN_LENGTH * k }), o) : getStroke(big, o);
+  return outline.map(([x, y]) => [x / k, y / k]);
 }
 
 /** 점 (px, py)에서 선분 (ax, ay)-(bx, by)까지 거리 */
