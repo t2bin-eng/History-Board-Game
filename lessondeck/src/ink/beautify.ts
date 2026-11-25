@@ -177,7 +177,8 @@ export interface BeautifyOptions {
  * 굽은 부분은 부드럽게, 필압은 고르게. 짧은 획은 그대로 돌려준다. widthPx는 펜 굵기(px).
  */
 export function beautifyStroke(points: InkPoint[], page: PageSize, widthPx: number, opts: BeautifyOptions = {}): InkPoint[] {
-  const { straightTolerance = 0.06, axisSnapDeg = 6, cornerDeg = 45, minSizePx = 0 } = opts;
+  // 곧다고 볼 휨 6% → 3% (v0.51): 흘려 쓴 획의 완만한 곡선까지 직선으로 펴 모양이 바뀌었다
+  const { straightTolerance = 0.03, axisSnapDeg = 6, cornerDeg = 45, minSizePx = 0 } = opts;
   if (points.length < 4) return points;
   const raw = toPx(points, page);
   // 작은 글씨(v0.37): 손떨림보다 글자 모양이 더 중요하다. 반듯하게 펴거나 고르게 다시 찍지 않는다
@@ -203,6 +204,9 @@ export function beautifyStroke(points: InkPoint[], page: PageSize, widthPx: numb
   if (pts.length < 5) return points;
   const k = Math.max(2, Math.round(Math.min(14, Math.max(5, len * 0.08)) / spacing));
   const anchors = findCorners(pts, k, cornerDeg);
+  // 수평·수직 맞춤은 토막이 둘 이하인 단순한 획(ㅡ·ㅣ·ㄱ·ㄴ)만 (v0.51): 맞춘 만큼 뒷부분 전체를 옮기므로, 이어 쓴 흘림 획은
+  // 토막마다 밀림이 쌓여 뒷부분이 쓴 자리에서 벗어났다
+  const snap = anchors.length <= 3;
 
   // 필압: 이웃 평균으로 고르게 (뭉치거나 갑자기 가늘어지지 않게)
   const pressure = pts.map((_, i) => {
@@ -229,7 +233,7 @@ export function beautifyStroke(points: InkPoint[], page: PageSize, widthPx: numb
     if (chord >= 4 && maxDeviation(pts, a, b) <= Math.max(chord * straightTolerance, Math.min(widthPx * 0.8, chord * 0.03))) {
       // 곧은 부분: 직선, 수평·수직에 가까우면 맞추고 뒷부분도 같이 옮긴다
       let end = endOrig;
-      if (chord >= Math.max(10, widthPx * 4)) {
+      if (snap && chord >= Math.max(10, widthPx * 4)) {
         const deg = (Math.atan2(endOrig.y - start.y, endOrig.x - start.x) * 180) / Math.PI;
         const near = Math.round(deg / 90) * 90;
         if (Math.abs(deg - near) <= axisSnapDeg) {

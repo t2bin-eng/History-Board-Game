@@ -1,5 +1,6 @@
 import { Maximize2, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { createPortal } from "react-dom";
 import { cropOf, popupRect, shownSticker, stickersOf } from "../doc/stickers";
 import { mediaAsset, type Asset, type MediaAsset, type Page, type Sticker } from "../doc/types";
 import type { PageSize } from "../ink/geometry";
@@ -128,50 +129,87 @@ export function PopupLayer({ page, assets, size, live, interactive, onMoveIcon }
           </StickerView>
         );
       })}
-      {opened && mediaAsset(assets, opened.asset) && (
-        <PopupView
-          key={opened.id}
-          sticker={opened}
-          asset={mediaAsset(assets, opened.asset)!}
-          size={size}
-          onClosed={() => setOpen(null)}
-        />
-      )}
+      {opened &&
+        mediaAsset(assets, opened.asset) &&
+        layerRef.current &&
+        // 크게 보기는 페이지 영역(확대·이동되지 않는 화면)에 띄운다 (v0.51)
+        createPortal(
+          <PopupView
+            key={opened.id}
+            sticker={opened}
+            asset={mediaAsset(assets, opened.asset)!}
+            layer={layerRef.current}
+            onClosed={() => setOpen(null)}
+          />,
+          layerRef.current.closest<HTMLElement>(".page-area") ?? document.body,
+        )}
     </div>
   );
 }
 
 /** 크게 본 그림: 아이콘 자리에서 커지며 나오고, 바깥·✕·Esc·뒤로 가기로 아이콘 자리로 작아지며 닫힌다 */
-function PopupView({ sticker, asset, size, onClosed }: { sticker: Sticker; asset: MediaAsset; size: PageSize; onClosed: () => void }) {
+/** 크게 본 그림의 확대 한계 */
+const MAX_IMG_ZOOM = 6;
+const DOUBLE_TAP_MS = 300;
+
+/**
+ * 크게 보기 (v0.27, v0.51 화면 기준): 페이지 영역(확대·이동되지 않는 화면) 위에 화면 가로 92%·세로 88% 안에 가장 크게.
+ * 0.50까지는 페이지 안에 그려 페이지를 확대한 채 열면 그림이 화면보다 커져 닫기 단추·바깥이 화면 밖으로 나가고,
+ * 그림 위에서는 스크롤·확대도 되지 않아 빠져나올 수 없었다. 그림은 두 손가락으로 확대·이동, 두 번 톡으로 2.5배 ↔ 원래
+ */
+function PopupView({ sticker, asset, layer, onClosed }: { sticker: Sticker; asset: MediaAsset; layer: HTMLElement; onClosed: () => void }) {
   const frameRef = useRef<HTMLDivElement>(null);
   const backRef = useRef<HTMLDivElement>(null);
+  const zoomRef = useRef<HTMLDivElement>(null);
   const closing = useRef(false);
   const openedAt = useRef(performance.now());
-  const big = popupRect(sticker, asset.width, asset.height, size);
-  const iconBox = stickerBox(shownSticker(sticker, asset.width, asset.height), asset, size);
-  const from = { left: iconBox.left, top: iconBox.top, width: iconBox.width, height: iconBox.height };
-  const to = big;
-  const px = (r: typeof from) => ({ left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
-  const iconRadius = iconBox.radius === Infinity ? "50%" : `${iconBox.radius}px`;
-
+  type Box = { left: number; top: number; width: number; height: number };
+  /** 화면(페이지 영역) 기준 자리: 아이콘 → 크게 */
+  const measure = (): { from: Box; to: Box; radius: string } | null => {
+    const area = layer.closest<HTMLElement>(".page-area") ?? document.body;
+    const ar = area.getBoundingClientRect();
+    const icon = layer.querySelector<HTMLElement>(`[data-sticker-id="${CSS.escape(sticker.id)}"]`);
+    const ir = icon?.getBoundingClientRect();
+    const big = popupRect(sticker, asset.width, asset.height, { width: ar.width, height: ar.height });
+    const from = ir ? { left: ir.left - ar.left, top: ir.top - ar.top, width: ir.width, height: ir.height } : { ...big };
+    const radius = icon ? getComputedStyle(icon).borderRadius || "8px" : "8px";
+    return { from, to: big, radius };
+  };
+  const [geo, setGeo] = useState<ReturnType<typeof measure>>(null);
   useLayoutEffect(() => {
-    frameRef.current?.animate?.([{ ...px(from), borderRadius: iconRadius, opacity: 0.7 }, { ...px(to), borderRadius: "10px", opacity: 1 }], {
+    setGeo(measure());
+    // 화면 크기·방향이 바뀌면 다시 맞춘다
+    const onResize = () => setGeo(measure());
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const px = (r: Box) => ({ left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
+
+  const animated = useRef(false);
+  useLayoutEffect(() => {
+    if (!geo || animated.current) return;
+    animated.current = true;
+    frameRef.current?.animate?.([{ ...px(geo.from), borderRadius: geo.radius, opacity: 0.7 }, { ...px(geo.to), borderRadius: "10px", opacity: 1 }], {
       duration: OPEN_MS,
       easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
     });
     backRef.current?.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: OPEN_MS, easing: "ease-out" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [geo]);
 
   const close = () => {
     if (closing.current) return;
     closing.current = true;
     const frame = frameRef.current;
-    const anim = frame?.animate?.([{ ...px(to), borderRadius: "10px", opacity: 1 }, { ...px(from), borderRadius: iconRadius, opacity: 0.6 }], {
-      duration: CLOSE_MS,
-      easing: "cubic-bezier(0.4, 0, 0.6, 1)",
-      fill: "forwards",
-    });
+    const g = measure() ?? geo;
+    const anim = g
+      ? frame?.animate?.([{ ...px(g.to), borderRadius: "10px", opacity: 1 }, { ...px(g.from), borderRadius: g.radius, opacity: 0.6 }], {
+          duration: CLOSE_MS,
+          easing: "cubic-bezier(0.4, 0, 0.6, 1)",
+          fill: "forwards",
+        })
+      : undefined;
     backRef.current?.animate?.([{ opacity: 1 }, { opacity: 0 }], { duration: CLOSE_MS, fill: "forwards" });
     if (anim) anim.finished.then(onClosed, onClosed);
     else onClosed();
@@ -195,6 +233,104 @@ function PopupView({ sticker, asset, size, onClosed }: { sticker: Sticker; asset
     };
   }, []);
 
+  // ── 그림 확대·이동 (v0.51): 두 손가락 벌리기·오므리기, 확대한 채 한 손가락(펜·마우스)으로 끌기, 두 번 톡 ──
+  const view = useRef({ z: 1, x: 0, y: 0 });
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const gesture = useRef<{ d: number; mx: number; my: number; v: { z: number; x: number; y: number } } | null>(null);
+  const lastTap = useRef<{ t: number; x: number; y: number } | null>(null);
+  const downAt = useRef<{ x: number; y: number; t: number } | null>(null);
+  const applyView = (animate = false) => {
+    const el = zoomRef.current;
+    const box = frameRef.current?.getBoundingClientRect();
+    if (!el || !box) return;
+    const v = view.current;
+    // 그림이 틀 밖으로 너무 나가지 않게
+    const maxX = ((v.z - 1) * box.width) / 2;
+    const maxY = ((v.z - 1) * box.height) / 2;
+    v.x = clamp(v.x, -maxX, maxX);
+    v.y = clamp(v.y, -maxY, maxY);
+    el.style.transition = animate ? "transform 180ms ease-out" : "";
+    el.style.transform = v.z === 1 && !v.x && !v.y ? "" : `translate(${v.x}px, ${v.y}px) scale(${v.z})`;
+  };
+  /** 틀 가운데 기준 좌표 */
+  const local = (e: { clientX: number; clientY: number }) => {
+    const r = frameRef.current!.getBoundingClientRect();
+    return { x: e.clientX - r.left - r.width / 2, y: e.clientY - r.top - r.height / 2 };
+  };
+  const zoomAt = (p: { x: number; y: number }, z: number, from = view.current, at = p) => {
+    const nz = clamp(z, 1, MAX_IMG_ZOOM);
+    // from 상태에서 p 아래에 있던 그림 자리가 at에 오도록
+    const ix = (p.x - from.x) / from.z;
+    const iy = (p.y - from.y) / from.z;
+    view.current = { z: nz, x: at.x - ix * nz, y: at.y - iy * nz };
+  };
+  const onDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    if ((e.target as Element).closest(".popup-close")) return;
+    try {
+      (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    } catch {
+      // 잡을 수 없는 포인터면 그냥 둔다
+    }
+    const p = local(e);
+    pointers.current.set(e.pointerId, p);
+    if (pointers.current.size === 2) {
+      const [a, b] = [...pointers.current.values()];
+      gesture.current = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, v: { ...view.current } };
+      downAt.current = null;
+    } else if (pointers.current.size === 1) {
+      gesture.current = { d: 0, mx: p.x, my: p.y, v: { ...view.current } };
+      downAt.current = { x: p.x, y: p.y, t: performance.now() };
+    }
+  };
+  const onMove = (e: React.PointerEvent) => {
+    if (!pointers.current.has(e.pointerId)) return;
+    e.stopPropagation();
+    pointers.current.set(e.pointerId, local(e));
+    const g = gesture.current;
+    if (!g) return;
+    if (pointers.current.size >= 2 && g.d) {
+      const [a, b] = [...pointers.current.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      zoomAt({ x: g.mx, y: g.my }, g.v.z * (d / g.d), g.v, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+      applyView();
+    } else if (pointers.current.size === 1 && g.v.z > 1) {
+      const p = [...pointers.current.values()][0];
+      view.current = { ...g.v, x: g.v.x + p.x - g.mx, y: g.v.y + p.y - g.my };
+      applyView();
+    }
+  };
+  const onUp = (e: React.PointerEvent) => {
+    if (!pointers.current.has(e.pointerId)) return;
+    e.stopPropagation();
+    const p = local(e);
+    pointers.current.delete(e.pointerId);
+    if (pointers.current.size === 1) {
+      // 두 손가락 중 하나를 떼면 남은 손가락으로 이어서 끈다
+      const rest = [...pointers.current.values()][0];
+      gesture.current = { d: 0, mx: rest.x, my: rest.y, v: { ...view.current } };
+      return;
+    }
+    if (pointers.current.size) return;
+    gesture.current = null;
+    if (view.current.z < 1.05) {
+      view.current = { z: 1, x: 0, y: 0 };
+      applyView(true);
+    }
+    // 두 번 톡: 2.5배 ↔ 원래 (톡: 10px 안, 0.3초 안)
+    const d = downAt.current;
+    downAt.current = null;
+    if (!d || e.type !== "pointerup" || Math.hypot(p.x - d.x, p.y - d.y) > TAP_SLOP || performance.now() - d.t > 300) return;
+    const now = performance.now();
+    const t = lastTap.current;
+    if (t && now - t.t < DOUBLE_TAP_MS && Math.hypot(p.x - t.x, p.y - t.y) < 40) {
+      lastTap.current = null;
+      if (view.current.z > 1.05) view.current = { z: 1, x: 0, y: 0 };
+      else zoomAt(p, 2.5);
+      applyView(true);
+    } else lastTap.current = { t: now, x: p.x, y: p.y };
+  };
+
   const c = cropOf(sticker);
   const flip = sticker.flipX || sticker.flipY ? `scale(${sticker.flipX ? -1 : 1}, ${sticker.flipY ? -1 : 1})` : undefined;
   // 보이는 부분만 꽉 채워(커지는 동안 정사각형 아이콘 → 원래 비율로 자연스럽게). object-view-box를 모르는 웹뷰는 비율로 자리 잡기
@@ -202,6 +338,7 @@ function PopupView({ sticker, asset, size, onClosed }: { sticker: Sticker; asset
     ? ({ objectViewBox: `inset(${pct(c.y)} ${pct(1 - c.x - c.w)} ${pct(1 - c.y - c.h)} ${pct(c.x)})`, transform: flip } as CSSProperties)
     : { position: "absolute", left: pct(-c.x / c.w), top: pct(-c.y / c.h), width: pct(1 / c.w), height: pct(1 / c.h), objectFit: "fill", transform: flip };
   const swallow = (e: React.SyntheticEvent) => e.stopPropagation();
+  if (!geo) return null;
   return (
     <>
       <div
@@ -222,16 +359,22 @@ function PopupView({ sticker, asset, size, onClosed }: { sticker: Sticker; asset
         data-no-gesture
         role="dialog"
         aria-label="크게 본 그림"
-        style={{ left: big.left, top: big.top, width: big.width, height: big.height }}
-        onPointerDown={swallow}
+        style={{ left: geo.to.left, top: geo.to.top, width: geo.to.width, height: geo.to.height }}
+        onPointerDown={onDown}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerCancel={onUp}
         onClick={swallow}
       >
-        <img className="popup-img" src={asset.url} alt="" draggable={false} style={imgStyle} />
+        <div ref={zoomRef} className="popup-zoom">
+          <img className="popup-img" src={asset.url} alt="" draggable={false} style={imgStyle} />
+        </div>
         <button
           type="button"
           className="popup-close"
           aria-label="크게 본 그림 닫기"
           title="닫기 (Esc)"
+          onPointerDown={swallow}
           onClick={(e) => {
             e.stopPropagation();
             close();

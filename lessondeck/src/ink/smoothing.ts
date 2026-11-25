@@ -226,6 +226,8 @@ const HOOK_START_DEG = 60;
 const HOOK_REF_PX = 6;
 /** 갈고리 필압이 그 획 필압 가운데값의 이 비율보다 낮아야 (일부러 꺾은 끝은 필압이 그대로) */
 const HOOK_PRESSURE = 0.75;
+/** 꺾인 뒤 첫 점의 필압이 가운데 필압의 이만큼보다 낮아야 갈고리 (v0.51, 날려 쓴 끝은 꺾을 때 아직 눌려 있음) */
+const HOOK_TURN_PRESSURE = 0.65;
 /** 이보다 짧은 획(화면 px)은 그대로 (점·짧은 삐침) */
 const HOOK_MIN_STROKE_PX = 12;
 /**
@@ -278,7 +280,19 @@ export function trimHooks(points: InkPoint[], toScreen: (p: InkPoint) => [number
     const a = reach(b, -1);
     const a2 = a < 0 ? -1 : reach(a, -1);
     if (a2 < 0 || tail < 0.8) continue;
-    if (angle(a2, a, a, b) < HOOK_STRAIGHT_DEG && angle(a, b, b, n - 1) > HOOK_END_DEG && lowPressure(b + 1, n - 1)) end = b;
+    // 꺾인 자리에서 이미 펜이 들리고 있어야 갈고리 (v0.51): 일부러 날려 쓴 끝(ㅅ·ㅣ 삐침)은 펜을 누른 채 꺾고 나서 힘이 빠진다
+    // b가 꺾인 자리 그 점이어야 (v0.51): b는 줄기(a2 → a)를 늘인 줄 위 — 날린 끝 안쪽 점을 모서리로 잡아 끝 절반을 자르지 않게
+    const sx = s[a][0] - s[a2][0];
+    const sy = s[a][1] - s[a2][1];
+    const onStem = Math.abs((s[b][0] - s[a][0]) * sy - (s[b][1] - s[a][1]) * sx) / (Math.hypot(sx, sy) || 1) <= HOOK_START_ONLINE_PX;
+    if (
+      angle(a2, a, a, b) < HOOK_STRAIGHT_DEG &&
+      onStem &&
+      angle(a, b, b, n - 1) > HOOK_END_DEG &&
+      lowPressure(b + 1, n - 1) &&
+      points[b + 1][2] < median * HOOK_TURN_PRESSURE
+    )
+      end = b;
   }
   // 시작: 가장 긴 머리부터 (h = 머리가 끝나는 점, 남길 첫 점)
   let start = 0;

@@ -147,6 +147,8 @@ export function recognizeCurve(input: Pt[]): CurveGuess | null {
   // 끝에서 되꺾인 날개 찾기: 뒤쪽 45% 안에서 처음으로 크게(115° 넘게) 꺾인 곳 = 화살촉 끝
   let shaft = pts;
   let kind: CurveGuess["kind"] = "line";
+  /** 끝에서 크게 되꺾였는데 화살표가 아님 (날려 쓴 끝·삐침) */
+  let hooked = false;
   const h = Math.max(6, L * 0.035);
   const at = (s: number): Pt => {
     let i = cum.findIndex((c) => c >= s);
@@ -171,7 +173,10 @@ export function recognizeCurve(input: Pt[]): CurveGuess | null {
       const best = ((pts[k][0] - before[0]) * v1[0] + (pts[k][1] - before[1]) * v1[1]) / l1;
       if (ahead > best) k = j;
     }
-    if (k >= pts.length - 2) break;
+    if (k >= pts.length - 2) {
+      hooked = true;
+      break;
+    }
     // 날개: 촉 끝 근처에 머물고(줄기의 45% 안), 줄기가 끝나는 방향의 뒤쪽으로, 한쪽이라도 벌어짐
     const tip = pts[k];
     const head = pts.slice(k + 1);
@@ -181,12 +186,18 @@ export function recognizeCurve(input: Pt[]): CurveGuess | null {
     const reach = Math.max(...head.map((p) => dist(p, tip)));
     const behind = head.filter((p) => (p[0] - tip[0]) * (back[0] - tip[0]) + (p[1] - tip[1]) * (back[1] - tip[1]) > 0);
     const wing = Math.max(...head.map((p) => Math.abs(side(p, back, tip))));
-    if (reach <= 0.45 * stemLen && reach >= 10 && behind.length >= head.length * 0.6 && wing >= Math.max(6, 0.03 * stemLen)) {
+    // 날개는 양쪽으로 (v0.51): 한쪽만 꺾인 것은 끝을 날려 쓴 글씨(ㅅ·ㅣ 삐침)와 같아, 멈추면 화살표가 됐다. 도형 화살표와 같게
+    const wingL = Math.max(0, ...head.map((p) => side(p, back, tip)));
+    const wingR = Math.max(0, ...head.map((p) => -side(p, back, tip)));
+    const both = Math.min(wingL, wingR) >= Math.max(4, 0.02 * stemLen);
+    if (reach <= 0.45 * stemLen && reach >= 10 && behind.length >= head.length * 0.6 && wing >= Math.max(6, 0.03 * stemLen) && both) {
       shaft = stem;
       kind = "arrow";
-    }
+    } else hooked = true;
     break;
   }
+  // 끝을 날려 쓴 획(한쪽으로만 되꺾인 끝)은 곡선 하나가 아니다 (v0.51: 멈추면 휜 선 도형이 됐다)
+  if (hooked) return null;
 
   const a = shaft[0];
   const b = shaft[shaft.length - 1];

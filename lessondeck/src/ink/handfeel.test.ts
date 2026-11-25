@@ -3,6 +3,7 @@
 import { getStrokePoints } from "perfect-freehand";
 import { describe, expect, it } from "vitest";
 import { beautifyStroke } from "./beautify";
+import { guessHoldShape } from "./holdShape";
 import { strokeOptions } from "./geometry";
 import { keepPoint, SMOOTH_V2, smoothPoints, stabilizeOf, trimHooks, type Dropped } from "./smoothing";
 import type { InkPoint, Stroke } from "./types";
@@ -262,5 +263,111 @@ describe("필기감 회귀 시험", () => {
         expect(dist(line[line.length - 1], ref[ref.length - 1])).toBeLessThan(1.5);
       }
     }
+  });
+});
+
+// ── 흘림·날림 글씨 (v0.51): 이어 쓰고 끝을 날린 한글이 펜을 떼거나 멈춘 뒤 모양이 바뀌지 않는다 ──
+
+/** 손글씨 흉내: 점들을 지나는 부드러운 곡선(Catmull-Rom), sharp 번호의 점은 뾰족하게 */
+function cursive(ctrl: P[], sharp: number[], k: number, n = 16): P[] {
+  const out: P[] = [];
+  for (let i = 0; i < ctrl.length - 1; i++) {
+    const p0 = ctrl[Math.max(0, i - 1)];
+    const p1 = ctrl[i];
+    const p2 = ctrl[i + 1];
+    const p3 = ctrl[Math.min(ctrl.length - 1, i + 2)];
+    const m1: P = sharp.includes(i) ? [0, 0] : [(p2[0] - p0[0]) / 2, (p2[1] - p0[1]) / 2];
+    const m2: P = sharp.includes(i + 1) ? [0, 0] : [(p3[0] - p1[0]) / 2, (p3[1] - p1[1]) / 2];
+    for (let j = 0; j < n; j++) {
+      const t = j / n;
+      const h00 = 2 * t ** 3 - 3 * t ** 2 + 1;
+      const h10 = t ** 3 - 2 * t ** 2 + t;
+      const h01 = -2 * t ** 3 + 3 * t ** 2;
+      const h11 = t ** 3 - t ** 2;
+      out.push([h00 * p1[0] + h10 * m1[0] + h01 * p2[0] + h11 * m2[0], h00 * p1[1] + h10 * m1[1] + h01 * p2[1] + h11 * m2[1]]);
+    }
+  }
+  out.push(ctrl[ctrl.length - 1]);
+  return out.map(([x, y]) => [300 + x * k, 300 + y * k]);
+}
+
+const CURSIVE: [string, P[], number[]][] = [
+  ["흘림 가", [[0, 0], [22, 0], [8, 30], [30, -4], [32, 40], [32, 18], [44, 18]], [1, 4]],
+  ["흘림 ㄹ", [[0, 0], [22, 1], [21, 9], [1, 9], [0, 18], [24, 18]], []],
+  ["흘림 는", [[0, 0], [1, 16], [18, 16], [4, 26], [26, 26], [10, 32], [10, 46], [30, 46]], [1]],
+  ["ㅅ 날림", [[14, 0], [6, 14], [0, 24], [8, 20]], [2]],
+  ["ㄱ 날림", [[0, 0], [26, 0], [22, 18], [14, 30], [9, 33]], [1]],
+  ["ㅣ 삐침", [[0, 0], [0, 36], [-5, 31]], [1]],
+  ["흘림 을", [[10, 0], [0, 6], [8, 14], [18, 6], [8, 0], [-4, 20], [30, 20], [6, 28], [26, 28], [26, 34], [6, 34], [6, 40], [30, 40]], []],
+  ["살짝 휜 ㅡ", [[0, 0], [30, -3], [60, -2], [90, 3]], []],
+];
+
+describe("흘림·날림 글씨 (v0.51)", () => {
+  /** 끝 15%에서 힘을 빼며 날려 쓴 펜 표본 */
+  const flicked = (ref: P[], k: number, trial: number) => {
+    seed = 6000 + trial * 13 + k;
+    const smp = penSamples(ref, { speed: 0.35 * k, tremor: 0.25, noise: 0.15 });
+    smp.forEach((s, i) => {
+      const u = i / smp.length;
+      if (u > 0.85) s.p *= Math.max(0.15, 1 - (u - 0.85) * 5);
+    });
+    return smp;
+  };
+
+  it("필기 보정이 이어 쓴 글씨를 비틀지 않는다: 쓴 길과 그린 선의 평균 차이가 보정을 끈 것과 0.25px 안 (0.50까지 흘림 '가' 1.9px·살짝 휜 ㅡ 3.9px)", () => {
+    for (const [name, ctrl, sharp] of CURSIVE) {
+      for (const k of [1, 2]) {
+        const ref = cursive(ctrl, sharp, k);
+        const off: number[] = [];
+        const on: number[] = [];
+        for (let trial = 0; trial < 6; trial++) {
+          const smp = flicked(ref, k, trial);
+          off.push(fidelity(ref, centerline(writeStroke(smp, { beautify: false }))).mean);
+          on.push(fidelity(ref, centerline(writeStroke(smp))).mean);
+        }
+        expect(avg(on), `${name} ×${k}`).toBeLessThan(avg(off) + 0.25);
+      }
+    }
+  });
+
+  it("끝을 날려 쓴 ㅅ·ㅣ 삐침은 잘리지 않는다 (꺾을 때 아직 눌려 있음)", () => {
+    for (const [name, ctrl, sharp] of CURSIVE.filter(([n]) => n.includes("날림") || n.includes("삐침"))) {
+      const ref = cursive(ctrl, sharp, 1);
+      for (let trial = 0; trial < 10; trial++) {
+        const line = centerline(writeStroke(flicked(ref, 1, trial), { beautify: false }));
+        expect(dist(line[line.length - 1], ref[ref.length - 1]), `${name} ${trial}`).toBeLessThan(2);
+      }
+    }
+  });
+
+  it("흘려 쓰다 멈춰도 도형·곡선·직선으로 바뀌지 않고, 손그림 도형은 그대로 알아본다", () => {
+    for (const [name, ctrl, sharp] of CURSIVE.filter(([n]) => !n.includes("ㅡ"))) {
+      for (const k of [1, 2, 3]) {
+        seed = 77 + k;
+        const px = cursive(ctrl, sharp, k).map(([x, y]) => [x + gauss() * 0.4, y + gauss() * 0.4] as P);
+        expect(guessHoldShape(px, page, 2, true), `${name} ×${k}`).toBeNull();
+      }
+    }
+    const jit = (pts: P[]) => {
+      seed = 5;
+      return pts.map(([x, y]) => [x + gauss() * 0.5, y + gauss() * 0.5] as P);
+    };
+    const circle = (r: number) => Array.from({ length: 73 }, (_, i): P => {
+      const t = (i / 72) * 2 * Math.PI * 1.04;
+      return [300 + r * Math.cos(t) * (1 + 0.04 * Math.sin(3 * t)), 300 + r * 0.9 * Math.sin(t)];
+    });
+    const rect = cursive([[0, 0], [80, 2], [79, 50], [-1, 49], [1, 3]], [1, 2, 3], 1, 12);
+    const tri = cursive([[40, 0], [80, 60], [0, 58], [38, 2]], [1, 2], 1, 14);
+    const straight = cursive([[0, 0], [60, 2], [120, 1]], [], 1, 20);
+    const arrow = [...cursive([[0, 0], [120, 4]], [], 1, 30), ...cursive([[120, 4], [104, -8]], [], 1, 6).slice(1), ...cursive([[104, -8], [120, 4]], [], 1, 6).slice(1), ...cursive([[120, 4], [103, 15]], [], 1, 6).slice(1)];
+    const bent = cursive([[0, 40], [50, 0], [110, 30]], [], 1, 20);
+    const kind = (h: ReturnType<typeof guessHoldShape>) => (!h ? null : h.type === "line" ? "line" : h.type === "curve" ? `curve-${h.spec.kind}` : h.spec.kind);
+    expect(kind(guessHoldShape(jit(circle(40)), page, 2, true))).toBe("ellipse");
+    expect(kind(guessHoldShape(jit(circle(80)), page, 2, true))).toBe("ellipse");
+    expect(kind(guessHoldShape(jit(rect), page, 2, true))).toBe("rect");
+    expect(kind(guessHoldShape(jit(tri), page, 2, true))).toBe("triangle");
+    expect(kind(guessHoldShape(jit(straight), page, 2, true))).toBe("line");
+    expect(kind(guessHoldShape(jit(arrow), page, 2, true))).toBe("arrow");
+    expect(kind(guessHoldShape(jit(bent), page, 2, true))).toBe("curve-line");
   });
 });

@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { recognizeShape, type Pt } from "./shapeRecognize";
+import { guessToSpec, shapeFits } from "./shapes";
+
+// 멈춤 도형 보정 확인 (v0.51): 알아본 손그림 도형은 쓴 획과 서로 가깝다는 확인(shapeFits)도 통과해야 한다 (글씨를 막으려다 도형까지 막지 않게)
+const FIT_PAGE = { width: 1000, height: 1414 };
+const fitFails: string[] = [];
+let fitCount = 0;
+const fit = (pts: Pt[], g: ReturnType<typeof recognizeShape>) => {
+  if (!g) return;
+  fitCount++;
+  if (!shapeFits(pts, guessToSpec(g, FIT_PAGE), FIT_PAGE, 2)) fitFails.push(g.kind);
+};
 
 // 실제 손으로 그린 사각형처럼: 모서리가 둥글고, 변이 살짝 휘고, 아무 데서나 시작해 지나치거나 덜 닫고, 조금 기울고, 떨림
 function rng(seed: number) {
@@ -79,6 +90,7 @@ describe("실제 손그림 같은 사각형", () => {
               n++;
               const pts = handRect({ w: 320, h: 200, round, bow, start, close, tilt, jitter: 3, seed: n });
               const g = recognizeShape(pts);
+              fit(pts, g);
               if (g?.kind !== "rect") misses.push(`r${round} b${bow} s${start} c${close} t${tilt} → ${g?.kind ?? "null"}`);
             }
           }
@@ -105,6 +117,7 @@ describe("실제 손그림 같은 사각형", () => {
         pts.push([400 + Math.cos(t) * a * k + r() * 3, 400 + Math.sin(t) * b * k + r() * 3]);
       }
       const g = recognizeShape(pts);
+      fit(pts, g);
       if (g?.kind !== "ellipse") misses.push(`seed ${seed} → ${g?.kind ?? "null"}`);
     }
     if (misses.length) console.log(misses.join("\n"));
@@ -144,4 +157,9 @@ describe("실제 손그림 같은 사각형", () => {
     if (misses.length) console.log(misses.join("\n"));
     expect(misses).toEqual([]);
   });
+});
+
+it("알아본 손그림 사각형·원은 쓴 획과 가깝다는 확인도 통과한다 (v0.51)", () => {
+  expect(fitCount).toBeGreaterThan(250);
+  expect(fitFails).toEqual([]);
 });

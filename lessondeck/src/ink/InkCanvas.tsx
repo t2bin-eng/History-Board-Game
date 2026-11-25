@@ -7,14 +7,13 @@ import { activeTouchCount, isSideButtonDown, onPalm, onSideButtonChange, palmAct
 import { beautifyStroke, pathLengthPx, snapLineEnd } from "./beautify";
 import { strokeHitsCircle, unitsToPx, type PageSize } from "./geometry";
 import { fillStroke, HIGHLIGHT_LAYER_STYLE, isHighlighter } from "./inkPaint";
-import { recognizeCurve } from "./curveFit";
-import { recognizeShape, type ShapeGuess } from "./shapeRecognize";
-import { curveSpec, defaultShape, dragShape, lineSpec, makeShapeStroke, type ShapeTool } from "./shapes";
+import { defaultShape, dragShape, lineSpec, makeShapeStroke, type ShapeTool } from "./shapes";
+import { guessHoldShape } from "./holdShape";
 import { eraserTakes, eraseStrokeArea, type EraserMode, type EraserTarget } from "./eraser";
 import { capPrediction, keepPoint, SMOOTH_V2, stabilizeOf, trimHooks, type Dropped, type StabilizeLevel } from "./smoothing";
 import type { PenButtonAction } from "./penButton";
 import { LASSO_TAP_PX } from "./selection";
-import type { InkPoint, PenNib, ShapeSpec, Stroke, Tool } from "./types";
+import type { InkPoint, PenNib, Stroke, Tool } from "./types";
 
 interface Props {
   page: PageSize;
@@ -662,19 +661,16 @@ export function InkCanvas(props: Props) {
       const ys = px.map((q) => q[1]);
       const zoom = propsRef.current.zoom || 1;
       if (Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * zoom < SHAPE_MIN_PX) return;
-      const guess = recognizeShape(px);
-      // 도형이 아니면 곡선(v0.24): 휘어지게 그은 선·휜 화살표는 매끈한 곡선으로, 거의 곧으면 아래 직선
-      const curve = guess ? null : recognizeCurve(px);
-      if (guess) {
-        g.shaped = true;
-        g.stroke = makeShapeStroke(stroke.id, guessToSpec(guess, p), stroke, p);
-      } else if (curve && (!curve.straight || curve.kind === "arrow")) {
-        g.shaped = true;
-        g.stroke = makeShapeStroke(stroke.id, curveSpec(curve.kind, curve.a, curve.b, curve.c1, curve.c2, p), stroke, p);
-      } else {
+      // 알아본 도형·곡선이 쓴 획과 서로 가까울 때만, 곧은 선은 거의 곧을 때만 (v0.51: 흘려 쓴 글자가 멈추면 네모·화살표·직선이 되던 것)
+      const hold = guessHoldShape(px, p, unitsToPx(stroke.width, p), true);
+      if (!hold) return;
+      if (hold.type === "line") {
         g.straight = { start: px[0] };
         g.lineLock = { x: g.holdAt.x, y: g.holdAt.y };
         g.stroke = lineStroke(g, px[px.length - 1]);
+      } else {
+        g.shaped = true;
+        g.stroke = makeShapeStroke(stroke.id, hold.spec, stroke, p);
       }
       navigator.vibrate?.(10);
       renderLive(g.stroke, []);
@@ -894,12 +890,9 @@ export function InkCanvas(props: Props) {
       } else if (!stroke.shape && propsRef.current.shapeTool === "auto") {
         // 자동 도형: 뗄 때 알아본 도형으로 (모르면 쓴 그대로)
         const px = stroke.points.map(([x, y]): [number, number] => [x * p0.width, y * p0.height]);
-        const guess = recognizeShape(px);
-        const curve = guess ? null : recognizeCurve(px);
-        if (guess) stroke = makeShapeStroke(stroke.id, guessToSpec(guess, p0), stroke, p0);
-        // 휘어지게 그은 선·휜 화살표도 (v0.24). 곧은 획은 예전처럼 쓴 그대로
-        else if (curve && (!curve.straight || curve.kind === "arrow"))
-          stroke = makeShapeStroke(stroke.id, curveSpec(curve.kind, curve.a, curve.b, curve.c1, curve.c2, p0), stroke, p0);
+        // 쓴 획과 서로 가까울 때만 (v0.51, 멈춤 도형 보정과 같음). 곧은 획은 예전처럼 쓴 그대로
+        const auto = guessHoldShape(px, p0, unitsToPx(stroke.width, p0), false);
+        if (auto && auto.type !== "line") stroke = makeShapeStroke(stroke.id, auto.spec, stroke, p0);
       }
       // 필기 보정: 펜 획(형광펜·도형 제외)을 반듯하게. 작은 글씨(화면 SMALL_WRITING_PX 안)는 그대로 (v0.37)
       if (propsRef.current.beautify && !stroke.shape && stroke.tool === "pen") {
@@ -1208,15 +1201,3 @@ function newId() {
     : `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** 알아본 도형(페이지 px) → 저장하는 모양 (비율 좌표, 크기는 페이지 가로 비율) */
-function guessToSpec(g: ShapeGuess, page: PageSize): ShapeSpec {
-  return {
-    kind: g.kind,
-    cx: g.cx / page.width,
-    cy: g.cy / page.height,
-    w: g.w / page.width,
-    h: g.h / page.width,
-    rot: g.rot,
-    ...(g.pts ? { pts: g.pts } : {}),
-  };
-}

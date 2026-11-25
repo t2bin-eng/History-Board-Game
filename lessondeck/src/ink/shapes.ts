@@ -4,6 +4,7 @@
 
 import { headParts, trimEnd, trimStart } from "./arrowHeads";
 import { snapLineEnd } from "./beautify";
+import type { ShapeGuess } from "./shapeRecognize";
 import { PAGE_UNITS, type InkPoint, type InkTool, type ShapeKind, type ShapeSpec, type Stroke } from "./types";
 
 type P = [number, number];
@@ -491,4 +492,114 @@ export function defaultShape(kind: Exclude<ShapeKind, "polygon">, at: P, page: S
   const tall = kind === "star" || kind === "pentagon" ? 0.95 : kind === "hexagon" ? 0.866 : kind === "heart" ? 0.9 : 1;
   const h = isLineShape(kind) ? 0 : kind === "rect" || kind === "roundrect" ? w * 0.66 : w * tall;
   return { kind, cx: at[0] / page.width, cy: at[1] / page.height, w, h, rot: 0 };
+}
+
+/** 알아본 도형(페이지 px) → 저장하는 모양 (비율 좌표, 크기는 페이지 가로 비율) */
+export function guessToSpec(g: ShapeGuess, page: Size): ShapeSpec {
+  return {
+    kind: g.kind,
+    cx: g.cx / page.width,
+    cy: g.cy / page.height,
+    w: g.w / page.width,
+    h: g.h / page.width,
+    rot: g.rot,
+    ...(g.pts ? { pts: g.pts } : {}),
+  };
+}
+
+// ── 멈춤 도형 보정 확인 (v0.51, SPEC 6장 "도형 보정") ──
+// 0.50까지는 알아본 도형·곡선을 그대로 받아, 흘려 쓴 글자(ㄹ → 네모, 끝을 날린 ㅅ·ㅣ → 화살표)도 멈추면 도형이 됐다.
+// 쓴 획과 알아본 모양이 서로 가까울 때만 바꾼다: 획의 모든 점이 모양 가까이(획 → 모양), 모양의 모든 자리가 획 가까이(모양 → 획 —
+// 화살촉 하나만 그린 날림은 다른 쪽 촉이 획에서 멀다)
+
+/** 획 → 모양: 가장 먼 점이 크기(테두리 상자 대각선)의 이만큼, 평균이 이만큼 안 (px 하한) */
+const FIT_FWD_MAX = 0.12;
+const FIT_FWD_MAX_PX = 5;
+const FIT_FWD_MEAN = 0.045;
+const FIT_FWD_MEAN_PX = 2;
+/** 모양 → 획: 모양의 가장 먼 자리가 이만큼 안 */
+const FIT_BACK_MAX = 0.15;
+const FIT_BACK_MAX_PX = 6;
+
+function polyDist(x: number, y: number, poly: P[]): number {
+  if (poly.length === 1) return Math.hypot(x - poly[0][0], y - poly[0][1]);
+  let best = Infinity;
+  for (let i = 1; i < poly.length; i++) best = Math.min(best, segDist(x, y, poly[i - 1], poly[i]));
+  return best;
+}
+
+/** 쓴 획과 도형 사이 거리: 획 → 모양 가장 먼·평균, 모양 → 획 가장 먼, 크기(대각선) — px */
+export function shapeFitMetrics(px: P[], spec: ShapeSpec, page: Size, lineW: number): { fwdMax: number; fwdMean: number; back: number; size: number } {
+  const xs = px.map((q) => q[0]);
+  const ys = px.map((q) => q[1]);
+  const D = Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+  const paths = shapePathsPx(spec, page, lineW);
+  const toShape = (x: number, y: number) => Math.min(...paths.map((path) => polyDist(x, y, path)));
+  let sum = 0;
+  let max = 0;
+  for (const [x, y] of px) {
+    const d = toShape(x, y);
+    sum += d;
+    if (d > max) max = d;
+  }
+  let back = 0;
+  for (const path of paths) {
+    for (let i = 0; i < path.length; i++) {
+      const a = path[Math.max(0, i - 1)];
+      const b = path[i];
+      const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 2));
+      for (let k = 1; k <= n; k++) back = Math.max(back, polyDist(a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n, px));
+    }
+  }
+  return { fwdMax: max, fwdMean: sum / px.length, back, size: D };
+}
+
+/** 곡선(휘어지게 그은 선·휜 화살표)은 더 가까워야 (v0.51): 크게 쓴 ㄱ처럼 꺾인 글씨도 매끈한 곡선 하나에 그럭저럭 맞았다 */
+const FIT_TIGHT = { fwdMax: 0.045, fwdMaxPx: 4, fwdMean: 0.018, fwdMeanPx: 1.5, back: 0.06, backPx: 5 };
+
+/** 쓴 획(페이지 px 점)과 도형이 서로 가까운지 — 멈춤·자동 도형이 글씨를 도형으로 바꾸지 않게. tight: 곡선 */
+export function shapeFits(px: P[], spec: ShapeSpec, page: Size, lineW: number, tight = false): boolean {
+  if (tight) {
+    if (px.length < 2) return false;
+    const m = shapeFitMetrics(px, spec, page, lineW);
+    const t = FIT_TIGHT;
+    return m.fwdMax <= Math.max(t.fwdMaxPx, m.size * t.fwdMax) && m.fwdMean <= Math.max(t.fwdMeanPx, m.size * t.fwdMean) && m.back <= Math.max(t.backPx, m.size * t.back);
+  }
+  if (px.length < 2) return false;
+  const xs = px.map((q) => q[0]);
+  const ys = px.map((q) => q[1]);
+  const D = Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+  const paths = shapePathsPx(spec, page, lineW);
+  const toShape = (x: number, y: number) => Math.min(...paths.map((path) => polyDist(x, y, path)));
+  let sum = 0;
+  let max = 0;
+  for (const [x, y] of px) {
+    const d = toShape(x, y);
+    sum += d;
+    if (d > max) max = d;
+  }
+  if (max > Math.max(FIT_FWD_MAX_PX, D * FIT_FWD_MAX) || sum / px.length > Math.max(FIT_FWD_MEAN_PX, D * FIT_FWD_MEAN)) return false;
+  // 모양 → 획: 모양의 선을 2px 간격으로 찍어 획까지
+  let back = 0;
+  for (const path of paths) {
+    for (let i = 0; i < path.length; i++) {
+      const a = path[Math.max(0, i - 1)];
+      const b = path[i];
+      const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 2));
+      for (let k = 1; k <= n; k++) back = Math.max(back, polyDist(a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n, px));
+    }
+  }
+  return back <= Math.max(FIT_BACK_MAX_PX, D * FIT_BACK_MAX);
+}
+
+/** 거의 곧은 획인지: 시작 → 끝 줄에서 가장 먼 점이 줄 길이의 8%(4px) 안 — 멈춤 직선 (v0.51: 0.50까지는 어떤 획이든 멈추면 직선) */
+export function nearlyStraight(px: P[]): boolean {
+  if (px.length < 2) return false;
+  const a = px[0];
+  const b = px[px.length - 1];
+  const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  if (len < 1) return false;
+  let max = 0;
+  for (const q of px) max = Math.max(max, segDist(q[0], q[1], a, b));
+  return max <= Math.max(4, len * 0.08);
 }

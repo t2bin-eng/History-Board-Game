@@ -4120,6 +4120,14 @@ body:has(.select-bar) .toast {
   touch-action: none;
 }
 
+/* 크게 본 그림의 확대·이동 층 (v0.51) */
+.popup-zoom {
+  position: absolute;
+  inset: 0;
+  transform-origin: center;
+  will-change: transform;
+}
+
 .popup-img {
   display: block;
   width: 100%;
