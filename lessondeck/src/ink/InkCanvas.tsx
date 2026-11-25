@@ -1,5 +1,6 @@
 import { cssToken } from "../lib/theme";
 import { onViewSettled } from "../view/viewMotion";
+import { contains, SHARP_MIN_GAIN, sharpWindow, type SharpWindow } from "../view/sharpWindow";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { debugStats, recordPointer, recordRender } from "../lib/debugStore";
 import { activeTouchCount, isSideButtonDown, onPalm, onSideButtonChange, palmActive, penRecentlyActive, penStrokeErasing, penTouching, pointerKind, type PointerKind } from "../lib/inputState";
@@ -211,7 +212,7 @@ export function InkCanvas(props: Props) {
       const { page, zoom } = propsRef.current;
       const want = Math.min(window.devicePixelRatio || 1, 2.5) * (zoom || 1);
       const far = sizeRef.current.scale;
-      const next = want > far * SHARP_MIN_GAIN ? sharpWindow(root, page, want) : null;
+      const next = want > far * SHARP_MIN_GAIN ? sharpWindow(root, page, want, MAX_SHARP_PIXELS) : null;
       const cur = winRef.current;
       if (!next) {
         if (cur) {
@@ -341,25 +342,54 @@ export function InkCanvas(props: Props) {
       return [round(x), round(y), round(pressure)];
     };
 
-    /** 지난번에 그린 영역만 지운다 (큰 캔버스를 통째로 지우는 비용 절약). redrawing: 곧 다시 그리므로 형광펜 층을 끄지 않는다 */
-    const clearLive = (redrawing = false) => {
-      const target = liveOn ?? live;
+    /** 캔버스의 한 자리(페이지 px 상자, 없으면 전부)를 지운다 */
+    const clearRegion = (target: HTMLCanvasElement, box: Box | null, redrawing = false) => {
       const ctx = ctxOf(target);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       const g = geos.get(target);
-      if (liveBox && g) {
-        const x = Math.floor((liveBox.x0 - g.ox) * g.s) - 2;
-        const y = Math.floor((liveBox.y0 - g.oy) * g.s) - 2;
-        ctx.clearRect(x, y, Math.ceil((liveBox.x1 - liveBox.x0) * g.s) + 4, Math.ceil((liveBox.y1 - liveBox.y0) * g.s) + 4);
+      if (box && g) {
+        const x = Math.floor((box.x0 - g.ox) * g.s) - 2;
+        const y = Math.floor((box.y0 - g.oy) * g.s) - 2;
+        ctx.clearRect(x, y, Math.ceil((box.x1 - box.x0) * g.s) + 4, Math.ceil((box.y1 - box.y0) * g.s) + 4);
       } else {
         ctx.clearRect(0, 0, target.width, target.height);
       }
-      liveBox = null;
-      liveOn = null;
       if (target === ls.hlLive || target === ls.sharp.hlLive) {
         painted.delete(target);
         if (!redrawing) showHighlights(ls);
       }
+    };
+
+    /** 지난번에 그린 영역만 지운다 (큰 캔버스를 통째로 지우는 비용 절약). redrawing: 곧 다시 그리므로 형광펜 층을 끄지 않는다 */
+    const clearLive = (redrawing = false) => {
+      clearStale();
+      clearRegion(liveOn ?? live, liveBox, redrawing);
+      liveBox = null;
+      liveOn = null;
+    };
+
+    // 뗀 획의 진행 층 자국 (v0.50): 저지연(desynchronized) 캔버스는 지운 것이 곧바로 화면에 나가는데, 확정 층에 그린 획은
+    // 다음 화면에야 나간다. 그래서 펜을 떼자마자 지우면 한 화면 동안 방금 쓴 획이 사라졌다 나타나 깜빡였다.
+    // 확정 층에 그린 뒤 두 화면을 기다렸다 지운다 (그동안은 두 층에 같은 획이 겹쳐 보일 뿐)
+    let stale: { canvas: HTMLCanvasElement; box: Box | null } | null = null;
+    let staleRaf = 0;
+    const clearStale = () => {
+      cancelAnimationFrame(staleRaf);
+      staleRaf = 0;
+      if (!stale) return;
+      const { canvas, box } = stale;
+      stale = null;
+      clearRegion(canvas, box);
+    };
+    const deferLiveClear = () => {
+      clearStale();
+      if (!liveOn && !liveBox) return;
+      stale = { canvas: liveOn ?? live, box: liveBox };
+      liveOn = null;
+      liveBox = null;
+      staleRaf = requestAnimationFrame(() => {
+        staleRaf = requestAnimationFrame(clearStale);
+      });
     };
 
     const drawEraserCursor = (x: number, y: number) => {
@@ -819,7 +849,10 @@ export function InkCanvas(props: Props) {
     const settle = (g: Gesture, cancelled: boolean) => {
       gesture = null;
       clearTimeout(g.holdTimer);
-      clearLive();
+      // 긋던 획은 확정 층에 그린 뒤에 지운다 (깜빡임, v0.50). 남기지 않는 획은 바로 지운다 (clearStale)
+      const drawing = g.mode !== "erase" && g.mode !== "laser" && g.mode !== "lasso";
+      if (drawing) deferLiveClear();
+      else clearLive();
       if (g.mode === "erase") {
         if (g.erased) propsRef.current.onCommit(g.working);
         return;
@@ -836,10 +869,10 @@ export function InkCanvas(props: Props) {
         propsRef.current.onLasso?.(pts, len * (propsRef.current.zoom || 1) < LASSO_TAP_PX);
         return;
       }
-      if (cancelled && g.pointerType === "touch") return;
+      if (cancelled && g.pointerType === "touch") return clearStale();
       let stroke = g.stroke!;
       // 곧게 긋는 형광펜: 움직이지 않았거나(톡) 너무 짧으면 남기지 않는다
-      if (g.autoStraight && (!stroke.shape || stroke.shape.w * page().width < 3)) return;
+      if (g.autoStraight && (!stroke.shape || stroke.shape.w * page().width < 3)) return clearStale();
       // 떨림으로 거른 마지막 자리는 남긴다 (획이 펜을 뗀 자리까지 오도록)
       if (g.pending && !stroke.shape) stroke.points.push(g.pending);
       const p0 = page();
@@ -849,7 +882,7 @@ export function InkCanvas(props: Props) {
         stroke.points = trimHooks(stroke.points, (q) => [q[0] * p0.width * z, q[1] * p0.height * z]);
       }
       if (g.drag) {
-        if (cancelled) return;
+        if (cancelled) return clearStale();
         // 끌지 않고 톡: 그 자리에 기본 크기로
         if (!g.drag.moved) stroke = makeShapeStroke(stroke.id, defaultShape(g.drag.kind, g.drag.start, p0), stroke, p0);
       } else if (!stroke.shape && propsRef.current.shapeTool === "auto") {
@@ -1066,50 +1099,8 @@ function setT(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement) {
   ctx.setTransform(g.s, 0, 0, g.s, -g.ox * g.s, -g.oy * g.s);
 }
 
-/** 선명한 창: 페이지 px 자리·크기, 배율, 그 창을 잡을 때 보이던 자리 */
-interface SharpWindow {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  s: number;
-  visible: { x: number; y: number; w: number; h: number };
-}
-
-/** 원하는 배율이 아래 전체 캔버스 배율보다 이만큼 넘게 클 때만 선명한 창을 쓴다 */
-const SHARP_MIN_GAIN = 1.15;
 /** 선명한 창 한 장의 픽셀 수 상한 (보이는 자리 + 여유) */
 const MAX_SHARP_PIXELS = 9_000_000;
-
-/** 지금 화면에 보이는 이 페이지 자리(페이지 px)와 그 둘레 여유로 선명한 창을 잡는다. 보이지 않으면 null */
-function sharpWindow(root: HTMLElement, page: PageSize, want: number): SharpWindow | null {
-  const r = root.getBoundingClientRect();
-  if (r.width < 1 || r.height < 1) return null;
-  const area = root.closest(".page-area")?.getBoundingClientRect() ?? new DOMRect(0, 0, window.innerWidth, window.innerHeight);
-  const left = Math.max(r.left, area.left);
-  const top = Math.max(r.top, area.top);
-  const right = Math.min(r.right, area.right);
-  const bottom = Math.min(r.bottom, area.bottom);
-  if (right - left < 1 || bottom - top < 1) return null;
-  const kx = page.width / r.width;
-  const ky = page.height / r.height;
-  const visible = { x: (left - r.left) * kx, y: (top - r.top) * ky, w: (right - left) * kx, h: (bottom - top) * ky };
-  // 여유: 상한 안에서 보이는 자리의 둘레로 넓게 (조금 옮겨도 다시 그리지 않게), 한쪽에 보이는 폭의 절반까지
-  const visPx = visible.w * visible.h * want * want;
-  const m = Math.max(0, Math.min(0.5, (Math.sqrt(MAX_SHARP_PIXELS / Math.max(1, visPx)) - 1) / 2));
-  const x = Math.max(0, visible.x - visible.w * m);
-  const y = Math.max(0, visible.y - visible.h * m);
-  const w = Math.min(page.width, visible.x + visible.w * (1 + m)) - x;
-  const h = Math.min(page.height, visible.y + visible.h * (1 + m)) - y;
-  let s = want;
-  if (w * h * s * s > MAX_SHARP_PIXELS) s = Math.sqrt(MAX_SHARP_PIXELS / (w * h));
-  return { x, y, w, h, s, visible };
-}
-
-function contains(win: SharpWindow, r: { x: number; y: number; w: number; h: number }): boolean {
-  const e = 0.5;
-  return r.x >= win.x - e && r.y >= win.y - e && r.x + r.w <= win.x + win.w + e && r.y + r.h <= win.y + win.h + e;
-}
 
 /** 선명한 창 층들의 크기·자리를 맞추고, 아래 전체 층은 그 자리를 가린다 (창이 없으면 원래대로) */
 function applyWindow(ls: Layers, win: SharpWindow | null, page: PageSize) {

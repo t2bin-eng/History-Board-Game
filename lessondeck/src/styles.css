@@ -259,6 +259,18 @@ button {
   inset: 0;
 }
 
+/* 확대한 PDF의 선명한 창 (v0.50): 전체 쪽 그림 위, 보이는 자리만 */
+.pdf-sharp-host {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.pdf-sharp {
+  position: absolute;
+}
+
 .pdf-canvas {
   position: absolute;
   inset: 0;
