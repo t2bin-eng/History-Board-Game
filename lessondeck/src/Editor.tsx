@@ -172,6 +172,7 @@ import { ContextMenu, type MenuGroups } from "./ui/ContextMenu";
 import { LinkDialog } from "./ui/LinkDialog";
 import { PagePanel } from "./ui/PagePanel";
 import { PenPalette } from "./ui/PenPalette";
+import { editSpans, normalizeSpans, paintSpans } from "./doc/textSpans";
 import { ToolSettings } from "./ui/ToolSettings";
 import { BoxLayer } from "./view/BoxLayer";
 import type { LongPress } from "./view/PageView";
@@ -2541,7 +2542,20 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
                     setSelectedBox(id);
                     setEditingBox(id);
                   }}
-                  onText={(id, text) => editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { text }))}
+                  onText={(id, text, caret) =>
+                    // 글자 일부 색 (v0.48): 고친 자리에 맞춰 색 구간을 옮긴다
+                    editBoxes(id, (pages, pageId, box) => patchBox(pages, pageId, id, box.spans ? { text, spans: editSpans(box.text, text, box.spans, caret) } : { text }))
+                  }
+                  onSpanColor={(id, start, end, color) =>
+                    editBoxes(id, (pages, pageId, box) => {
+                      // 글 전체를 골라 칠하면 상자 글자색 (따로 칠한 구간은 없앰)
+                      if (start <= 0 && end >= box.text.length) {
+                        setTextColor(color);
+                        return patchBox(pages, pageId, id, { color, spans: undefined });
+                      }
+                      return patchBox(pages, pageId, id, { spans: paintSpans(box.spans, start, end, color, box.color, box.text.length) });
+                    })
+                  }
                   onEndEdit={endEdit}
                   onMove={(id, x, y) => editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { x, y }))}
                   onFollow={followLink}
@@ -2562,7 +2576,10 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
                   onBoxSize={(id, r) => editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, r))}
                   onColor={(id, color) => {
                     setTextColor(color);
-                    editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { color }));
+                    // 따로 칠한 글자는 그대로 (새 글자색과 같은 구간만 없어짐, v0.48)
+                    editBoxes(id, (pages, pageId, box) =>
+                      patchBox(pages, pageId, id, box.spans ? { color, spans: normalizeSpans(box.spans, box.text.length, color) } : { color }),
+                    );
                   }}
                   onBg={(id, bg) => {
                     setBoxBg(bg);

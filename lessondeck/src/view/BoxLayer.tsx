@@ -36,7 +36,7 @@ import {
   Undo2,
   Wand2,
 } from "lucide-react";
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { arrowChord, arrowEnds, arrowPathD, arrowShape, arrowsOf, bendFromHandle, cleanBend, type ArrowShape, type ArrowTarget, type Rect } from "../doc/arrows";
 import { EMPHASES, MAX_NOTE_W, MIN_NOTE_W, NOTE_COLORS, NOTE_LABEL_MAX, noteOf, VEIL_COLORS, veilLabel } from "../doc/boxAnim";
 import { BOX_FONTS, boxTextStyle, type BoxFormat } from "../doc/boxFonts";
@@ -44,8 +44,9 @@ import { RICH_BG_COLORS, RICH_COLORS } from "../doc/swatches";
 import { ColorGrid } from "../ui/ColorGrid";
 import { BOX_SIZES, boxBackground, boxBorder, boxLabel, boxesOf, boxPlainLabel, isAutoPageLink, isDangling } from "../doc/boxes";
 import { layoutBox, LINE_HEIGHT } from "../doc/textLayout";
+import { colorOfRange, lineSegments, segmentsOf, spansOf, type TextSeg } from "../doc/textSpans";
 import { frameAt, typedLines, typingPlan } from "../doc/typing";
-import type { BoxAnim, BoxArrow, BoxBorder, BoxEmphasis, BoxLink, Page, TextBox } from "../doc/types";
+import type { BoxAnim, BoxArrow, BoxBorder, BoxEmphasis, BoxLink, Page, TextBox, TextSpan } from "../doc/types";
 import type { PageSize } from "../ink/geometry";
 import { boxRectPx } from "./boxGeometry";
 import { measureFor, useFontsVersion } from "./textMeasure";
@@ -63,7 +64,10 @@ interface Props {
   onCreate: (x: number, y: number) => void;
   onSelect: (id: string | null) => void;
   onStartEdit: (id: string) => void;
-  onText: (id: string, text: string) => void;
+  /** caret: 고친 뒤 커서 자리 (같은 글자가 이어져 고친 자리가 애매할 때 색 구간을 맞추려고, v0.48) */
+  onText: (id: string, text: string, caret?: number) => void;
+  /** 고른 글자 [start, end)만 칠하기 (v0.48, 글 전체면 상자 글자색) */
+  onSpanColor: (id: string, start: number, end: number, color: string) => void;
   onEndEdit: (id: string) => void;
   onMove: (id: string, x: number, y: number) => void;
   onFollow: (link: BoxLink) => void;
@@ -200,6 +204,30 @@ export function BoxLayer(props: Props) {
   useEffect(() => setBoxPanel(null), [selectedId]);
   /** 글을 입력하는 칸 (v0.48: 막대에서 서식을 바꾸는 동안에도 입력 칸에 커서·고른 글자가 그대로) */
   const taRef = useRef<HTMLTextAreaElement | null>(null);
+  /** 입력 칸에서 고른 글자 (v0.48: 글자색을 고른 글자에만 칠할 때·막대에 고른 글자 색을 보일 때) */
+  const [sel, setSel] = useState<{ id: string; start: number; end: number } | null>(null);
+  const editingIdRef = useRef(editingId);
+  editingIdRef.current = editingId;
+  /** 입력 칸의 지금 고른 글자를 읽어 둔다 (같으면 그대로 — 다시 그리지 않게) */
+  const readSel = useCallback(() => {
+    const t = taRef.current;
+    const id = editingIdRef.current;
+    if (!t || !id) return setSel(null);
+    const next = { id, start: t.selectionStart, end: t.selectionEnd };
+    setSel((prev) => (prev && prev.id === next.id && prev.start === next.start && prev.end === next.end ? prev : next));
+  }, []);
+  // S펜으로 끌거나 길게 눌러 고른 것도 따라간다 (입력하는 동안만)
+  useEffect(() => {
+    if (!editingId) {
+      setSel(null);
+      return;
+    }
+    const on = () => {
+      if (document.activeElement === taRef.current) readSel();
+    };
+    document.addEventListener("selectionchange", on);
+    return () => document.removeEventListener("selectionchange", on);
+  }, [editingId, readSel]);
   /** 입력 끝내기: 입력 칸에서 빠져나가면 평소처럼 onEndEdit (빈 상자는 지움) */
   const finishEdit = () => {
     const ta = taRef.current;
@@ -794,6 +822,12 @@ export function BoxLayer(props: Props) {
           onPointerCancel: (e: ReactPointerEvent<HTMLElement>) => onBoxUp(b, e),
         };
 
+        // 글자 일부 색 (v0.48)
+        const spans = spansOf(b);
+        const selInfo =
+          editing && sel?.id === b.id && sel.end > sel.start
+            ? { count: sel.end - sel.start, all: sel.start <= 0 && sel.end >= b.text.length, color: colorOfRange(spans, sel.start, sel.end, b.color) }
+            : null;
         // 상자 막대 (v0.48: 글을 입력하는 동안에도 바로 — 서식·색을 바꾸려고 입력을 끝냈다 다시 누르지 않아도 됨)
         const toolbar = selected && !dragPos && !liveSize && !playing && (
           <BoxToolbar
@@ -809,7 +843,14 @@ export function BoxLayer(props: Props) {
             fittedSize={layout.size}
             onFontSize={(s) => props.onFontSize(b.id, s)}
             onFormat={(patch) => props.onFormat(b.id, patch)}
-            onColor={(c) => props.onColor(b.id, c)}
+            selection={selInfo}
+            onPress={readSel}
+            onColor={(c) => {
+              // 입력 칸에서 글자를 골랐으면 그 글자만 (v0.48)
+              const t = taRef.current;
+              if (editing && t && t.selectionEnd > t.selectionStart) props.onSpanColor(b.id, t.selectionStart, t.selectionEnd, c);
+              else props.onColor(b.id, c);
+            }}
             onBg={(bg) => props.onBg(b.id, bg)}
             onBorder={(border) => props.onBorder(b.id, border)}
             onAnim={(anim) => props.onAnim(b.id, anim)}
@@ -840,25 +881,33 @@ export function BoxLayer(props: Props) {
         );
 
         if (editing) {
+          // 따로 칠한 글자가 있으면 (v0.48): 입력 칸 글자는 투명하게 두고 바로 밑에 같은 자리·줄바꿈으로 색 글을 비춘다
+          const mirrored = spans.length > 0;
+          const editStyle = {
+            fontSize,
+            color: b.color,
+            ...textStyle,
+            textDecoration: b.underline ? "underline" : undefined,
+            // 크기가 정해진 상자: 글 높이만큼만 (상자의 세로 맞춤대로 위·가운데·아래에, v0.29)
+            ...(layout.fitted ? { height: Math.max(1, layout.lines.length) * fontSize * LINE_HEIGHT + 2, maxHeight: "100%" } : {}),
+          } as CSSProperties;
           return (
             <Fragment key={b.id}>
               <div {...common}>
+                {mirrored && <TextMirror taRef={taRef} text={b.text} spans={spans} style={editStyle} />}
                 <textarea
                   autoFocus
                   value={b.text}
                   placeholder={b.link ? label : "글자 입력"}
                   aria-label="텍스트 상자 글자"
-                  className={layout.fitted ? "fill" : undefined}
-                  style={{
-                    fontSize,
-                    color: b.color,
-                    ...textStyle,
-                    textDecoration: b.underline ? "underline" : undefined,
-                    // 크기가 정해진 상자: 글 높이만큼만 (상자의 세로 맞춤대로 위·가운데·아래에, v0.29)
-                    ...(layout.fitted ? { height: Math.max(1, layout.lines.length) * fontSize * LINE_HEIGHT + 2, maxHeight: "100%" } : {}),
-                  }}
+                  className={[layout.fitted && "fill", mirrored && "mirrored"].filter(Boolean).join(" ") || undefined}
+                  style={mirrored ? { ...editStyle, caretColor: b.color } : editStyle}
                   ref={taRef}
-                  onChange={(e) => props.onText(b.id, e.target.value)}
+                  onChange={(e) => {
+                    props.onText(b.id, e.target.value, e.target.selectionEnd);
+                    readSel();
+                  }}
+                  onSelect={readSel}
                   onBlur={(e) => {
                     // 상자 막대 안(쪽지 글 칸·색 고르기 창 등)으로 옮겨 간 것은 입력을 끝내지 않는다
                     if (inToolbar(e.currentTarget, e.relatedTarget)) return;
@@ -872,6 +921,8 @@ export function BoxLayer(props: Props) {
           );
         }
 
+        // 줄마다 색 조각 (따로 칠한 글자가 없으면 null)
+        const segs = lineSegments(b.text, layout.lines, spans);
         const body = (
           <>
             {layout.chrome.icon > 0 && (
@@ -880,25 +931,26 @@ export function BoxLayer(props: Props) {
               </span>
             )}
             {typingNow ? (
-              <TypedText lines={layout.lines} delay={UNFOLD_MS} onDone={() => finishTyping(b.id)} />
+              <TypedText lines={layout.lines} segs={segs} delay={UNFOLD_MS} onDone={() => finishTyping(b.id)} />
             ) : b.veil ? (
               <VeilLabel b={b} rect={rect} />
             ) : (
               <span className="text-box-text">
-                {layout.lines.map((line, i) =>
-                  b.anim?.emphasis === "highlight" ? (
+                {layout.lines.map((line, i) => {
+                  const shown = line ? (segs ? <Segs segs={segs[i]} /> : line) : "\u00a0";
+                  return b.anim?.emphasis === "highlight" ? (
                     // 형광펜 강조: 줄마다 글 너비만큼 칠한다 (줄마다 조금씩 늦게)
                     <span key={i} className="tb-line">
                       <span className="tb-ink" style={{ "--i": i } as CSSProperties}>
-                        {line || "\u00a0"}
+                        {shown}
                       </span>
                     </span>
                   ) : (
                     <span key={i} className="tb-line">
-                      {line || "\u00a0"}
+                      {shown}
                     </span>
-                  ),
-                )}
+                  );
+                })}
               </span>
             )}
             {layout.chrome.trail > 0 && (
@@ -1009,6 +1061,8 @@ function BoxToolbar({
   boxLeft,
   pageWidth,
   editing,
+  selection,
+  onPress,
   onEdit,
   onDone,
   onLink,
@@ -1037,6 +1091,10 @@ function BoxToolbar({
   pageWidth: number;
   /** 글을 입력하는 중 (v0.48): 막대를 눌러도 입력 칸의 커서·키보드가 그대로 (연필 대신 "입력 끝") */
   editing: boolean;
+  /** 입력 칸에서 고른 글자 (v0.48): 글자 수와 그 글자들의 색(섞였으면 null). 있으면 글자색은 그 글자에만 */
+  selection: { count: number; all: boolean; color: string | null } | null;
+  /** 막대를 누를 때 (입력 칸의 고른 글자를 다시 읽음) */
+  onPress: () => void;
   onEdit: () => void;
   onDone: () => void;
   onLink: () => void;
@@ -1065,6 +1123,7 @@ function BoxToolbar({
   // 입력하는 중 (v0.48): 단추를 눌러도 입력 칸에서 포커스가 빠지지 않게 (키보드가 닫히거나 고른 글자가 풀리지 않게). 글 칸·슬라이더·색 고르기는 그대로
   const press = (e: React.PointerEvent | React.MouseEvent) => {
     e.stopPropagation();
+    if (editing) onPress();
     if (editing && !(e.target as Element).closest("input, select, textarea")) e.preventDefault();
   };
   // 막대 안 글 칸 등에 있다가 상자 밖으로 나가면 입력 끝
@@ -1164,8 +1223,13 @@ function BoxToolbar({
       <button aria-label="글자 크게" title="글자 크게" onClick={() => onResize(1)}>
         <Plus size={16} />
       </button>
-      <button aria-label="글자색" title="글자색" className={panel === "color" ? "on" : undefined} onClick={() => setPanel(panel === "color" ? null : "color")}>
-        <span className="box-glyph" style={{ color: box.color, background: bg ?? "transparent" }}>
+      <button
+        aria-label="글자색"
+        title={selection ? `글자색 (고른 글자 ${selection.count}자)` : "글자색"}
+        className={`${panel === "color" ? "on" : ""}${selection ? " box-sel-color" : ""}` || undefined}
+        onClick={() => setPanel(panel === "color" ? null : "color")}
+      >
+        <span className="box-glyph" style={{ color: selection ? (selection.color ?? box.color) : box.color, background: bg ?? "transparent" }}>
           가
         </span>
       </button>
@@ -1354,7 +1418,18 @@ function BoxToolbar({
       )}
       {panel === "color" && (
         <div className="box-palette" aria-label="글자색 고르기">
-          <ColorGrid colors={RICH_COLORS} value={box.color} onPick={onColor} label={(c) => `글자색 ${c}`} custom="다른 글자색" />
+          {/* v0.48: 입력하며 글자를 고르면 그 글자에만 */}
+          <div className="box-color-scope" aria-live="polite">
+            {selection ? (selection.all ? "글 전체 (모두 골랐음)" : `고른 글자 ${selection.count}자에만`) : editing ? "글 전체 · 글자를 고르면 그 부분만" : "글 전체 · 글을 고치며 글자를 고르면 그 부분만"}
+          </div>
+          <ColorGrid
+            colors={RICH_COLORS}
+            value={selection ? (selection.color ?? undefined) : box.color}
+            inactive={!!selection && !selection.color}
+            onPick={onColor}
+            label={(c) => `글자색 ${c}`}
+            custom="다른 글자색"
+          />
         </div>
       )}
       {panel === "border" && (
@@ -1469,7 +1544,7 @@ function VeilLabel({ b, rect }: { b: TextBox; rect: Rect }) {
  * 타자 효과 (v0.26): 두루마리가 다 펼쳐진 뒤(delay) 글자가 한 자씩 입력되듯 나온다 (doc/typing.ts).
  * 아직 안 친 글자도 자리를 차지해(안 보이게) 줄 모양·맞춤이 처음부터 끝까지 같다. 다 치면 커서가 잠깐 깜빡이고 onDone
  */
-function TypedText({ lines, delay, onDone }: { lines: string[]; delay: number; onDone: () => void }) {
+function TypedText({ lines, segs, delay, onDone }: { lines: string[]; segs: TextSeg[][] | null; delay: number; onDone: () => void }) {
   const text = lines.join("\n");
   const plan = useMemo(() => typingPlan(text.split("\n")), [text]);
   const [frame, setFrame] = useState(-1);
@@ -1492,14 +1567,79 @@ function TypedText({ lines, delay, onDone }: { lines: string[]; delay: number; o
     <span className="text-box-text typing">
       {rows.map((r, i) => (
         <span key={i} className="tb-line">
-          {r.shown}
-          {r.comp}
+          {segs?.[i] ? <Segs segs={sliceSegs(segs[i], 0, r.shown.length)} /> : r.shown}
+          {r.comp && segs?.[i] ? <Segs segs={sliceSegs(segs[i], r.shown.length, r.shown.length + 1).map((g) => ({ ...g, text: r.comp }))} /> : r.comp}
           {r.caret && <span className="tb-caret" aria-hidden="true" />}
           {r.rest && <span className="tb-rest">{r.rest}</span>}
           {!r.shown && !r.comp && !r.rest && "\u00a0"}
         </span>
       ))}
     </span>
+  );
+}
+
+/** 색 조각들 (색이 없는 조각은 상자 글자색) */
+function Segs({ segs }: { segs: TextSeg[] }) {
+  return (
+    <>
+      {segs.map((g, k) =>
+        g.color ? (
+          <span key={k} style={{ color: g.color }}>
+            {g.text}
+          </span>
+        ) : (
+          <Fragment key={k}>{g.text}</Fragment>
+        ),
+      )}
+    </>
+  );
+}
+
+/** 한 줄 색 조각에서 [from, to) 글자만 (타자 효과에서 지금까지 친 글자) */
+function sliceSegs(segs: TextSeg[], from: number, to: number): TextSeg[] {
+  const out: TextSeg[] = [];
+  let at = 0;
+  for (const g of segs) {
+    const a = Math.max(from, at);
+    const e = Math.min(to, at + g.text.length);
+    if (a < e) out.push({ ...g, text: g.text.slice(a - at, e - at) });
+    at += g.text.length;
+  }
+  return out;
+}
+
+/**
+ * 입력 칸 밑의 색 글 (v0.48): 입력 칸과 같은 자리·크기·글꼴·줄바꿈으로 색 조각을 그린다.
+ * 입력 칸은 글자를 투명하게(커서·고른 칸만 보임) 두므로, 입력하는 동안에도 따로 칠한 색이 보인다
+ */
+function TextMirror({ taRef, text, spans, style }: { taRef: React.RefObject<HTMLTextAreaElement | null>; text: string; spans: TextSpan[]; style: CSSProperties }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const ta = taRef.current;
+    const el = ref.current;
+    if (!ta || !el) return;
+    const sync = () => {
+      el.style.left = `${ta.offsetLeft}px`;
+      el.style.top = `${ta.offsetTop}px`;
+      el.style.width = `${ta.clientWidth}px`;
+      el.style.height = `${ta.clientHeight}px`;
+      el.scrollTop = ta.scrollTop;
+    };
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(ta);
+    ta.addEventListener("scroll", sync);
+    return () => {
+      ro.disconnect();
+      ta.removeEventListener("scroll", sync);
+    };
+  });
+  const { height: _h, maxHeight: _m, ...rest } = style;
+  return (
+    <div ref={ref} className="tb-mirror" aria-hidden="true" style={rest}>
+      <Segs segs={segmentsOf(text, 0, text.length, spans)} />
+      {"\u200b"}
+    </div>
   );
 }
 

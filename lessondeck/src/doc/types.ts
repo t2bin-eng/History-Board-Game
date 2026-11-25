@@ -70,6 +70,8 @@ export interface TextBox {
   text: string;
   size: number;
   color: string;
+  /** 글자 일부 색 (v0.48, SPEC 5장 "글자 일부 색"): text의 [start, end) 글자를 color로. 나머지는 color(상자 글자색) */
+  spans?: TextSpan[];
   /** 배경색 (v0.19): 없으면 배경 없음, "auto"면 글자색에 맞춰 잘 보이는 색, "#rrggbb"면 그 색. 링크 상자는 쓰지 않는다 */
   bg?: string;
   /** 테두리 (v0.20): color "auto"면 글자색, w는 굵기 단계 1·2·3. 링크 상자는 쓰지 않는다 */
@@ -93,6 +95,13 @@ export interface TextBox {
   role?: "back";
   /** 이 돌아가기 링크를 만든 원래 링크 상자 id (원래 링크를 지우면 같이 지운다) */
   backOf?: string;
+}
+
+/** 글자 일부 색 구간 (v0.48): text의 start번째부터 end번째 앞까지 (UTF-16 위치) */
+export interface TextSpan {
+  start: number;
+  end: number;
+  color: string;
 }
 
 /** 글상자 애니메이션 (v0.26, SPEC 5장 boxes "애니메이션") */

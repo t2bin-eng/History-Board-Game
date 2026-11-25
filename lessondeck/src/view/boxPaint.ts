@@ -6,6 +6,7 @@ import type { PageSize } from "../ink/geometry";
 import { boxRectPx } from "./boxGeometry";
 import { boxTextStyle, canvasFont } from "../doc/boxFonts";
 import { measureFor } from "./textMeasure";
+import { lineSegments, spansOf } from "../doc/textSpans";
 
 // 페이지 바 축소 이미지에 텍스트 상자를 그린다 (화면의 BoxLayer와 같은 배치: 같은 줄·글자 크기·링크 단추 모양)
 export function paintBoxes(ctx: CanvasRenderingContext2D, page: Page, pages: Page[], hidden: string[], size: PageSize) {
@@ -134,10 +135,21 @@ export function paintBoxes(ctx: CanvasRenderingContext2D, page: Page, pages: Pag
     const textLeft = x + fs * (padX + icon);
     const room = boxW - fs * chromeWidth(layout.chrome);
     const k = b.align === "center" ? 0.5 : b.align === "right" ? 1 : 0;
+    // 글자 일부 색 (v0.48): 줄마다 색 조각을 이어서
+    const segs = lineSegments(b.text, layout.lines, spansOf(b));
     layout.lines.forEach((line, i) => {
       const lx = textLeft + Math.max(0, room - lineWidths[i]) * k;
       const ly = y + oy + fs * padY + i * lh + (lh - fs) / 2;
-      ctx.fillText(line, lx, ly);
+      if (segs) {
+        let before = "";
+        for (const g of segs[i]) {
+          ctx.fillStyle = g.color ?? b.color;
+          // 앞 조각까지 잰 너비에서 시작 (조각마다 따로 재면 생기는 작은 어긋남이 쌓이지 않게)
+          ctx.fillText(g.text, lx + measure(before, layout.size) * scale, ly);
+          before += g.text;
+        }
+        ctx.fillStyle = b.color;
+      } else ctx.fillText(line, lx, ly);
       if (b.underline && line.trim()) ctx.fillRect(lx, ly + fs * 1.02, lineWidths[i], Math.max(0.5, fs * 0.07));
     });
   }
