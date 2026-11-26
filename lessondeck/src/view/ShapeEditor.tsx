@@ -1,4 +1,5 @@
 import { ArrowLeftRight, Check, CopyPlus, Move, RotateCw, Trash2 } from "lucide-react";
+import { useScreenFit, type Anchor } from "./screenFit";
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { ARROW_HEADS } from "../ink/arrowHeads";
 import { HeadIcon } from "../ui/HeadIcon";
@@ -124,6 +125,8 @@ export function ShapeEditor({ stroke, size, onLive, onChange, onDuplicate, onDel
   const ey = line ? (Math.abs(Math.sin(f.rad)) * f.w) / 2 : (Math.abs(Math.sin(f.rad)) * f.w + Math.abs(Math.cos(f.rad)) * f.h) / 2;
   const mv = line ? moveSpot(spec, size) : { left: f.cx, top: f.cy };
   let tbTop: number;
+  // 막대가 붙은 것 (화면 기준으로 놓을 때, v0.51.1): 도형과 그 손잡이
+  let tbAnchor: Anchor;
   if (line) {
     // 선·화살표 (v0.28.2): 옮기기 손잡이(선 한쪽 34px)와 휘기 손잡이(곡선 가운데)를 가리지 않게 막대는 옮기기 손잡이 반대쪽에.
     // 0.28.1까지는 밑줄(가로선) 위에 막대를 두어 바로 위의 옮기기 손잡이를 덮어 선을 옮길 수 없었다
@@ -135,11 +138,15 @@ export function ShapeEditor({ stroke, size, onLive, onChange, onDuplicate, onDel
     const preferBelow = mv.top < f.cy - 1;
     tbTop = preferBelow ? (fitsBelow ? belowTop : fitsAbove ? aboveTop : belowTop) : fitsAbove ? aboveTop : fitsBelow ? belowTop : aboveTop;
     tbTop = Math.max(4, Math.min(size.height - tb.height - 4, tbTop));
+    const top = aboveTop + 12 + tb.height;
+    tbAnchor = { x: f.cx, y: top, w: 0, h: belowTop - 12 - top };
   } else {
+    tbAnchor = { x: f.cx, y: f.cy - ey, w: 0, h: ey * 2 };
     const above = f.cy - ey - 48 - tb.height;
     tbTop = above >= 4 ? above : Math.min(size.height - tb.height - 4, f.cy + ey + 18);
   }
   const tbLeft = Math.min(Math.max(4, f.cx - tb.width / 2), Math.max(4, size.width - tb.width - 4));
+  useScreenFit(tbRef, tbAnchor);
 
   return (
     <>
@@ -208,7 +215,7 @@ export function ShapeEditor({ stroke, size, onLive, onChange, onDuplicate, onDel
           <Move size={15} />
         </span>
         {!gesture && (
-          <div ref={tbRef} className="se-ui sticker-toolbar se-toolbar" style={{ left: tbLeft, top: tbTop, maxWidth: size.width - 8 }} onPointerDown={(e) => e.stopPropagation()}>
+          <div ref={tbRef} className="se-ui sticker-toolbar se-toolbar" style={{ left: tbLeft, top: tbTop }} onPointerDown={(e) => e.stopPropagation()}>
             {/* 화살표 (v0.30): 방향 바꾸기(두 끝 맞바꿈, 곡선 모양 그대로) · 촉 모양 */}
             {spec.kind === "arrow" && (
               <button aria-label="방향 바꾸기" title="방향 바꾸기" onClick={() => onChange(withShape(stroke, flipLineSpec(stroke.shape), size))}>

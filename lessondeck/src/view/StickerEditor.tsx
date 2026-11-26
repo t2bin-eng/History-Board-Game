@@ -18,6 +18,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { useScreenFit } from "./screenFit";
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   applyCrop,
@@ -243,6 +244,8 @@ export function StickerEditor(props: Props) {
   const above = b.cy - ey - tbSize.height - 34;
   const tbTop = above >= 4 ? above : Math.min(size.height - tbSize.height - 4, b.cy + ey + 14);
   const tbLeft = clamp(b.cx - tbWidth / 2, 4, Math.max(4, size.width - tbWidth - 4));
+  // 확대·좁은 화면에서도 보이고 눌리게 화면 기준으로 (v0.51.1)
+  useScreenFit(tbRef, { x: b.cx - ex, y: b.cy - ey, w: ex * 2, h: ey * 2 });
   // 꾸미기 창: 그림(돌린 틀)과 막대를 가리지 않는 곳에 따로 (v0.28.3)
   const panelRef = useRef<HTMLDivElement>(null);
   const [panelSize, setPanelSize] = useState({ width: 330, height: 260 });
@@ -256,6 +259,7 @@ export function StickerEditor(props: Props) {
     panelSize,
     size,
   );
+  useScreenFit(panelRef, tbRef);
 
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
   const shown = cropping ? sticker : s;
@@ -392,7 +396,7 @@ export function StickerEditor(props: Props) {
       <div
         ref={tbRef}
         className="sticker-toolbar"
-        style={{ left: tbLeft, top: tbTop, maxWidth: size.width - 8 }}
+        style={{ left: tbLeft, top: tbTop }}
         onPointerDown={stop}
         onPointerUp={stop}
         onClick={stop}

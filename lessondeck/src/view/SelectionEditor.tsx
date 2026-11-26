@@ -1,4 +1,5 @@
 import { BringToFront, Check, Copy, CopyPlus, Layers, Minus, Move, Palette, Plus, RotateCw, Scissors, SendToBack, Trash2 } from "lucide-react";
+import { useScreenFit } from "./screenFit";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { snapAngle } from "../doc/stickers";
 import { strokeToSvgPath, type PageSize } from "../ink/geometry";
@@ -144,6 +145,9 @@ export function SelectionEditor(props: Props) {
   const above = f.cy - ey - 56 - tb.height;
   const tbTop = above >= 4 ? above : Math.min(size.height - tb.height - 4, f.cy + ey + 18);
   const tbLeft = Math.min(Math.max(4, f.cx - tb.width / 2), Math.max(4, size.width - tb.width - 4));
+  // 확대·좁은 화면에서도 보이고 눌리게 화면 기준으로 (v0.51.1)
+  const ex = (Math.abs(Math.cos(rad)) * f.w + Math.abs(Math.sin(rad)) * f.h) / 2;
+  useScreenFit(tbRef, { x: f.cx - ex, y: f.cy - ey, w: ex * 2, h: ey * 2 });
 
   return (
     <>
@@ -178,7 +182,7 @@ export function SelectionEditor(props: Props) {
           <div
             ref={tbRef}
             className="se-ui sticker-toolbar se-toolbar sel-toolbar"
-            style={{ left: tbLeft, top: tbTop, maxWidth: size.width - 8 }}
+            style={{ left: tbLeft, top: tbTop }}
             onPointerDown={(e) => e.stopPropagation()}
           >
             <button aria-label="고른 필기 잘라내기" title="잘라내기" onClick={props.onCut}>

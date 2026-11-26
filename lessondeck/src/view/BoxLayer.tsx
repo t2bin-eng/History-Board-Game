@@ -1,4 +1,5 @@
 import { ARROW_HEADS } from "../ink/arrowHeads";
+import { useScreenFit } from "./screenFit";
 import type { ArrowHead } from "../ink/types";
 import { HeadIcon } from "../ui/HeadIcon";
 import {
@@ -1199,6 +1200,8 @@ function BoxToolbar({
     const w = ref.current!.offsetWidth;
     setLeft(Math.max(4 - boxLeft, Math.min(-2, pageWidth - 4 - boxLeft - w)));
   }, [boxLeft, pageWidth, panel]);
+  // 확대·좁은 화면에서도 보이고 눌리게 화면 기준으로 (v0.51.1)
+  useScreenFit(ref);
   const bg = boxBackground(box);
   // 베일 (v0.28): 베일 위 글 · 색 · 복사 · 잘라내기 · 지우기만
   if (box.veil) {
@@ -1206,7 +1209,7 @@ function BoxToolbar({
       <div
         ref={ref}
         className={`box-toolbar${below ? " below" : ""}`}
-        style={{ left, maxWidth: pageWidth - 8 }}
+        style={{ left }}
         onPointerDown={press}
         onMouseDown={press}
         onPointerUp={stop}
@@ -1247,7 +1250,7 @@ function BoxToolbar({
     <div
       ref={ref}
       className={`box-toolbar${below ? " below" : ""}${editing ? " typing" : ""}`}
-      style={{ left, maxWidth: pageWidth - 8 }}
+      style={{ left }}
       onPointerDown={press}
       onMouseDown={press}
       onPointerUp={stop}
@@ -1740,6 +1743,7 @@ function ArrowToolbar({
     if (h !== height) setHeight(h);
   });
   const top = at.y - 18 - height >= 4 ? at.y - 18 - height : at.y + 18;
+  useScreenFit(ref, { x: at.x, y: at.y, w: 0, h: 0 });
   return (
     <div ref={ref} className="box-toolbar arrow-toolbar" style={{ left, top }} onPointerDown={stop} onPointerUp={stop} onClick={stop}>
       {/* 방향 바꾸기 (v0.30: 아무 곳을 가리키는 화살표도 — 촉이 상자 쪽으로) */}

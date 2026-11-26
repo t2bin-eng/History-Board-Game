@@ -3,9 +3,11 @@
 
 const SETTLE_MS = 220;
 const subs = new Set<() => void>();
+const moveSubs = new Set<() => void>();
 let timer: ReturnType<typeof setTimeout> | undefined;
 
 export function viewMoved(): void {
+  for (const fn of moveSubs) fn();
   clearTimeout(timer);
   timer = setTimeout(() => {
     for (const fn of subs) fn();
@@ -15,4 +17,10 @@ export function viewMoved(): void {
 export function onViewSettled(fn: () => void): () => void {
   subs.add(fn);
   return () => subs.delete(fn);
+}
+
+/** 화면이 옮겨질 때마다 바로 (v0.51.1: 페이지에 붙은 막대를 화면 기준으로 다시 놓기) */
+export function onViewMove(fn: () => void): () => void {
+  moveSubs.add(fn);
+  return () => moveSubs.delete(fn);
 }
