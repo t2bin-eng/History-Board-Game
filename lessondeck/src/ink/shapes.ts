@@ -593,7 +593,7 @@ export function shapeFits(px: P[], spec: ShapeSpec, page: Size, lineW: number, t
 }
 
 /** 거의 곧은 획인지: 시작 → 끝 줄에서 가장 먼 점이 줄 길이의 8%(4px) 안 — 멈춤 직선 (v0.51: 0.50까지는 어떤 획이든 멈추면 직선) */
-export function nearlyStraight(px: P[]): boolean {
+export function nearlyStraight(px: P[], maxDev?: (len: number) => number): boolean {
   if (px.length < 2) return false;
   const a = px[0];
   const b = px[px.length - 1];
@@ -601,5 +601,5 @@ export function nearlyStraight(px: P[]): boolean {
   if (len < 1) return false;
   let max = 0;
   for (const q of px) max = Math.max(max, segDist(q[0], q[1], a, b));
-  return max <= Math.max(4, len * 0.08);
+  return max <= (maxDev ? maxDev(len) : Math.max(4, len * 0.08));
 }

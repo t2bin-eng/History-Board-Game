@@ -7,7 +7,7 @@ import { activeTouchCount, isSideButtonDown, onPalm, onSideButtonChange, palmAct
 import { beautifyStroke, pathLengthPx, snapLineEnd } from "./beautify";
 import { strokeHitsCircle, unitsToPx, type PageSize } from "./geometry";
 import { fillStroke, HIGHLIGHT_LAYER_STYLE, isHighlighter } from "./inkPaint";
-import { defaultShape, dragShape, lineSpec, makeShapeStroke, type ShapeTool } from "./shapes";
+import { defaultShape, dragShape, lineSpec, makeShapeStroke, nearlyStraight, type ShapeTool } from "./shapes";
 import { guessHoldShape } from "./holdShape";
 import { eraserTakes, eraseStrokeArea, type EraserMode, type EraserTarget } from "./eraser";
 import { capPrediction, keepPoint, SMOOTH_V2, stabilizeOf, trimHooks, trimSlips, type Dropped, type StabilizeLevel } from "./smoothing";
@@ -87,8 +87,14 @@ interface Gesture {
   holdTimer: number;
   /** 직선이 된 뒤의 시작점 (페이지 px). 떼기 전까지 끝점이 펜을 따라온다 */
   straight: { start: [number, number] } | null;
-  /** 직선이 된 자리(화면 px): 펜이 여기서 HOLD_KEEP 안에 있는 동안은 끝점을 붙잡아 둔다 (뗄 때 미끄러져도 그대로, v0.32) */
+  /** 직선이 된 자리(화면 px): 펜이 여기서 lockR 안에 있는 동안은 끝점을 붙잡아 둔다 (뗄 때 미끄러져도 그대로, v0.32) */
   lineLock: { x: number; y: number } | null;
+  /** 붙잡아 두는 거리 (화면 px): 보통 HOLD_KEEP, 작은 직선은 SMALL_KEEP (v0.54) */
+  lockR: number;
+  /** 작은 획이 멈춰서 직선이 됨 (v0.54): 뗀 뒤 고치기 막대를 띄우지 않는다 (글씨 쓰는 중에 막대가 뜨지 않게) */
+  smallLine: boolean;
+  /** 지금까지 그은 자리 (화면 px) — 작은 획인지 (v0.54) */
+  ext: { x0: number; y0: number; x1: number; y1: number };
   /** 떨림으로 거른 마지막 점 (v0.32): 화면에는 끝으로 그리고, 뗄 때 남긴다 */
   pending: InkPoint | null;
   /** 떨림으로 보는 거리 (화면 px, v0.42 손떨림 보정 세기) */
@@ -113,8 +119,17 @@ interface Laser {
 
 /** 이보다 작은 펜 획(가로·세로 중 긴 쪽, 화면 px)은 필기 보정으로 펴지 않는다 — 작은 글씨 (v0.37, 약 4~5mm) */
 const SMALL_WRITING_PX = 24;
-/** 이보다 작은 획은 멈춰도 도형·직선으로 바꾸지 않는다 (화면 px, v0.37, 약 5mm) */
+/** 이보다 작은 획은 멈춰도 도형·곡선으로 바꾸지 않는다 (화면 px, v0.37, 약 5mm). v0.54부터 직선은 아래까지 */
 const SHAPE_MIN_PX = 28;
+/** 작은 획도 거의 곧으면 이만큼(화면 px, 가로·세로 중 긴 쪽, 약 2mm)부터 멈추면 직선 (v0.54) */
+const LINE_MIN_PX = 10;
+/** 작은 획의 "거의 곧음": 시작 → 끝 줄에서 가장 먼 점이 이만큼(화면 px) 또는 줄 길이의 12% 안 */
+const SMALL_LINE_DEV_PX = 1.5;
+const SMALL_LINE_DEV = 0.12;
+/** 작은 획은 이만큼(화면 px) 안에 머물러야 멈춘 것 (보통 HOLD_SLOP 8px — 작은 획을 천천히 그으면 다 긋기 전에 멈춘 것으로 보였다) */
+const HOLD_SLOP_SMALL = 3;
+/** 작은 직선이 된 뒤 끝을 붙잡아 두는 거리 (화면 px, 보통 HOLD_KEEP) */
+const SMALL_KEEP = 5;
 /** 펜 끝 예측을 그리는 최대 길이 (화면 px, v0.36) */
 const PREDICT_MAX_SCREEN_PX = 12;
 /** 형광펜 끝 예측 (v0.50.1): 굵고 반투명해 멀리 튀면 끝이 늘었다 줄어 보이므로 펜보다 짧게 */
@@ -583,6 +598,9 @@ export function InkCanvas(props: Props) {
         erased: false,
         viaDown: e.type === "pointerdown",
         holdAt: { x: e.clientX, y: e.clientY },
+        lockR: HOLD_KEEP,
+        smallLine: false,
+        ext: { x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY },
         holdTimer: 0,
         straight: null,
         lineLock: null,
@@ -671,16 +689,27 @@ export function InkCanvas(props: Props) {
       const stroke = g.stroke;
       if (gesture !== g || !stroke || g.straight || g.shaped) return;
       const p = page();
-      // 짧은 획(점, 짧은 삐침)은 그대로
-      if (pathLengthPx(stroke.points, p) < Math.max(24, unitsToPx(stroke.width, p) * 4)) return;
       const px = stroke.points.map(([x, y]): [number, number] => [x * p.width, y * p.height]);
-      // 글자만 한 획(화면 SHAPE_MIN_PX 안)은 천천히 써도 도형·직선으로 바꾸지 않는다 (v0.37: 작은 ㅇ이 원·직선이 되던 문제)
       const xs = px.map((q) => q[0]);
       const ys = px.map((q) => q[1]);
       const zoom = propsRef.current.zoom || 1;
-      if (Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * zoom < SHAPE_MIN_PX) return;
-      // 알아본 도형·곡선이 쓴 획과 서로 가까울 때만, 곧은 선은 거의 곧을 때만 (v0.51: 흘려 쓴 글자가 멈추면 네모·화살표·직선이 되던 것)
-      const hold = guessHoldShape(px, p, unitsToPx(stroke.width, p), true);
+      const longSide = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * zoom;
+      let hold: ReturnType<typeof guessHoldShape>;
+      if (longSide < SHAPE_MIN_PX) {
+        // 작은 획 (v0.54): 도형·곡선으로는 바꾸지 않고(v0.37: 작은 ㅇ이 원이 되던 문제), 거의 곧은 획만 직선으로.
+        // 0.53까지는 작은 획은 멈춰도 직선이 되지 않았다
+        const widthScr = unitsToPx(stroke.width, p) * zoom;
+        if (longSide < LINE_MIN_PX || pathLengthPx(stroke.points, p) * zoom < Math.max(LINE_MIN_PX, widthScr * 3)) return;
+        if (!nearlyStraight(px, (len) => Math.max(SMALL_LINE_DEV_PX / zoom, len * SMALL_LINE_DEV))) return;
+        hold = { type: "line" };
+        g.lockR = SMALL_KEEP;
+        g.smallLine = true;
+      } else {
+        // 짧은 획(점, 짧은 삐침)은 그대로
+        if (pathLengthPx(stroke.points, p) < Math.max(24, unitsToPx(stroke.width, p) * 4)) return;
+        // 알아본 도형·곡선이 쓴 획과 서로 가까울 때만, 곧은 선은 거의 곧을 때만 (v0.51: 흘려 쓴 글자가 멈추면 네모·화살표·직선이 되던 것)
+        hold = guessHoldShape(px, p, unitsToPx(stroke.width, p), true);
+      }
       if (!hold) return;
       if (hold.type === "line") {
         g.straight = { start: px[0] };
@@ -811,7 +840,16 @@ export function InkCanvas(props: Props) {
       // 도형이 된 뒤에는 그대로 (뗀 뒤 손잡이로 고친다)
       if (gesture.shaped) return;
       // 멈춘 자리에서 움직이면 다시 기다린다
-      if (Math.hypot(e.clientX - gesture.holdAt.x, e.clientY - gesture.holdAt.y) > HOLD_SLOP) {
+      // 그은 자리 (작은 획은 더 작게 움직여도 아직 긋는 중으로, v0.54)
+      const ext = gesture.ext;
+      for (const ev of events) {
+        if (ev.clientX < ext.x0) ext.x0 = ev.clientX;
+        if (ev.clientX > ext.x1) ext.x1 = ev.clientX;
+        if (ev.clientY < ext.y0) ext.y0 = ev.clientY;
+        if (ev.clientY > ext.y1) ext.y1 = ev.clientY;
+      }
+      const slop = Math.max(ext.x1 - ext.x0, ext.y1 - ext.y0) < SHAPE_MIN_PX ? HOLD_SLOP_SMALL : HOLD_SLOP;
+      if (Math.hypot(e.clientX - gesture.holdAt.x, e.clientY - gesture.holdAt.y) > slop) {
         gesture.holdAt = { x: e.clientX, y: e.clientY };
         armHold(gesture);
       }
@@ -819,7 +857,7 @@ export function InkCanvas(props: Props) {
         // 직선이 된 자리에서 HOLD_KEEP 안의 떨림(뗄 때 미끄러짐)은 무시, 벗어나면 그때부터 끝점이 따라온다
         const lock = gesture.lineLock;
         if (lock) {
-          if (Math.hypot(e.clientX - lock.x, e.clientY - lock.y) <= HOLD_KEEP) return;
+          if (Math.hypot(e.clientX - lock.x, e.clientY - lock.y) <= gesture.lockR) return;
           gesture.lineLock = null;
         }
         // 직선이 된 뒤: 떼기 전까지 끝점(각도·길이)이 따라온다
@@ -962,7 +1000,8 @@ export function InkCanvas(props: Props) {
       renderedRef.current = next;
       propsRef.current.onCommit(next);
       // 멈춰서 된 도형·직선은 바로 골라 고칠 수 있게 (곧게 긋는 형광펜의 밑줄은 고르지 않음)
-      if (stroke.shape && !g.autoStraight) propsRef.current.onShapeDrawn?.(stroke.id);
+      // 작은 직선(v0.54)은 고르지 않는다 — 손글씨 중에 고치기 막대가 뜨지 않게 (눌러서 고칠 수 있음)
+      if (stroke.shape && !g.autoStraight && !g.smallLine) propsRef.current.onShapeDrawn?.(stroke.id);
     };
 
     const cancelGesture = () => {
