@@ -1,4 +1,5 @@
 import { MousePointer2, PenLine, Plus } from "lucide-react";
+import { blocksGesture, fingerWritesOn } from "./gestureTarget";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { isMadeForEmbedding } from "../doc/embed";
@@ -379,7 +380,7 @@ export function ScrollView(props: Props) {
         pointers.clear();
         endGesture();
       }
-      if (pointers.size === 0 && (e.target as Element).closest?.("[data-no-gesture]")) {
+      if (pointers.size === 0 && blocksGesture(e.target)) {
         // 미끄러지던 화면은 글상자·스티커·넘기기 바 위를 눌러도 멈춘다 (v0.50.1)
         if (flinging) {
           stopAnim();
@@ -398,7 +399,7 @@ export function ScrollView(props: Props) {
       const p = local(e);
       pointers.set(e.pointerId, p);
       if (pointers.size === 1) {
-        const onInk = (e.target as Element).classList?.contains("ink-live");
+        const onInk = fingerWritesOn(e.target);
         start = { p, t: performance.now(), view: { ...view.current }, target: e.target as Element };
         samples = [{ t: start.t, x: p.x, y: p.y }];
         moved = false;
@@ -506,7 +507,7 @@ export function ScrollView(props: Props) {
 
     // 마우스 휠: 스크롤, Ctrl + 휠은 확대
     const onWheel = (e: WheelEvent) => {
-      if ((e.target as Element).closest?.("[data-no-gesture]")) return;
+      if (blocksGesture(e.target)) return;
       e.preventDefault();
       stopAnim();
       const l = layoutRef.current;

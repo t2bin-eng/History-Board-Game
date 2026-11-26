@@ -2602,6 +2602,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
                   }}
                   onAnim={(id, anim) => editBoxes(id, (pages, pageId) => animBox(pages, pageId, id, anim))}
                   veilDraw={current && veilMode}
+                  fingerDraw={fingerDraw}
                   onCreateVeil={createVeil}
                   onVeilColor={(id, color) => editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { veil: { color } }))}
                   lecture={lecture}

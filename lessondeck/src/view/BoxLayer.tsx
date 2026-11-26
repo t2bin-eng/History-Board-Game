@@ -120,13 +120,19 @@ interface Props {
   onCreateVeil?: (r: { x: number; y: number; w: number; h: number }) => void;
   /** 베일 색 바꾸기 */
   onVeilColor?: (id: string, color: string) => void;
+  /** 손가락 필기 (v0.52): 켜져 있으면 텍스트 모드에서도 한 손가락은 펜처럼(베일 끌어 그리기), 꺼져 있으면 빈 곳을 끄는 손가락은 스크롤 */
+  fingerDraw?: boolean;
 }
 
 const DRAG_SLOP = 5;
+/** 입력 중인 상자: 이만큼 넘게 누른 채 있다가 끌면 글자 고르기, 그 전에 끌면 상자 옮기기 (v0.52) */
+const HOLD_SELECT_MS = 300;
 /** 옮기기 손잡이 크기 (px, v0.50.1) */
 const GRIP_PX = 30;
 /** 상자가 이보다 좁으면(낮으면) 위·아래(왼쪽·오른쪽) 변 손잡이를 빼고 모서리만 (px) */
 const SIDE_HANDLE_MIN_PX = 64;
+/** 상자가 이보다 낮으면(좁으면) 위·아래(왼쪽·오른쪽) 변 손잡이도 뺀다 — 한 줄 상자에서 그 손잡이가 몸통 가운데를 덮어 끌면 옮겨지지 않고 크기가 바뀌었다 (v0.52) */
+const SIDE_HANDLE_THICK_PX = 40;
 /** 가장 작은 상자 (페이지 대비) */
 const MIN_W = 0.04;
 const MIN_H = 0.02;
@@ -197,7 +203,18 @@ function noteTilt(id: string): number {
 export function BoxLayer(props: Props) {
   const { page, pages, hidden, size, editMode, selectedId, editingId } = props;
   const layerRef = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ id: string; pointer: number; sx: number; sy: number; dx: number; dy: number; moved: boolean; grip?: boolean } | null>(null);
+  const drag = useRef<{
+    id: string;
+    pointer: number;
+    sx: number;
+    sy: number;
+    dx: number;
+    dy: number;
+    moved: boolean;
+    grip?: boolean;
+    /** 입력 중인 상자의 몸통을 누름 (v0.52): 누른 시각과 그때의 입력 칸 고른 자리 (옮기면 되돌린다) */
+    typing?: { t: number; start: number; end: number; dir: "forward" | "backward" | "none" };
+  } | null>(null);
   const [dragPos, setDragPos] = useState<{ id: string; x: number; y: number } | null>(null);
   const resize = useRef<{ id: string; pointer: number; mode: HandleMode; w0: number; h0: number; x: number; y: number; px: number; py: number } | null>(null);
   /** 고른 화살표의 끝·휘기 손잡이를 끄는 중 (페이지 px) */
@@ -373,8 +390,23 @@ export function BoxLayer(props: Props) {
   // ── 베일 그리기 (v0.28): 텍스트 모드에서 끌어 그 자리를 덮는 베일 ──
   const band = useRef<{ pointer: number; x0: number; y0: number } | null>(null);
   const [bandRect, setBandRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  // 손가락 톡인지 (v0.52): 빈 곳을 끈 손가락은 스크롤·두 손가락은 확대라, 그 뒤의 click으로 상자·베일을 만들지 않는다
+  const tapGuard = useRef({ x: 0, y: 0, n: 0, multi: false });
+  const fingerTapOk = (e: React.MouseEvent) => {
+    if ((e.nativeEvent as PointerEvent).pointerType !== "touch") return true;
+    const g = tapGuard.current;
+    return !g.multi && Math.hypot(e.clientX - g.x, e.clientY - g.y) <= TAP_SLOP;
+  };
   const onBandDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === "touch") {
+      const g = tapGuard.current;
+      if (e.isPrimary) Object.assign(g, { x: e.clientX, y: e.clientY, n: 0, multi: false });
+      g.n++;
+      if (g.n > 1) g.multi = true;
+    }
     if (!editMode || !props.veilDraw || e.target !== e.currentTarget || e.button > 0) return;
+    // 손가락은 스크롤·확대 (손가락 필기를 켰으면 펜처럼 끌어 그림). 손가락 톡은 click에서
+    if (e.pointerType === "touch" && !props.fingerDraw) return;
     const p = toRatio(e.clientX, e.clientY);
     band.current = { pointer: e.pointerId, x0: clamp(p.x, 0, 1), y0: clamp(p.y, 0, 1) };
     try {
@@ -392,6 +424,7 @@ export function BoxLayer(props: Props) {
     setBandRect({ x: Math.min(g.x0, x1), y: Math.min(g.y0, y1), w: Math.abs(x1 - g.x0), h: Math.abs(y1 - g.y0) });
   };
   const onBandUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === "touch") tapGuard.current.n = Math.max(0, tapGuard.current.n - 1);
     const g = band.current;
     if (!g || g.pointer !== e.pointerId) return;
     band.current = null;
@@ -409,7 +442,20 @@ export function BoxLayer(props: Props) {
   };
 
   const onLayerClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!editMode || e.target !== e.currentTarget || props.veilDraw) return;
+    if (!editMode || e.target !== e.currentTarget) return;
+    if (!fingerTapOk(e)) return;
+    if (props.veilDraw) {
+      // 베일 그리기의 손가락 톡 (손가락은 끌면 스크롤이라 끌어 그리기 대신): 고른 것이 있으면 풀고, 아니면 그 자리에 기본 크기 베일
+      if ((e.nativeEvent as PointerEvent).pointerType !== "touch" || props.fingerDraw) return;
+      if (selectedId || props.selectedArrow) {
+        props.onSelect(null);
+        props.onSelectArrow(null);
+        return;
+      }
+      const p = toRatio(e.clientX, e.clientY);
+      props.onCreateVeil?.({ x: clamp(p.x, 0, 1), y: clamp(p.y, 0, 1), w: 0, h: 0 });
+      return;
+    }
     // 화살표 끝을 기다리는 중: 누른 곳을 가리키는 화살표 (줄 그은 곳·그림 등 아무 곳)
     if (props.connectFrom) {
       const p = toRatio(e.clientX, e.clientY);
@@ -434,7 +480,26 @@ export function BoxLayer(props: Props) {
   };
 
   const onBoxDown = (b: TextBox, e: ReactPointerEvent<HTMLElement>) => {
-    if (!editMode || editingId === b.id || e.button > 0) return;
+    if (!editMode || e.button > 0) return;
+    if (editingId === b.id) {
+      // 입력 중 (v0.52): 바로 끌면 상자를 옮기고, 잠깐(HOLD_SELECT_MS) 누른 채 끌면 글자 고르기(브라우저 그대로), 톡은 커서.
+      // 0.51까지는 입력 중인 상자는 옮기기 손잡이로만 옮길 수 있어, 텍스트 모드에서 만든 상자(바로 입력 중)를 끌어도 움직이지 않았다
+      if ((e.target as Element).closest(".box-toolbar, .tb-handle, .tb-move")) return;
+      const ta = taRef.current;
+      if (!ta) return;
+      const p = toRatio(e.clientX, e.clientY);
+      drag.current = {
+        id: b.id,
+        pointer: e.pointerId,
+        sx: e.clientX,
+        sy: e.clientY,
+        dx: p.x - b.x,
+        dy: p.y - b.y,
+        moved: false,
+        typing: { t: performance.now(), start: ta.selectionStart, end: ta.selectionEnd, dir: ta.selectionDirection ?? "none" },
+      };
+      return;
+    }
     const p = toRatio(e.clientX, e.clientY);
     drag.current = { id: b.id, pointer: e.pointerId, sx: e.clientX, sy: e.clientY, dx: p.x - b.x, dy: p.y - b.y, moved: false };
     // 빨리 끌어도 손가락·펜이 작은 상자 밖으로 빠지지 않게 바로 잡는다
@@ -451,8 +516,25 @@ export function BoxLayer(props: Props) {
     if (!d || d.pointer !== e.pointerId) return;
     if (!d.moved) {
       if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < DRAG_SLOP) return;
+      if (d.typing && performance.now() - d.typing.t > HOLD_SELECT_MS) {
+        // 잠깐 누른 뒤 끈 것: 글자 고르기
+        drag.current = null;
+        return;
+      }
       d.moved = true;
-      props.onSelect(d.id);
+      if (d.typing) {
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {
+          // 잡을 수 없는 포인터면 그냥 둔다
+        }
+      } else props.onSelect(d.id);
+    }
+    // 입력 중인 상자를 끄는 동안 브라우저가 끌어 고른 글자는 누르기 전 자리로
+    if (d.typing) {
+      const ta = taRef.current;
+      if (ta && (ta.selectionStart !== d.typing.start || ta.selectionEnd !== d.typing.end)) ta.setSelectionRange(d.typing.start, d.typing.end, d.typing.dir);
+      e.preventDefault();
     }
     const p = toRatio(e.clientX, e.clientY);
     setDragPos({ id: d.id, x: clamp(p.x - d.dx, 0, 0.98), y: clamp(p.y - d.dy, 0, 0.98) });
@@ -465,8 +547,15 @@ export function BoxLayer(props: Props) {
     if (d.moved) {
       if (dragPos && dragPos.id === b.id) props.onMove(b.id, dragPos.x, dragPos.y);
       setDragPos(null);
+      const ta = taRef.current;
+      if (d.typing && ta) {
+        ta.setSelectionRange(d.typing.start, d.typing.end, d.typing.dir);
+        if (document.activeElement !== ta) ta.focus({ preventScroll: true });
+      }
       return;
     }
+    // 입력 중인 상자를 톡: 커서 (브라우저 그대로)
+    if (d.typing) return;
     // 옮기기 손잡이를 톡 누른 것은 아무 일도 하지 않는다
     if (e.type !== "pointerup" || d.grip) return;
     // 화살표로 잇는 중: 누른 상자로 잇는다 (시작 상자를 다시 누르면 그만)
@@ -623,6 +712,7 @@ export function BoxLayer(props: Props) {
       ref={layerRef}
       className={`box-layer${editMode ? " edit" : ""}${props.connectFrom ? " connecting" : ""}${editMode && props.veilDraw ? " veil-draw" : ""}`}
       data-no-gesture={editMode || undefined}
+      data-finger-pan={editMode || undefined}
       onClick={onLayerClick}
       onPointerDown={onBandDown}
       onPointerMove={onBandMove}
@@ -910,7 +1000,12 @@ export function BoxLayer(props: Props) {
         // 크기 손잡이 · 옮기기 손잡이 (v0.50.1: 글을 입력하는 중에도, 작은 상자는 변 손잡이를 빼 모서리끼리 겹치지 않게)
         const boxW = rect.w;
         const boxH = rect.h;
-        const sides = (mode: HandleMode) => (mode === "n" || mode === "s" ? boxW >= SIDE_HANDLE_MIN_PX : mode === "e" || mode === "w" ? boxH >= SIDE_HANDLE_MIN_PX : true);
+        const sides = (mode: HandleMode) =>
+          mode === "n" || mode === "s"
+            ? boxW >= SIDE_HANDLE_MIN_PX && boxH >= SIDE_HANDLE_THICK_PX
+            : mode === "e" || mode === "w"
+              ? boxH >= SIDE_HANDLE_MIN_PX && boxW >= SIDE_HANDLE_THICK_PX
+              : true;
         // 옮기기 손잡이는 상자 왼쪽 (페이지 왼쪽 끝에 붙은 상자는 오른쪽)
         const gripRight = pos.x * size.width < GRIP_PX + 16;
         // 끄는 동안에는 크기 손잡이를 감추고 옮기기 손잡이는 남긴다 (끄는 손잡이를 잡고 있으므로)

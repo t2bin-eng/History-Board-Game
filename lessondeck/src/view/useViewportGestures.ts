@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, type RefObject } from "react";
+import { blocksGesture, fingerWritesOn } from "./gestureTarget";
 import { onPalm, palmActive, penRecentlyActive, pointerKind } from "../lib/inputState";
 import { clampView, identity, zoomAt, type Size, type View } from "./viewport";
 import { usePinnedScroll } from "./usePinnedScroll";
@@ -122,7 +123,7 @@ export function useViewportGestures(opts: Options) {
         endGesture();
       }
       // 첫 손가락이 팔레트·패널 위면 제스처가 아니다. 이미 페이지 위에 손가락이 있으면 두 번째 손가락은 어디든 인정
-      if (pointers.size === 0 && (e.target as Element).closest?.("[data-no-gesture]")) return;
+      if (pointers.size === 0 && blocksGesture(e.target)) return;
       if (penRecentlyActive() || palmActive()) return;
       if (pointers.size === 0) {
         areaRect = area.getBoundingClientRect();
@@ -131,7 +132,7 @@ export function useViewportGestures(opts: Options) {
       const p = local(e);
       pointers.set(e.pointerId, p);
       if (pointers.size === 1) {
-        const onPage = (e.target as Element).classList?.contains("ink-live");
+        const onPage = fingerWritesOn(e.target);
         if (optsRef.current.fingerDraw && onPage) {
           mode = "draw";
           start = { p, t: performance.now(), view: view.current };

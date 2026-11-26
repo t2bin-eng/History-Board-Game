@@ -6311,6 +6311,27 @@ button.version-btn {
   inset: -13px;
 }
 
+/* 입력 칸은 스스로 스크롤되는 요소라 터치 동작이 층(touch-action: none)과 따로 정해져, 손가락으로 끌면 브라우저가 가져가
+   pointercancel로 끊겼다 (v0.52: 입력 중 상자를 손가락으로 끌어 옮기기) */
+.box-layer.edit .text-box textarea {
+  touch-action: none;
+}
+
+/* 변 손잡이의 누르는 자리는 상자 바깥쪽으로만 넓힌다 (v0.52): 안쪽까지 넓히면 몸통 가운데를 덮어, 끌어 옮기려던 것이 크기 바꾸기가 되었다.
+   모서리는 그대로 (몸통 가운데에서 멀고, 손가락 끝이 상자 안쪽에 걸쳐도 모서리를 잡게) */
+.tb-handle.n::before {
+  inset: -13px -13px 0;
+}
+.tb-handle.s::before {
+  inset: 0 -13px -13px;
+}
+.tb-handle.e::before {
+  inset: -13px -13px -13px 0;
+}
+.tb-handle.w::before {
+  inset: -13px 0 -13px -13px;
+}
+
 /* 옮기기 손잡이: 상자 왼쪽(페이지 왼쪽 끝이면 오른쪽) 가운데의 동그란 손잡이 */
 .tb-move {
   position: absolute;
