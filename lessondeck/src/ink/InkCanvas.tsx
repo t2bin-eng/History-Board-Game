@@ -2,7 +2,7 @@ import { cssToken } from "../lib/theme";
 import { onViewSettled } from "../view/viewMotion";
 import { contains, SHARP_MIN_GAIN, sharpWindow, type SharpWindow } from "../view/sharpWindow";
 import { useEffect, useLayoutEffect, useRef } from "react";
-import { debugStats, recordPointer, recordRender } from "../lib/debugStore";
+import { debugStats, pushLog, recordPointer, recordRender } from "../lib/debugStore";
 import { activeTouchCount, isSideButtonDown, onPalm, onSideButtonChange, palmActive, penRecentlyActive, penStrokeErasing, penTouching, pointerKind, type PointerKind } from "../lib/inputState";
 import { beautifyStroke, pathLengthPx, snapLineEnd } from "./beautify";
 import { strokeHitsCircle, unitsToPx, type PageSize } from "./geometry";
@@ -10,7 +10,8 @@ import { fillStroke, HIGHLIGHT_LAYER_STYLE, isHighlighter } from "./inkPaint";
 import { defaultShape, dragShape, lineSpec, makeShapeStroke, type ShapeTool } from "./shapes";
 import { guessHoldShape } from "./holdShape";
 import { eraserTakes, eraseStrokeArea, type EraserMode, type EraserTarget } from "./eraser";
-import { capPrediction, keepPoint, SMOOTH_V2, stabilizeOf, trimHooks, type Dropped, type StabilizeLevel } from "./smoothing";
+import { capPrediction, keepPoint, SMOOTH_V2, stabilizeOf, trimHooks, trimSlips, type Dropped, type StabilizeLevel } from "./smoothing";
+import { bounceRelation, endVelocity, penStyleKey, type PenLift } from "./bounce";
 import type { PenButtonAction } from "./penButton";
 import { LASSO_TAP_PX } from "./selection";
 import type { InkPoint, PenNib, Stroke, Tool } from "./types";
@@ -98,6 +99,10 @@ interface Gesture {
   shaped: boolean;
   /** 도형 모드로 끌어 그리는 중: 고른 도형과 펜을 댄 곳 (페이지 px) */
   drag: { kind: Exclude<ShapeTool, "auto">; start: [number, number]; moved: boolean } | null;
+  /** 최근 펜 자리 (화면 px, ms) — 뗄 때 속도 (v0.53 펜이 잠깐 튄 획 잇기) */
+  samples: { x: number; y: number; t: number }[];
+  /** 바로 앞 펜 획과의 관계 (펜을 댈 때 정함, v0.53) */
+  bounce: { kind: "join" | "dropDot"; prev: PenLift } | null;
 }
 
 /** 레이저 펜 자국: 페이지 px 점들, 뗀 시각 (그리는 중이면 0) */
@@ -267,6 +272,8 @@ export function InkCanvas(props: Props) {
     const liveTarget = (hl: boolean) => (winRef.current ? (hl ? ls.sharp.hlLive : ls.sharp.live) : hl ? ls.hlLive : live);
     busyRef.current = () => gesture !== null;
     let gesture: Gesture | null = null;
+    /** 바로 앞에 뗀 펜 획 (v0.53 펜이 잠깐 튄 획 잇기) */
+    let lastLift: PenLift | null = null;
     let liveBox: Box | null = null;
     /** 진행 중인 획이 그려진 캔버스 (형광펜이면 hlLive, null이면 live) */
     let liveOn: HTMLCanvasElement | null = null;
@@ -585,6 +592,8 @@ export function InkCanvas(props: Props) {
         drag: null,
         lastErase: null,
         jitterTol: stabilizeOf(props0.stabilize).tol,
+        samples: [{ x: e.clientX, y: e.clientY, t: e.timeStamp }],
+        bounce: null,
       };
       if (mode === "erase") {
         eraseAt([e], gesture);
@@ -625,6 +634,15 @@ export function InkCanvas(props: Props) {
         ...(style.nib ? { nib: style.nib } : {}),
         ...(style.opacity !== undefined ? { opacity: style.opacity } : {}),
       };
+      // 바로 앞 펜 획과 이어 쓴 것인지 (v0.53): 펜이 아주 잠깐 떨어졌다 다시 닿은 것이면 뗄 때 하나로 잇는다
+      const prevLift = lastLift;
+      const lastStroke = renderedRef.current[renderedRef.current.length - 1];
+      if (prevLift && gesture.pointerType === "pen" && !style.straight && lastStroke?.id === prevLift.id) {
+        const widthScreen = unitsToPx(style.width, page()) * (props0.zoom || 1);
+        const kind = bounceRelation(prevLift, performance.now(), [e.clientX, e.clientY], penStyleKey(gesture.stroke), widthScreen);
+        if (kind) gesture.bounce = { kind, prev: prevLift };
+      }
+      lastLift = null;
       const shapeTool = props0.shapeTool;
       if (shapeTool && shapeTool !== "auto") {
         // 도형 모드: 펜을 댄 곳에서부터 끌어 그린다 (움직이기 전에는 그리지 않음)
@@ -813,6 +831,8 @@ export function InkCanvas(props: Props) {
       const r = gesture.rect;
       const onScreen = (q: InkPoint) => ({ x: q[0] * r.width, y: q[1] * r.height });
       for (const ev of events) {
+        gesture.samples.push({ x: ev.clientX, y: ev.clientY, t: ev.timeStamp });
+        if (gesture.samples.length > 12) gesture.samples.shift();
         const pt = toPoint(ev, r, stroke.points[stroke.points.length - 1]);
         const n = stroke.points.length;
         const last = stroke.points[n - 1];
@@ -878,11 +898,21 @@ export function InkCanvas(props: Props) {
       // 떨림으로 거른 마지막 자리는 남긴다 (획이 펜을 뗀 자리까지 오도록)
       if (g.pending && !stroke.shape) stroke.points.push(g.pending);
       const p0 = page();
-      // 댈 때·뗄 때 갈고리 자르기 (v0.47.2): 실제 필압이 있는 펜 획만 (도형·곧게 긋기 제외)
-      if (!stroke.shape && !stroke.simulatePressure && !g.autoStraight && !g.drag) {
-        const z = propsRef.current.zoom || 1;
-        stroke.points = trimHooks(stroke.points, (q) => [q[0] * p0.width * z, q[1] * p0.height * z]);
+      const z0 = propsRef.current.zoom || 1;
+      // 펜이 잠깐 튄 획 (v0.53): 앞 획에 이어 하나로(사이는 곧게), 닿는 순간 튄 점은 버린다
+      let replaced: string | null = null;
+      const freehand = !stroke.shape && !g.autoStraight && !g.drag;
+      if (g.bounce && freehand && !cancelled && renderedRef.current[renderedRef.current.length - 1]?.id === g.bounce.prev.id) {
+        replaced = g.bounce.prev.id;
+        if (g.bounce.kind === "join") stroke.points = [...g.bounce.prev.raw, ...stroke.points];
+        pushLog(g.bounce.kind === "join" ? "펜이 잠깐 튄 획을 이음" : "펜이 닿을 때 튄 점을 버림");
       }
+      const raw = stroke.points.slice();
+      const scr = (q: InkPoint): [number, number] => [q[0] * p0.width * z0, q[1] * p0.height * z0];
+      // 댈 때·뗄 때 갈고리 자르기 (v0.47.2): 실제 필압이 있는 펜 획만 (도형·곧게 긋기 제외)
+      if (freehand && !stroke.simulatePressure) stroke.points = trimHooks(stroke.points, scr);
+      // 댈 때·뗄 때 미끄러짐 혹 (v0.53): 필압과 상관없이
+      if (freehand) stroke.points = trimSlips(stroke.points, scr, unitsToPx(stroke.width, p0) * z0);
       if (g.drag) {
         if (cancelled) return clearStale();
         // 끌지 않고 톡: 그 자리에 기본 크기로
@@ -905,17 +935,30 @@ export function InkCanvas(props: Props) {
           delete stroke.smoothR;
         }
       }
-      // 아래 전체 층에, 확대 중이면 선명한 창에도 (v0.50)
-      const hl = isHighlighter(stroke);
-      for (const target of winRef.current ? [hl ? ls.hl : ls.base, hl ? ls.sharp.hl : ls.sharp.base] : [hl ? ls.hl : ls.base]) {
-        const ctx = target.getContext("2d")!;
-        setT(ctx, target);
-        fillStroke(ctx, stroke, page(), true);
-        painted.add(target);
+      // 다음 획이 이어 쓴 것인지 볼 수 있게 적어 둔다 (펜 획만, v0.53)
+      if (g.pointerType === "pen" && freehand && !stroke.shape) {
+        let len = 0;
+        for (let i = 1; i < raw.length; i++) len += Math.hypot((raw[i][0] - raw[i - 1][0]) * p0.width * z0, (raw[i][1] - raw[i - 1][1]) * p0.height * z0);
+        const last = g.samples[g.samples.length - 1];
+        lastLift = { id: stroke.id, raw, t: performance.now(), end: [last.x, last.y], vel: endVelocity(g.samples), len, style: penStyleKey(stroke) };
       }
-      showHighlights(ls);
+      const kept = replaced ? renderedRef.current.filter((x) => x.id !== replaced) : renderedRef.current;
+      if (replaced) {
+        // 앞 획을 바꾸므로 층을 다시 그린다
+        redraw(ls, [...kept, stroke], page());
+      } else {
+        // 아래 전체 층에, 확대 중이면 선명한 창에도 (v0.50)
+        const hl = isHighlighter(stroke);
+        for (const target of winRef.current ? [hl ? ls.hl : ls.base, hl ? ls.sharp.hl : ls.sharp.base] : [hl ? ls.hl : ls.base]) {
+          const ctx = target.getContext("2d")!;
+          setT(ctx, target);
+          fillStroke(ctx, stroke, page(), true);
+          painted.add(target);
+        }
+        showHighlights(ls);
+      }
       debugStats.strokesDrawn++;
-      const next = [...renderedRef.current, stroke];
+      const next = [...kept, stroke];
       renderedRef.current = next;
       propsRef.current.onCommit(next);
       // 멈춰서 된 도형·직선은 바로 골라 고칠 수 있게 (곧게 긋는 형광펜의 밑줄은 고르지 않음)

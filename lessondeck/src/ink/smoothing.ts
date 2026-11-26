@@ -320,3 +320,79 @@ export function trimHooks(points: InkPoint[], toScreen: (p: InkPoint) => [number
   }
   return start === 0 && end === n - 1 ? points : points.slice(start, end + 1);
 }
+
+// ── 댈 때 미끄러짐 혹 (v0.53, SPEC 5장 "댈 때·뗄 때 갈고리 자르기") ──
+
+/** 혹으로 볼 자리: 첫 점에서 R(굵기의 이만큼, 화면 px, 아래 범위)의 SLIP_REACH배 안 — 일부러 그은 시작 돌기(1의 깃 등)는 이보다 길다 */
+const SLIP_WIDTHS = 1.2;
+const SLIP_MIN_PX = 2;
+const SLIP_MAX_PX = 4.5;
+const SLIP_REACH = 1.4;
+/** 그 안의 점이 이만큼 넘게(화면 px, 반지름 대비) 진행 줄 옆으로 벗어났으면 혹 */
+const SLIP_LAT_PX = 0.9;
+const SLIP_LAT = 0.3;
+/** 혹은 펜이 닿는(떨어지는) 순간의 몇 점뿐 — 천천히 그린 둥근 시작(많은 점)은 건드리지 않는다 */
+const SLIP_MAX_PTS = 4;
+/** 머리에서 꺾인 각이 이만큼 넘고, 뒤이은 휨(같은 길이)의 두 배 + 15°보다 커야 혹 — 곡선(괄호·ㅇ)의 시작은 고르게 휜다 */
+const SLIP_TURN_DEG = 35;
+
+const turn = (ax: number, ay: number, bx: number, by: number) => {
+  const l = Math.hypot(ax, ay) * Math.hypot(bx, by);
+  return l ? (Math.acos(Math.max(-1, Math.min(1, (ax * bx + ay * by) / l))) * 180) / Math.PI : 0;
+};
+
+/** s[0]에서 시작하는 혹의 길이(남길 첫 점 번호, 없으면 0) */
+function slipHead(s: [number, number][], R: number): number {
+  const dist = (i: number, j: number) => Math.hypot(s[i][0] - s[j][0], s[i][1] - s[j][1]);
+  const ahead = (from: number, len: number) => {
+    for (let i = from + 1; i < s.length; i++) if (dist(i, from) >= len) return i;
+    return -1;
+  };
+  // 미끄러짐이 끝나고 줄기가 시작하는 자리(꺾인 곳): 첫 점에서 가까운 처음 몇 점 중 가장 크게 꺾인 점
+  let c = 0;
+  let best = 0;
+  for (let i = 1; i <= SLIP_MAX_PTS && i < s.length - 2; i++) {
+    if (dist(i, 0) > SLIP_REACH * R) break;
+    const m = ahead(i, R);
+    if (m < 0 || dist(i, 0) < 0.5) continue;
+    const t = turn(s[i][0] - s[0][0], s[i][1] - s[0][1], s[m][0] - s[i][0], s[m][1] - s[i][1]);
+    if (t > best) {
+      best = t;
+      c = i;
+    }
+  }
+  if (!c) return 0;
+  // 줄기: c에서 3R 넘게 간 첫 점까지. 머리의 점이 그 줄에서 옆으로 벗어난 만큼
+  const f = ahead(c, 3 * R);
+  const m = ahead(c, R);
+  if (f < 0 || m < 0) return 0;
+  const ux = s[f][0] - s[c][0];
+  const uy = s[f][1] - s[c][1];
+  const ul = Math.hypot(ux, uy) || 1;
+  let lat = 0;
+  for (let i = 0; i < c; i++) lat = Math.max(lat, Math.abs((s[i][0] - s[c][0]) * uy - (s[i][1] - s[c][1]) * ux) / ul);
+  if (lat <= Math.max(SLIP_LAT_PX, R * SLIP_LAT)) return 0;
+  // 꺾임을 그 뒤 같은 길이의 휨과 견준다 (고르게 휜 곡선의 시작이 아니어야)
+  const m2 = ahead(m, R);
+  const next = m2 < 0 ? 0 : turn(s[m][0] - s[c][0], s[m][1] - s[c][1], s[m2][0] - s[m][0], s[m2][1] - s[m][1]);
+  return best > Math.max(SLIP_TURN_DEG, next * 2 + 15) ? c : 0;
+}
+
+/**
+ * 댈 때 미끄러짐 혹 (v0.53): 펜이 닿는 순간(몇 점) 굵기 남짓 안에서 옆으로 미끄러진 자국은, 필압과 상관없이 뗀다.
+ * 둥근 끝과 겹쳐 획 시작에 굵기의 1.5~2배인 점(혹)으로 보였다 — trimHooks는 필압이 약한 갈고리만 자르므로
+ * 빠르게 꾹 눌러 쓴 글씨(필압을 끈 펜 포함)에 남았다. 끝은 건드리지 않는다(일부러 날려 쓴 끝과 구별할 수 없음, v0.51).
+ * widthPx: 화면에 보이는 펜 굵기
+ */
+export function trimSlips(points: InkPoint[], toScreen: (p: InkPoint) => [number, number], widthPx: number): InkPoint[] {
+  const n = points.length;
+  if (n < 6) return points;
+  const s = points.map(toScreen);
+  const R = Math.min(SLIP_MAX_PX, Math.max(SLIP_MIN_PX, widthPx * SLIP_WIDTHS));
+  let total = 0;
+  for (let i = 1; i < n; i++) total += Math.hypot(s[i][0] - s[i - 1][0], s[i][1] - s[i - 1][1]);
+  // 짧은 획(점·짧은 삐침)은 그대로
+  if (total < R * 6) return points;
+  const start = slipHead(s, R);
+  return start === 0 || n - start < 4 ? points : points.slice(start);
+}

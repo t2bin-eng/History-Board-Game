@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { beautifyStroke } from "./beautify";
 import { guessHoldShape } from "./holdShape";
 import { strokeOptions } from "./geometry";
-import { keepPoint, SMOOTH_V2, smoothPoints, stabilizeOf, trimHooks, type Dropped } from "./smoothing";
+import { keepPoint, SMOOTH_V2, smoothPoints, stabilizeOf, trimHooks, trimSlips, type Dropped } from "./smoothing";
 import type { InkPoint, Stroke } from "./types";
 
 const page = { width: 1000, height: 1414 };
@@ -66,7 +66,9 @@ function writeStroke(samples: { x: number; y: number; p: number }[], o: { width?
     pts.push(pt);
   }
   if (pending) pts.push(pending);
-  const trimmed = trimHooks(pts, (q) => [q[0] * page.width * zoom, q[1] * page.height * zoom]);
+  const scr2 = (q: InkPoint): [number, number] => [q[0] * page.width * zoom, q[1] * page.height * zoom];
+  // 앱과 같은 길: 갈고리 자르기 → 미끄러짐 혹 (v0.53)
+  const trimmed = trimSlips(trimHooks(pts, scr2), scr2, ((o.width ?? 2) * page.width * zoom) / 1000);
   const stroke: Stroke = { id: "s", tool: "pen", color: "#000", width: o.width ?? 2, points: trimmed, smooth: SMOOTH_V2, ...(r !== 2 ? { smoothR: r } : {}) };
   if (o.beautify !== false) {
     const tidy = beautifyStroke(stroke.points, page, (stroke.width * page.width) / 1000, { minSizePx: 24 / zoom });
