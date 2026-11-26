@@ -4,6 +4,7 @@ import { chromeWidth, layoutBox, LINE_HEIGHT, valignRatio } from "../doc/textLay
 import type { Page } from "../doc/types";
 import type { PageSize } from "../ink/geometry";
 import { boxRectPx } from "./boxGeometry";
+import { popupIconRectPx } from "../doc/stickers";
 import { boxTextStyle, canvasFont } from "../doc/boxFonts";
 import { measureFor } from "./textMeasure";
 import { lineSegments, spansOf } from "../doc/textSpans";
@@ -17,6 +18,11 @@ export function paintBoxes(ctx: CanvasRenderingContext2D, page: Page, pages: Pag
   // 상자 잇는 화살표 (상자 아래)
   const rects = new Map<string, Rect>();
   for (const b of boxesOf(page)) rects.set(b.id, boxRectPx(b, boxLabel(b, pages, hidden), size));
+  // 팝업 그림 아이콘에 이은 화살표 (v0.52)
+  for (const st of page.stickers ?? []) {
+    const r = popupIconRectPx(st, size);
+    if (r) rects.set(st.id, r);
+  }
   const lineW = 3 * scale;
   for (const a of arrowsOf(page)) {
     const shape = shapeOfArrow(a, rects, size, lineW);

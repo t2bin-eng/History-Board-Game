@@ -143,7 +143,7 @@ import { ShapePicker } from "./ui/ShapePicker";
 import { TemplatePicker } from "./ui/TemplatePicker";
 import { templateLabel } from "./doc/templates";
 import { followDetour, stepSkipping, type Detour } from "./doc/detours";
-import { addArrow, flipArrow, moveArrowEnd, patchArrow, removeArrow, type ArrowTarget } from "./doc/arrows";
+import { addArrow, dropArrowsOf, flipArrow, moveArrowEnd, patchArrow, removeArrow, type ArrowTarget } from "./doc/arrows";
 import { cleanFormat, type BoxFormat } from "./doc/boxFonts";
 import { josa } from "./lib/josa";
 import { art } from "./ui/art";
@@ -730,7 +730,10 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
     const index = doc.pages.findIndex((p) => p.id === id);
     const page = doc.pages[index];
     if (!page) return;
-    const copy: Page = { ...page, id: newPageId(), ...copyBoxes(page), stickers: copyStickers(page.stickers) };
+    // 팝업 그림에 닿은 화살표도 새 id로 (v0.52)
+    const stickerIds = new Map<string, string>();
+    const stickers = copyStickers(page.stickers, {}, stickerIds);
+    const copy: Page = { ...page, id: newPageId(), ...copyBoxes(page, stickerIds), stickers };
     setDoc((d) => ({ ...d, pages: insertPages(d.pages, index + 1, [copy]) }));
     setInk((b) => (b[id] ? { ...b, [copy.id]: { past: [], present: b[id].present, future: [] } } : b));
     setCurrentId(copy.id);
@@ -1356,13 +1359,15 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
   };
 
   // ── 상자 화살표 ──
-  /** 이 상자에서 화살표 시작: 다음에 누른 상자로 잇거나, 누른 곳(아무 곳)을 가리킨다 */
-  const startConnect = (boxId: string) => {
+  /** 이 상자(또는 팝업 그림, v0.52)에서 화살표 시작: 다음에 누른 상자·팝업 그림으로 잇거나, 누른 곳(아무 곳)을 가리킨다 */
+  const startConnect = (fromId: string) => {
     setTextMode(true);
-    setSelectedBox(boxId);
+    setSelectedBox(findBox(fromId) ? fromId : null);
     setEditingBox(null);
     setSelectedArrow(null);
-    setConnectFrom(boxId);
+    setSelectedSticker(null);
+    setCropping(false);
+    setConnectFrom(fromId);
   };
   const connectTo = (target: ArrowTarget) => {
     const from = connectFrom;
@@ -1580,8 +1585,22 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
     const asset = mediaAsset(docRef.current.assets, s.asset);
     const next = togglePopup(s, !s.popup, asset?.width || 4, asset?.height || 3, pageAspect(page, docRef.current.assets));
     setCropping(false);
-    editSticker(id, (pages, pageId) => replaceSticker(pages, pageId, next));
-    showToast(next.popup ? "팝업 그림: 작은 아이콘을 누르면 크게 보입니다 (모서리로 아이콘 크기)" : "팝업을 껐습니다 (원래 크기)");
+    // 팝업을 끄면 그 아이콘에 이은 화살표도 지운다 (v0.52 — 원래 크기 스티커에는 화살표가 붙지 않는다)
+    const dropped = next.popup ? [] : (page.arrows ?? []).filter((a) => a.from === id || a.to === id);
+    editSticker(id, (pages, pageId) => replaceSticker(pages, pageId, next).map((p) => (p.id === pageId && dropped.length ? dropArrowsOf(p, id) : p)));
+    if (next.popup) showToast("팝업 그림: 작은 아이콘을 누르면 크게 보입니다 (모서리로 아이콘 크기)");
+    else if (!dropped.length) showToast("팝업을 껐습니다 (원래 크기)");
+    else
+      showToast(`팝업을 껐습니다 (원래 크기) · 이 그림의 화살표 ${dropped.length}개도 지웠습니다`, {
+        label: "되돌리기",
+        run: () =>
+          setDoc((d) => ({
+            ...d,
+            pages: d.pages.map((p) =>
+              p.id === page.id ? { ...p, stickers: (p.stickers ?? []).map((x) => (x.id === id ? s : x)), arrows: [...(p.arrows ?? []), ...dropped] } : p,
+            ),
+          })),
+      });
   };
 
   const selectSticker = (id: string, style = false) => {
@@ -1643,6 +1662,8 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
     if (!found) return;
     const { page, sticker } = found;
     const index = stickersOf(page).findIndex((s) => s.id === id);
+    // 팝업 그림에 이은 화살표도 함께 지워지므로 되돌리기에 함께 (v0.52)
+    const dropped = (page.arrows ?? []).filter((a) => a.from === id || a.to === id);
     editSticker(id, (pages, pageId) => removeSticker(pages, pageId, id));
     deselectSticker();
     showToast(message, {
@@ -1654,7 +1675,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
             if (p.id !== page.id) return p;
             const list = [...(p.stickers ?? [])];
             list.splice(index, 0, sticker);
-            return { ...p, stickers: list };
+            return dropped.length ? { ...p, stickers: list, arrows: [...(p.arrows ?? []), ...dropped] } : { ...p, stickers: list };
           }),
         })),
     });
@@ -1899,7 +1920,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
               icon: <MoveUpRight size={18} />,
               onSelect: () => {
                 startConnect(id);
-                showToast("화살표 끝을 둘 곳이나 이을 상자를 누르세요");
+                showToast("화살표 끝을 둘 곳이나 이을 상자·팝업 그림을 누르세요");
               },
             },
             {
@@ -1972,6 +1993,19 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
                   },
                 ]),
             { label: "꾸미기", icon: <Paintbrush size={18} />, onSelect: () => selectSticker(id, true) },
+            // 팝업 그림에서 화살표 (v0.52)
+            ...(findSticker(id)?.sticker.popup
+              ? [
+                  {
+                    label: "화살표",
+                    icon: <MoveUpRight size={18} />,
+                    onSelect: () => {
+                      startConnect(id);
+                      showToast("화살표 끝을 둘 곳이나 이을 상자·팝업 그림을 누르세요");
+                    },
+                  },
+                ]
+              : []),
           ],
           [
             { label: "복사", icon: <Copy size={18} />, hint: "Ctrl+C", onSelect: () => void copySticker(id) },
@@ -2603,6 +2637,21 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
                   onAnim={(id, anim) => editBoxes(id, (pages, pageId) => animBox(pages, pageId, id, anim))}
                   veilDraw={current && veilMode}
                   fingerDraw={fingerDraw}
+                  liveSticker={current ? liveSticker : null}
+                  // 텍스트 모드에서 이미지를 바로 끌어 옮기고 길게 눌러 메뉴 (v0.52)
+                  grabs={
+                    current && textMode && !veilMode && !connectFrom && !selectedSticker && !cropping
+                      ? stickersOf(page).map((s) => {
+                          const b = shownBox(s, mediaAsset(doc.assets, s.asset), size);
+                          return { id: s.id, left: b.left, top: b.top, width: b.width, height: b.height, angle: b.angle, x: s.x, y: s.y };
+                        })
+                      : undefined
+                  }
+                  onGrabLive={(g) => {
+                    const st = g && stickersOf(page).find((x) => x.id === g.id);
+                    setLiveSticker(st ? { ...st, x: g.x, y: g.y } : null);
+                  }}
+                  onGrabMove={(id, x, y) => editSticker(id, (pages, pageId) => patchSticker(pages, pageId, id, { x, y }))}
                   onCreateVeil={createVeil}
                   onVeilColor={(id, color) => editBoxes(id, (pages, pageId) => patchBox(pages, pageId, id, { veil: { color } }))}
                   lecture={lecture}
@@ -2617,7 +2666,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
                   }
                   onStartConnect={(id) => {
                     startConnect(id);
-                    showToast("화살표 끝을 둘 곳이나 이을 상자를 누르세요");
+                    showToast("화살표 끝을 둘 곳이나 이을 상자·팝업 그림을 누르세요");
                   }}
                   connectFrom={current ? connectFrom : null}
                   onConnect={connectTo}
@@ -2646,6 +2695,7 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
                   live={current ? liveSticker : null}
                   interactive={current && !textMode && !selectedSticker && !selectedShape && !selection && !connectFrom}
                   onMoveIcon={(id, x, y) => editSticker(id, (pages, pageId) => patchSticker(pages, pageId, id, { x, y }))}
+                  connectFrom={current ? connectFrom : null}
                 />
                 {current && (() => {
                   const sticker = stickersOf(page).find((s) => s.id === selectedSticker);
@@ -2670,6 +2720,10 @@ export function Editor({ opened, onHome, onDocChange, headerExtra, onAi, ai, res
                       onDelete={() => deleteSticker(id)}
                       onOrder={(to) => editSticker(id, (pages, pageId) => reorderSticker(pages, pageId, id, to))}
                       onPopup={() => toggleStickerPopup(id)}
+                      onArrow={() => {
+                        startConnect(id);
+                        showToast("화살표 끝을 둘 곳이나 이을 상자·팝업 그림을 누르세요");
+                      }}
                     />
                   );
                 })()}

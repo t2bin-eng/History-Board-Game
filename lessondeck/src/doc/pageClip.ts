@@ -64,8 +64,15 @@ export function planPaste(
             }
           : { ...page, asset };
     }
+    // 상자·팝업 그림의 옛 id → 새 id (화살표를 함께 옮김, 팝업 그림 v0.52)
+    const idMap = new Map<string, string>();
+    if (src.stickers)
+      page.stickers = src.stickers.map((s) => {
+        const sid = newId("s");
+        idMap.set(s.id, sid);
+        return { ...s, id: sid, asset: assetMap[s.asset] ?? s.asset };
+      });
     if (src.boxes) {
-      const idMap = new Map<string, string>();
       page.boxes = src.boxes.map(({ backOf: _backOf, ...b }) => {
         const box: TextBox = { ...b, id: newId("b") };
         idMap.set(b.id, box.id);
@@ -77,16 +84,9 @@ export function planPaste(
         const { link: _link, role: _role, ...rest } = box;
         return { ...rest, text: rest.text || clip.labels[b.id] || "" };
       });
-      page.arrows = remapArrows(src.arrows, idMap);
-    } else {
-      delete page.arrows;
     }
-    if (src.stickers)
-      page.stickers = src.stickers.map((s) => ({
-        ...s,
-        id: newId("s"),
-        asset: assetMap[s.asset] ?? s.asset,
-      }));
+    page.arrows = remapArrows(src.arrows, idMap);
+    if (!page.arrows) delete page.arrows;
     const strokes = clip.ink[src.id];
     if (strokes?.length) ink[id] = strokes;
     return page;

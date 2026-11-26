@@ -51,7 +51,9 @@ export function useLongPressMenu(areaRef: RefObject<HTMLElement | null>, opts: O
     // 손가락으로 톡 누르기 (판서 모드 웹 페이지 → 조작 모드)
     let tap: { id: number; x: number; y: number; t: number; onInk: boolean } | null = null;
     // 팔레트·넘기기 바 같은 떠 있는 도구 위는 빼고, 페이지와 글상자 위만
-    const eligible = (t: Element) => !!t.closest(".text-box") || !t.closest("[data-no-gesture]");
+    // 팝업 그림 아이콘도 (v0.52): 끌어 옮기려고 data-no-gesture가 된 뒤(v0.50.1) 길게 눌러도 메뉴가 뜨지 않았다.
+    // 텍스트 모드의 이미지 잡는 자리도 (v0.52): 글상자 층이 이미지를 덮어 텍스트 모드에서는 메뉴가 뜨지 않았다
+    const eligible = (t: Element) => !!t.closest(".text-box, .popup-icon, .sticker-grab") || !t.closest("[data-no-gesture]");
     const cancel = () => {
       if (!press) return;
       clearTimeout(press.timer);

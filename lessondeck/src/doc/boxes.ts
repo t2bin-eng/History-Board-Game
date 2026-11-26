@@ -113,9 +113,12 @@ function backSlot(existing: TextBox[]): { x: number; y: number } {
   return { x: 0.68, y: Math.min(0.9, 0.03 + k * 0.07) };
 }
 
-/** 페이지를 복제할 때 상자도 새 id로 복사한다. 돌아가기 링크는 원래 링크와의 연결을 뗀다. 상자 잇는 화살표도 새 id로 */
-export function copyBoxes(page: Page): Pick<Page, "boxes" | "arrows"> {
-  const idMap = new Map<string, string>();
+/**
+ * 페이지를 복제할 때 상자도 새 id로 복사한다. 돌아가기 링크는 원래 링크와의 연결을 뗀다. 상자 잇는 화살표도 새 id로
+ * (팝업 그림에 닿은 화살표는 스티커의 옛 id → 새 id를 stickerIds로 주면 함께, v0.52)
+ */
+export function copyBoxes(page: Page, stickerIds?: Map<string, string>): Pick<Page, "boxes" | "arrows"> {
+  const idMap = new Map<string, string>(stickerIds);
   const boxes = page.boxes?.map(({ backOf: _backOf, ...b }) => {
     const id = newId("b");
     idMap.set(b.id, id);

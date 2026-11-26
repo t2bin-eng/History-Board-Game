@@ -1,4 +1,6 @@
 import { ARROW_HEADS } from "../ink/arrowHeads";
+import { useLiveIcon } from "./liveIcon";
+import { popupIconRectPx } from "../doc/stickers";
 import { useScreenFit } from "./screenFit";
 import type { ArrowHead } from "../ink/types";
 import { HeadIcon } from "../ui/HeadIcon";
@@ -48,7 +50,7 @@ import { BOX_SIZES, boxBackground, boxBorder, boxLabel, boxesOf, boxPlainLabel, 
 import { layoutBox, LINE_HEIGHT } from "../doc/textLayout";
 import { colorOfRange, lineSegments, segmentsOf, spansOf, type TextSeg } from "../doc/textSpans";
 import { frameAt, typedLines, typingPlan } from "../doc/typing";
-import type { BoxAnim, BoxArrow, BoxBorder, BoxEmphasis, BoxLink, Page, TextBox, TextSpan } from "../doc/types";
+import type { BoxAnim, BoxArrow, BoxBorder, BoxEmphasis, BoxLink, Page, Sticker, TextBox, TextSpan } from "../doc/types";
 import type { PageSize } from "../ink/geometry";
 import { boxRectPx } from "./boxGeometry";
 import { measureFor, useFontsVersion } from "./textMeasure";
@@ -120,11 +122,34 @@ interface Props {
   onCreateVeil?: (r: { x: number; y: number; w: number; h: number }) => void;
   /** 베일 색 바꾸기 */
   onVeilColor?: (id: string, color: string) => void;
+  /**
+   * 텍스트 모드에서 이미지 스티커·팝업 그림을 바로 다루는 자리 (v0.52): 끌면 옮기고, 톡은 고르기(onPickAt), 길게 누르면 메뉴.
+   * 0.51까지 텍스트 모드에서는 글상자 층이 이미지를 덮어 길게 눌러도 메뉴가 뜨지 않고 끌어도 옮겨지지 않았다(펜 모드에서는 됨)
+   */
+  grabs?: StickerGrab[];
+  /** 끄는 중인 스티커 자리 (페이지 대비 왼쪽 위), 끝나면 null */
+  onGrabLive?: (live: { id: string; x: number; y: number } | null) => void;
+  onGrabMove?: (id: string, x: number, y: number) => void;
+  /** 고치는 중인 스티커의 지금 모양 (팝업 그림에 이은 화살표가 따라가게, v0.52) */
+  liveSticker?: Sticker | null;
   /** 손가락 필기 (v0.52): 켜져 있으면 텍스트 모드에서도 한 손가락은 펜처럼(베일 끌어 그리기), 꺼져 있으면 빈 곳을 끄는 손가락은 스크롤 */
   fingerDraw?: boolean;
 }
 
 const DRAG_SLOP = 5;
+
+/** 텍스트 모드의 이미지 잡는 자리 (페이지 px의 보이는 틀, 라디안) */
+export interface StickerGrab {
+  id: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  angle: number;
+  /** 스티커 왼쪽 위 (페이지 대비) — 끌면 여기서 옮긴다 */
+  x: number;
+  y: number;
+}
 /** 입력 중인 상자: 이만큼 넘게 누른 채 있다가 끌면 글자 고르기, 그 전에 끌면 상자 옮기기 (v0.52) */
 const HOLD_SELECT_MS = 300;
 /** 옮기기 손잡이 크기 (px, v0.50.1) */
@@ -261,11 +286,15 @@ export function BoxLayer(props: Props) {
   // 앱에 넣은 글꼴은 쓰는 글자 묶음을 그때그때 받아 오므로, 다 받으면 다시 재서 그린다
   useFontsVersion();
 
-  // 길게 누르기로 메뉴가 열리면 누르고 있던 상자는 고르기·고치기로 넘어가지 않는다
+  // 이미지 끌기 (v0.52, 텍스트 모드)
+  const grab = useRef<{ id: string; pointer: number; sx: number; sy: number; x0: number; y0: number; w: number; h: number; moved: boolean; last?: { x: number; y: number } } | null>(null);
+  // 길게 누르기로 메뉴가 열리면 누르고 있던 상자는 고르기·고치기로 넘어가지 않는다 (이미지도)
   useEffect(() => {
     const onLongPress = () => {
       drag.current = null;
       setDragPos(null);
+      if (grab.current?.moved) props.onGrabLive?.(null);
+      grab.current = null;
     };
     window.addEventListener("lessondeck:longpress", onLongPress);
     return () => window.removeEventListener("lessondeck:longpress", onLongPress);
@@ -278,6 +307,8 @@ export function BoxLayer(props: Props) {
   };
 
   const boxes = boxesOf(page).filter((b) => !(b.role === "back" && isDangling(b, pages)));
+  // 끌어 옮기는 중인 팝업 아이콘 (화살표가 따라가게, v0.52)
+  const liveIcon = useLiveIcon();
 
   // ── 애니메이션 (v0.26 · v0.28): 강의 모드에서 쪽지로 접혀 있다가 누르면 쪽지가 떼어지며 펼쳐지고, 글자가 입력되듯 나온다 ──
   const foldable = (b: TextBox) => b.anim?.reveal === "fold" && !b.link && !b.veil;
@@ -459,7 +490,11 @@ export function BoxLayer(props: Props) {
     // 화살표 끝을 기다리는 중: 누른 곳을 가리키는 화살표 (줄 그은 곳·그림 등 아무 곳)
     if (props.connectFrom) {
       const p = toRatio(e.clientX, e.clientY);
-      props.onConnect([clamp(p.x, 0, 1), clamp(p.y, 0, 1)]);
+      // 팝업 그림 아이콘을 누르면 그 그림으로 잇는다 (v0.52, 아이콘 층은 이때 누름이 지나간다). 시작 그림을 다시 누르면 그만
+      const icon = iconAt(p.x * size.width, p.y * size.height);
+      if (icon === props.connectFrom) props.onCancelConnect();
+      else if (icon) props.onConnect(icon);
+      else props.onConnect([clamp(p.x, 0, 1), clamp(p.y, 0, 1)]);
       return;
     }
     // 화살표를 골랐으면 놓기만
@@ -477,6 +512,41 @@ export function BoxLayer(props: Props) {
     // 누른 곳이 첫 줄 가운데쯤 오도록
     const lineRatio = (props.size.width * 0.024 * 1.3) / Math.max(1, props.size.height);
     props.onCreate(clamp(p.x, 0, 0.95), clamp(p.y - lineRatio / 2, 0, 0.97));
+  };
+
+  const onGrabDown = (g: StickerGrab, e: ReactPointerEvent<HTMLElement>) => {
+    if (e.button > 0) return;
+    e.stopPropagation();
+    grab.current = { id: g.id, pointer: e.pointerId, sx: e.clientX, sy: e.clientY, x0: g.x, y0: g.y, w: g.width / size.width, h: g.height / size.height, moved: false };
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // 잡을 수 없는 포인터면 그냥 둔다
+    }
+  };
+  const onGrabMove = (e: ReactPointerEvent<HTMLElement>) => {
+    const g = grab.current;
+    if (!g || g.pointer !== e.pointerId) return;
+    if (!g.moved && Math.hypot(e.clientX - g.sx, e.clientY - g.sy) < DRAG_SLOP) return;
+    g.moved = true;
+    const r = layerRef.current!.getBoundingClientRect();
+    // 가운데가 페이지 밖으로 나가지 않게
+    const x = clamp(g.x0 + (e.clientX - g.sx) / Math.max(1, r.width), -g.w / 2, 1 - g.w / 2);
+    const y = clamp(g.y0 + (e.clientY - g.sy) / Math.max(1, r.height), -g.h / 2, 1 - g.h / 2);
+    g.last = { x, y };
+    props.onGrabLive?.({ id: g.id, x, y });
+  };
+  const onGrabUp = (e: ReactPointerEvent<HTMLElement>) => {
+    const g = grab.current;
+    if (!g || g.pointer !== e.pointerId) return;
+    grab.current = null;
+    if (g.moved) {
+      if (g.last && e.type === "pointerup") props.onGrabMove?.(g.id, g.last.x, g.last.y);
+      props.onGrabLive?.(null);
+      return;
+    }
+    // 톡: 그 이미지를 고른다 (예전처럼)
+    if (e.type === "pointerup") props.onPickAt?.(e.clientX, e.clientY);
   };
 
   const onBoxDown = (b: TextBox, e: ReactPointerEvent<HTMLElement>) => {
@@ -632,13 +702,29 @@ export function BoxLayer(props: Props) {
     const label = boxLabel(b, pages, hidden);
     rects.set(b.id, boxRectPx({ ...live, x: pos.x, y: pos.y }, editingId === b.id ? b.text || label : label, size));
   }
+  // 팝업 그림 아이콘도 화살표 끝이 된다 (v0.52): 고치는 중·끄는 중의 자리 그대로
+  const icons: string[] = [];
+  for (const s0 of page.stickers ?? []) {
+    const s1 = props.liveSticker?.id === s0.id ? props.liveSticker : s0;
+    const s = liveIcon?.id === s0.id ? { ...s1, x: liveIcon.x, y: liveIcon.y } : s1;
+    const r = popupIconRectPx(s, size);
+    if (!r) continue;
+    rects.set(s0.id, r);
+    icons.push(s0.id);
+  }
   const arrows = arrowsOf(page);
   const lineW = (3 * size.width) / 1000;
-  /** (x, y)(페이지 px)에 있는 상자 (위에 있는 것부터, 시작 상자 빼고) */
+  const inside = (r: Rect | undefined, x: number, y: number) => !!r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+  /** (x, y)(페이지 px)에 있는 팝업 아이콘 (위에 그린 것부터) */
+  const iconAt = (x: number, y: number) => {
+    for (let i = icons.length - 1; i >= 0; i--) if (inside(rects.get(icons[i]), x, y)) return icons[i];
+    return null;
+  };
+  /** (x, y)(페이지 px)에 있는 상자·팝업 아이콘 (위에 있는 것부터 — 아이콘이 상자 위, 시작 것 빼고) */
   const boxAt = (x: number, y: number, except: string) => {
+    for (let i = icons.length - 1; i >= 0; i--) if (icons[i] !== except && inside(rects.get(icons[i]), x, y)) return icons[i];
     for (let i = boxes.length - 1; i >= 0; i--) {
-      const r = rects.get(boxes[i].id);
-      if (boxes[i].id !== except && r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return boxes[i].id;
+      if (boxes[i].id !== except && inside(rects.get(boxes[i].id), x, y)) return boxes[i].id;
     }
     return null;
   };
@@ -725,6 +811,22 @@ export function BoxLayer(props: Props) {
           style={{ left: bandRect.x * size.width, top: bandRect.y * size.height, width: bandRect.w * size.width, height: bandRect.h * size.height }}
         />
       )}
+      {editMode &&
+        props.grabs?.map((g) => (
+          <div
+            key={g.id}
+            className="sticker-grab"
+            data-no-gesture
+            data-sticker-id={g.id}
+            aria-label="이미지 (끌어서 옮기기 · 눌러서 고르기)"
+            style={{ left: g.left, top: g.top, width: g.width, height: g.height, transform: g.angle ? `rotate(${g.angle}rad)` : undefined }}
+            onPointerDown={(e) => onGrabDown(g, e)}
+            onPointerMove={onGrabMove}
+            onPointerUp={onGrabUp}
+            onPointerCancel={onGrabUp}
+            onClick={(e) => e.stopPropagation()}
+          />
+        ))}
       {shapes.length > 0 && (
         <svg className="arrow-layer" width={size.width} height={size.height} aria-hidden={!editMode}>
           {shapes.map(({ arrow: a, shape: s }) => {
@@ -1078,6 +1180,8 @@ export function BoxLayer(props: Props) {
                     props.onEndEdit(b.id);
                   }}
                   onKeyDown={(e) => e.key === "Escape" && e.currentTarget.blur()}
+                  // 고른 글자 위에서 바로 끌면 글자 끌어 놓기가 아니라 상자 옮기기 (v0.52)
+                  onDragStart={(e) => e.preventDefault()}
                 />
                 {toolbar}
                 {handles}

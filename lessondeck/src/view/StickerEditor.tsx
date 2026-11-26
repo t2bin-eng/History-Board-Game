@@ -8,6 +8,7 @@ import {
   FlipHorizontal2,
   FlipVertical2,
   Maximize2,
+  MoveUpRight,
   Paintbrush,
   RotateCcw,
   RotateCw,
@@ -66,6 +67,8 @@ interface Props {
   onOrder: (to: "front" | "back") => void;
   /** 팝업 그림 켜고 끄기 (v0.27: 작은 아이콘 ↔ 원래 크기) */
   onPopup: () => void;
+  /** 팝업 그림에서 화살표 내기 (v0.52): 다음에 누른 곳·상자·팝업 그림을 가리킴 */
+  onArrow?: () => void;
 }
 
 type Gesture =
@@ -423,6 +426,11 @@ export function StickerEditor(props: Props) {
             >
               <Maximize2 size={17} /> 팝업
             </ToolButton>
+            {sticker.popup && props.onArrow && (
+              <ToolButton label="화살표 (다음에 누른 곳이나 상자·팝업 그림을 가리킴)" onClick={props.onArrow}>
+                <MoveUpRight size={17} />
+              </ToolButton>
+            )}
             <ToolButton label="자르기" onClick={() => props.onCropMode(true)} disabled={!asset || !!sticker.popup}>
               <Crop size={17} />
             </ToolButton>

@@ -1,4 +1,5 @@
 import { Maximize2, X } from "lucide-react";
+import { setLiveIcon } from "./liveIcon";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { cropOf, popupRect, shownSticker, stickersOf } from "../doc/stickers";
@@ -21,6 +22,8 @@ interface Props {
   interactive: boolean;
   /** 아이콘을 끌어 옮김 (v0.50.1): 왼쪽 위 자리 (페이지 대비) */
   onMoveIcon?: (id: string, x: number, y: number) => void;
+  /** 화살표를 내는 중인 팝업 그림 (v0.52): 그 아이콘에 표시 */
+  connectFrom?: string | null;
 }
 
 /** 이만큼 넘게 움직이면 누름이 아니다 (넘기기·필기) */
@@ -30,7 +33,7 @@ const CLOSE_MS = 240;
 /** 열린 직후 이 시간 안의 바깥 누름은 닫기로 치지 않는다 (손가락 톡 뒤에 따라오는 클릭이 새로 깔린 배경에 떨어짐, v0.28.1) */
 const CLOSE_GUARD_MS = 450;
 
-export function PopupLayer({ page, assets, size, live, interactive, onMoveIcon }: Props) {
+export function PopupLayer({ page, assets, size, live, interactive, onMoveIcon, connectFrom }: Props) {
   const list = stickersOf(page).filter((s) => s.popup);
   const [open, setOpen] = useState<string | null>(null);
   const press = useRef<{ id: string; pointer: number; x: number; y: number; long: boolean; sx: number; sy: number; moved: boolean } | null>(null);
@@ -76,6 +79,7 @@ export function PopupLayer({ page, assets, size, live, interactive, onMoveIcon }
     const x = clamp(p.sx + (e.clientX - p.x) / r.width, 0, 1 - w);
     const y = clamp(p.sy + (e.clientY - p.y) / r.height, 0, Math.max(0, 1 - h));
     setDrag({ id: s.id, x, y });
+    setLiveIcon({ id: s.id, x, y });
   };
   const onUp = (s: Sticker, e: ReactPointerEvent) => {
     const p = press.current;
@@ -83,6 +87,7 @@ export function PopupLayer({ page, assets, size, live, interactive, onMoveIcon }
     if (p.moved) {
       if (drag?.id === s.id && e.type === "pointerup") onMoveIcon?.(s.id, drag.x, drag.y);
       setDrag(null);
+      setLiveIcon(null);
     }
     // 뗀 자리를 적어 두고, 여는 것은 뒤따르는 클릭에서 (손을 뗄 때 열면 손가락 톡의 클릭이 새로 깔린 배경에 떨어져 바로 닫혔다)
     if (e.type !== "pointerup" || Math.hypot(e.clientX - p.x, e.clientY - p.y) > TAP_SLOP) p.long = true;
@@ -109,7 +114,7 @@ export function PopupLayer({ page, assets, size, live, interactive, onMoveIcon }
             sticker={icon}
             assets={assets}
             size={size}
-            className={`popup-icon${open === s.id ? " opened" : ""}${drag?.id === s.id ? " dragging" : ""}`}
+            className={`popup-icon${open === s.id ? " opened" : ""}${drag?.id === s.id ? " dragging" : ""}${connectFrom === s.id ? " connect-from" : ""}`}
             role={interactive ? "button" : undefined}
             aria-label={interactive ? "그림 크게 보기" : undefined}
             title={interactive ? "눌러서 크게 보기 · 끌어서 옮기기" : undefined}

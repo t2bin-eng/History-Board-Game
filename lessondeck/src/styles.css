@@ -4073,6 +4073,20 @@ body:has(.select-bar) .toast {
   filter: brightness(0.92);
 }
 
+/* 텍스트 모드에서 이미지를 잡는 자리 (v0.52): 보이지 않고, 글상자 아래 */
+.sticker-grab {
+  position: absolute;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: move;
+}
+
+/* 화살표를 내는 중인 팝업 그림 (v0.52, 글상자의 connect-from과 같게) */
+.popup-icon.connect-from {
+  outline: 2.5px solid var(--accent);
+  outline-offset: 3px;
+}
+
 /* 끌어 옮기는 중인 아이콘 (v0.50.1) */
 .popup-layer.interactive .popup-icon.dragging {
   cursor: grabbing;

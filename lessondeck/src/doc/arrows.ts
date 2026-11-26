@@ -9,6 +9,14 @@ export function arrowsOf(page: Page | undefined): BoxArrow[] {
   return page?.arrows ?? [];
 }
 
+/** 화살표를 이을 수 있는 것 (v0.52): 상자와 팝업 그림(아이콘) — 같은 페이지 */
+export function arrowNodeIds(page: Page): Set<string> {
+  const ids = new Set<string>();
+  for (const b of page.boxes ?? []) ids.add(b.id);
+  for (const s of page.stickers ?? []) if (s.popup) ids.add(s.id);
+  return ids;
+}
+
 function mapArrows(pages: Page[], pageId: string, fn: (arrows: BoxArrow[]) => BoxArrow[]): Page[] {
   return pages.map((p) => (p.id === pageId ? { ...p, arrows: fn(p.arrows ?? []) } : p));
 }
@@ -23,8 +31,8 @@ function clampAt([x, y]: [number, number]): [number, number] {
 }
 
 /**
- * from 상자에서 화살표를 낸다. 끝은 다른 상자(to) 또는 아무 곳(at, v0.24).
- * 같은 상자끼리·없는 상자는 안 되고, 같은 두 상자를 같은 방향으로 이은 것이 있으면 그것
+ * from 상자(또는 팝업 그림, v0.52)에서 화살표를 낸다. 끝은 다른 상자·팝업 그림(to) 또는 아무 곳(at, v0.24).
+ * 같은 것끼리·없는 것은 안 되고, 같은 둘을 같은 방향으로 이은 것이 있으면 그것
  */
 export function addArrow(
   pages: Page[],
@@ -36,11 +44,11 @@ export function addArrow(
 ): { pages: Page[]; id: string | null } {
   const page = pages.find((p) => p.id === pageId);
   if (!page) return { pages, id: null };
-  const boxes = page.boxes ?? [];
-  if (!boxes.some((b) => b.id === from)) return { pages, id: null };
+  const nodes = arrowNodeIds(page);
+  if (!nodes.has(from)) return { pages, id: null };
   let arrow: BoxArrow;
   if (typeof target === "string") {
-    if (target === from || !boxes.some((b) => b.id === target)) return { pages, id: null };
+    if (target === from || !nodes.has(target)) return { pages, id: null };
     const same = arrowsOf(page).find((a) => a.from === from && a.to === target);
     if (same) return { pages, id: same.id };
     arrow = { id, from, to: target, color: arrowColor(color) };
@@ -109,13 +117,13 @@ export function flipArrow(pages: Page[], pageId: string, id: string): Page[] {
   );
 }
 
-/** 상자를 지울 때: 그 상자에 닿은 화살표도 */
+/** 상자(팝업 그림)를 지울 때: 그것에 닿은 화살표도 */
 export function dropArrowsOf(page: Page, boxId: string): Page {
   if (!page.arrows?.some((a) => a.from === boxId || a.to === boxId)) return page;
   return { ...page, arrows: page.arrows.filter((a) => a.from !== boxId && a.to !== boxId) };
 }
 
-/** 상자를 새 id로 복사할 때 화살표도 (한쪽 상자가 없으면 버림) */
+/** 상자·팝업 그림을 새 id로 복사할 때 화살표도 (한쪽이 없으면 버림) */
 export function remapArrows(arrows: BoxArrow[] | undefined, idMap: Map<string, string>): BoxArrow[] | undefined {
   if (!arrows?.length) return undefined;
   const out = arrows.flatMap((a): BoxArrow[] => {

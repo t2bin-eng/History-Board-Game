@@ -1,3 +1,4 @@
+import { dropArrowsOf } from "./arrows";
 import { newId, type Page, type Sticker } from "./types";
 
 // 이미지 스티커 (SPEC 5장 stickers). 페이지 목록을 받아 새 목록을 돌려주는 순수 함수와 크기 계산만 둔다.
@@ -136,8 +137,16 @@ export function replaceSticker(pages: Page[], pageId: string, next: Sticker): Pa
   return mapStickers(pages, pageId, (list) => list.map((s) => (s.id === next.id ? next : s)));
 }
 
+/** 스티커를 지운다. 팝업 그림이면 그 아이콘에 닿은 화살표도 (v0.52) */
 export function removeSticker(pages: Page[], pageId: string, id: string): Page[] {
-  return mapStickers(pages, pageId, (list) => list.filter((s) => s.id !== id));
+  return mapStickers(pages, pageId, (list) => list.filter((s) => s.id !== id)).map((p) => (p.id === pageId ? dropArrowsOf(p, id) : p));
+}
+
+/** 팝업 아이콘의 자리 (페이지 px, v0.52 화살표 끝): 왼쪽 위 x·y, 정사각형 폭 popup.w (돌리기는 빼고) */
+export function popupIconRectPx(s: Sticker, size: { width: number; height: number }): { x: number; y: number; w: number; h: number } | null {
+  if (!s.popup) return null;
+  const w = s.popup.w * size.width;
+  return { x: s.x * size.width, y: s.y * size.height, w, h: w };
 }
 
 /** 맨 앞(위)으로 / 맨 뒤(아래)로 */
@@ -150,13 +159,13 @@ export function reorderSticker(pages: Page[], pageId: string, id: string, to: "f
   });
 }
 
-/** 페이지를 복제할 때: 새 id로 */
-export function copyStickers(list: Sticker[] | undefined, assetMap: Record<string, string> = {}): Sticker[] | undefined {
-  return list?.map((s) => ({
-    ...s,
-    id: newId("s"),
-    asset: assetMap[s.asset] ?? s.asset,
-  }));
+/** 페이지를 복제할 때: 새 id로. idMap을 주면 옛 id → 새 id를 적는다 (화살표를 함께 옮기려고, v0.52) */
+export function copyStickers(list: Sticker[] | undefined, assetMap: Record<string, string> = {}, idMap?: Map<string, string>): Sticker[] | undefined {
+  return list?.map((s) => {
+    const id = newId("s");
+    idMap?.set(s.id, id);
+    return { ...s, id, asset: assetMap[s.asset] ?? s.asset };
+  });
 }
 
 /**
